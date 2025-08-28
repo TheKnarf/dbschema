@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use dbschema::{generate_sql, load_config, validate, EnvVars, Loader};
+use dbschema::{load_config, validate, EnvVars, Loader};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -20,6 +20,10 @@ struct Cli {
     /// Load variables from a file (HCL or .tfvars-like). Can repeat.
     #[arg(long)]
     var_file: Vec<PathBuf>,
+
+    /// Backend to use: postgres|json
+    #[arg(long, default_value = "postgres")]
+    backend: String,
 
     #[command(subcommand)]
     command: Commands,
@@ -67,13 +71,17 @@ fn main() -> Result<()> {
         }
         Commands::CreateMigration { out_dir, name } => {
             validate(&config)?;
-            let sql = generate_sql(&config)?;
+            let artifact = dbschema::generate_with_backend(&cli.backend, &config)?;
             if let Some(dir) = out_dir {
                 let name = name.unwrap_or_else(|| "triggers".to_string());
-                let path = write_migration(&dir, &name, &sql)?;
+                let ext = dbschema::backends::get_backend(&cli.backend)
+                    .as_ref()
+                    .map(|b| b.file_extension())
+                    .unwrap_or("txt");
+                let path = write_artifact(&dir, &name, ext, &artifact)?;
                 println!("Wrote migration: {}", path.display());
             } else {
-                print!("{}", sql);
+                print!("{}", artifact);
             }
         }
     }
@@ -81,12 +89,12 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn write_migration(out_dir: &Path, name: &str, sql: &str) -> Result<PathBuf> {
+fn write_artifact(out_dir: &Path, name: &str, ext: &str, contents: &str) -> Result<PathBuf> {
     fs::create_dir_all(out_dir)?;
     let ts = chrono::Local::now().format("%Y%m%d%H%M%S");
-    let file = format!("{}_{}.sql", ts, sanitize_filename(name));
+    let file = format!("{}_{}.{}", ts, sanitize_filename(name), ext);
     let path = out_dir.join(file);
-    fs::write(&path, sql)?;
+    fs::write(&path, contents)?;
     Ok(path)
 }
 

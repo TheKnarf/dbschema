@@ -1,5 +1,6 @@
 pub mod parser;
 pub mod sql;
+pub mod backends;
 
 use anyhow::{bail, Result};
 // Keep types public via re-exports
@@ -43,6 +44,12 @@ pub fn validate(cfg: &Config) -> Result<()> {
 // Pure SQL generation wrapper
 pub fn generate_sql(cfg: &Config) -> Result<String> {
     sql::to_sql(cfg)
+}
+
+pub fn generate_with_backend(backend: &str, cfg: &Config) -> Result<String> {
+    let be = backends::get_backend(backend)
+        .ok_or_else(|| anyhow::anyhow!(format!("unknown backend '{backend}'")))?;
+    be.generate(cfg)
 }
 
 #[cfg(test)]
@@ -197,5 +204,38 @@ mod tests {
         assert_eq!(cfg.extensions.len(), 1);
         let sql = generate_sql(&cfg).unwrap();
         assert!(sql.contains("CREATE EXTENSION IF NOT EXISTS \"pgcrypto\";"));
+    }
+
+    #[test]
+    fn generate_json_backend() {
+        let mut files = HashMap::new();
+        files.insert(
+            p("/root/main.hcl"),
+            r#"
+            function "f" {
+              schema = "public"
+              language = "plpgsql"
+              returns  = "trigger"
+              body = "BEGIN RETURN NEW; END;"
+            }
+            trigger "t" {
+              schema = "public"
+              table = "users"
+              timing = "BEFORE"
+              events = ["UPDATE"]
+              level  = "ROW"
+              function = "f"
+            }
+            extension "pgcrypto" {}
+            "#
+            .to_string(),
+        );
+        let loader = MapLoader { files };
+        let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
+        let json = crate::generate_with_backend("json", &cfg).unwrap();
+        assert!(json.contains("\"backend\":\"json\""));
+        assert!(json.contains("\"functions\""));
+        assert!(json.contains("\"triggers\""));
+        assert!(json.contains("\"extensions\""));
     }
 }

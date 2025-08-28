@@ -126,14 +126,16 @@ pub mod eval {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+use serde::Serialize;
+
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct Config {
     pub functions: Vec<FunctionSpec>,
     pub triggers: Vec<TriggerSpec>,
     pub extensions: Vec<ExtensionSpec>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct FunctionSpec {
     pub name: String,
     pub schema: Option<String>,
@@ -144,7 +146,7 @@ pub struct FunctionSpec {
     pub body: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct TriggerSpec {
     pub name: String,
     pub schema: Option<String>,
@@ -157,7 +159,7 @@ pub struct TriggerSpec {
     pub when: Option<String>,   // optional condition, raw SQL
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ExtensionSpec {
     pub name: String,
     pub if_not_exists: bool,
