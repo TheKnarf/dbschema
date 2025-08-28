@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-use crate::parser::{Config, ExtensionSpec, FunctionSpec, TriggerSpec, TableSpec, ColumnSpec, IndexSpec, ForeignKeySpec};
+use crate::parser::{Config, ExtensionSpec, FunctionSpec, TriggerSpec, TableSpec, ColumnSpec, IndexSpec, ForeignKeySpec, ViewSpec, MaterializedViewSpec, EnumSpec};
 use super::Backend;
 
 pub struct JsonBackend;
@@ -205,6 +205,59 @@ impl Backend for JsonBackend {
             s
         }
 
+        fn render_views(items: &[ViewSpec]) -> String {
+            let mut s = String::from("[");
+            for (i, v) in items.iter().enumerate() {
+                if i > 0 { s.push(','); }
+                s.push('{');
+                s.push_str(&format!(
+                    "\"name\":{},\"schema\":{},\"replace\":{},\"sql\":{}",
+                    q(&v.name),
+                    match &v.schema { Some(v) => q(v), None => "null".into() },
+                    v.replace,
+                    q(&v.sql),
+                ));
+                s.push('}');
+            }
+            s.push(']');
+            s
+        }
+
+        fn render_materialized(items: &[MaterializedViewSpec]) -> String {
+            let mut s = String::from("[");
+            for (i, v) in items.iter().enumerate() {
+                if i > 0 { s.push(','); }
+                s.push('{');
+                s.push_str(&format!(
+                    "\"name\":{},\"schema\":{},\"with_data\":{},\"sql\":{}",
+                    q(&v.name),
+                    match &v.schema { Some(v) => q(v), None => "null".into() },
+                    v.with_data,
+                    q(&v.sql),
+                ));
+                s.push('}');
+            }
+            s.push(']');
+            s
+        }
+
+        fn render_enums(items: &[EnumSpec]) -> String {
+            let mut s = String::from("[");
+            for (i, e) in items.iter().enumerate() {
+                if i > 0 { s.push(','); }
+                s.push('{');
+                s.push_str(&format!(
+                    "\"name\":{},\"schema\":{},\"values\":[{}]",
+                    q(&e.name),
+                    match &e.schema { Some(v) => q(v), None => "null".into() },
+                    e.values.iter().map(|v| q(v)).collect::<Vec<_>>().join(",")
+                ));
+                s.push('}');
+            }
+            s.push(']');
+            s
+        }
+
         let mut out = String::new();
         out.push('{');
         out.push_str(&format!("\"backend\":\"{}\"", self.name()));
@@ -214,6 +267,12 @@ impl Backend for JsonBackend {
         out.push_str(&render_triggers(&cfg.triggers));
         out.push_str(",\"tables\":");
         out.push_str(&render_tables(&cfg.tables));
+        out.push_str(",\"enums\":");
+        out.push_str(&render_enums(&cfg.enums));
+        out.push_str(",\"views\":");
+        out.push_str(&render_views(&cfg.views));
+        out.push_str(",\"materialized\":");
+        out.push_str(&render_materialized(&cfg.materialized));
         out.push_str(",\"extensions\":");
         out.push_str(&render_extensions(&cfg.extensions));
         out.push('}');

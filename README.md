@@ -7,6 +7,8 @@ Status: early MVP. No network needed to read files; building requires Rust + cra
 ## Features
 
 - HCL blocks: `variable`, `locals`, `table`, `function`, `trigger`, `module`.
+- HCL blocks: `variable`, `locals`, `table`, `view`, `materialized`, `function`, `trigger`, `module`.
+ - HCL blocks: `variable`, `locals`, `enum`, `table`, `view`, `materialized`, `function`, `trigger`, `module`.
 - Postgres `extension` blocks with options (schema, version, if_not_exists).
 - Variables via `--var key=value` and `--var-file`.
 - Modules (path-only): `module "name" { source = "./path" ... }`.
@@ -27,7 +29,7 @@ Status: early MVP. No network needed to read files; building requires Rust + cra
 
 - Validate: `./target/release/dbschema --input examples/main.hcl validate`
 - Create migration (Postgres SQL): `./target/release/dbschema --input examples/main.hcl create-migration --out-dir migrations --name triggers`
-- Create Prisma schema from tables: `./target/release/dbschema --backend prisma --input examples/main.hcl create-migration --out-dir prisma --name schema`
+- Create Prisma models/enums only (no generator/datasource): `./target/release/dbschema --backend prisma --input examples/main.hcl create-migration --out-dir prisma --name schema`
 - Variables: `--var schema=public` or `--var-file .env.hcl`
 
 ## HCL Schema
@@ -55,6 +57,22 @@ trigger "<name>" {
   function   = "set_updated_at"# required (unqualified name)
   function_schema = "public"   # optional, defaults to trigger schema
   when       = null             # optional raw SQL condition
+}
+
+view "<name>" {
+  schema  = "public"     # optional, default "public"
+  replace = true          # optional, default true (OR REPLACE)
+  sql     = <<-SQL        # required SELECT ... body (no trailing semicolon needed)
+    SELECT * FROM public.some_table
+  SQL
+}
+
+materialized "<name>" {
+  schema    = "public"   # optional, default "public"
+  with_data = true        # optional, default true (WITH [NO] DATA)
+  sql       = <<-SQL      # required SELECT ... body
+    SELECT ...
+  SQL
 }
 
 table "<name>" {
@@ -106,7 +124,7 @@ module "<name>" {
 
 See `examples/main.hcl` and `examples/modules/timestamps/main.hcl`.
 
-The root example now includes a `table` resource for `users`, a function, and a trigger.
+The root example now includes a `table` resource for `users`, a `view` (`active_users`), a function, and a trigger.
 
 ## Notes
 
@@ -115,6 +133,7 @@ The root example now includes a `table` resource for `users`, a function, and a 
 - Trigger creation is idempotent with a `DO $$` guard; function creation uses `CREATE OR REPLACE`.
 - Table creation uses `CREATE TABLE IF NOT EXISTS` with inline primary keys and foreign keys. Indexes (including uniques) are emitted as `CREATE [UNIQUE] INDEX IF NOT EXISTS` after the table.
 - Prisma backend: generates a Prisma schema with models for each `table`. It ignores functions/triggers/extensions.
+- Prisma backend: outputs only enums (`enum`) and models (`table`) — no generator/datasource blocks. It ignores functions/triggers/extensions/views/materialized.
 
 ## Resource Filters
 
@@ -155,3 +174,7 @@ trigger "upd" {
 - Better expression support (concat, conditionals, maps).
 - Optional `drop` generation for cleanup.
 - Lints: existence of referenced tables/columns by inspecting a live DB (opt-in).
+enum "<name>" {
+  schema = "public"    # optional, default "public"
+  values = ["a", "b"]  # required
+}

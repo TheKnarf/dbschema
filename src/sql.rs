@@ -1,4 +1,4 @@
-use crate::parser::{Config, ExtensionSpec, FunctionSpec, TriggerSpec, TableSpec, IndexSpec, ForeignKeySpec};
+use crate::parser::{Config, ExtensionSpec, FunctionSpec, TriggerSpec, TableSpec, IndexSpec, ForeignKeySpec, ViewSpec, MaterializedViewSpec, EnumSpec};
 use anyhow::Result;
 
 pub fn to_sql(cfg: &Config) -> Result<String> {
@@ -7,6 +7,12 @@ pub fn to_sql(cfg: &Config) -> Result<String> {
     // Extensions first
     for e in &cfg.extensions {
         out.push_str(&render_extension(e));
+        out.push_str("\n\n");
+    }
+
+    // Enums next (types used by tables)
+    for e in &cfg.enums {
+        out.push_str(&render_enum(e));
         out.push_str("\n\n");
     }
 
@@ -23,6 +29,18 @@ pub fn to_sql(cfg: &Config) -> Result<String> {
 
     for f in &cfg.functions {
         out.push_str(&render_function(f));
+        out.push_str("\n\n");
+    }
+
+    // Views after functions (they may use functions) and before triggers
+    for v in &cfg.views {
+        out.push_str(&render_view(v));
+        out.push_str("\n\n");
+    }
+
+    // Materialized views after views
+    for mv in &cfg.materialized {
+        out.push_str(&render_materialized(mv));
         out.push_str("\n\n");
     }
 
@@ -56,6 +74,24 @@ fn render_extension(e: &ExtensionSpec) -> String {
     s
 }
 
+fn render_enum(e: &EnumSpec) -> String {
+    let schema = e.schema.as_deref().unwrap_or("public");
+    let values = e
+        .values
+        .iter()
+        .map(|v| literal(v))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        "DO $$\nBEGIN\n  IF NOT EXISTS (\n    SELECT 1 FROM pg_type t\n    JOIN pg_namespace n ON n.oid = t.typnamespace\n    WHERE t.typname = {name_lit}\n      AND n.nspname = {schema_lit}\n  ) THEN\n    CREATE TYPE {schema_ident}.{name_ident} AS ENUM ({values});\n  END IF;\nEND$$;",
+        schema_lit = literal(schema),
+        name_lit = literal(&e.name),
+        schema_ident = ident(schema),
+        name_ident = ident(&e.name),
+        values = values,
+    )
+}
+
 fn render_function(f: &FunctionSpec) -> String {
     let schema = f.schema.as_deref().unwrap_or("public");
     let definer = if f.security_definer { " SECURITY DEFINER" } else { "" };
@@ -69,6 +105,32 @@ fn render_function(f: &FunctionSpec) -> String {
         lang = lang,
         definer = definer,
         body = f.body
+    )
+}
+
+fn render_view(v: &ViewSpec) -> String {
+    let schema = v.schema.as_deref().unwrap_or("public");
+    let or_replace = if v.replace { "OR REPLACE " } else { "" };
+    format!(
+        "CREATE {or_replace}VIEW {schema}.{name} AS\n{body};",
+        or_replace = or_replace,
+        schema = ident(schema),
+        name = ident(&v.name),
+        body = v.sql
+    )
+}
+
+fn render_materialized(mv: &MaterializedViewSpec) -> String {
+    let schema = mv.schema.as_deref().unwrap_or("public");
+    let with = if mv.with_data { "WITH DATA" } else { "WITH NO DATA" };
+    format!(
+        "DO $$\nBEGIN\n  IF NOT EXISTS (\n    SELECT 1 FROM pg_matviews WHERE schemaname = {schema_lit} AND matviewname = {name_lit}\n  ) THEN\n    CREATE MATERIALIZED VIEW {schema_ident}.{name_ident} AS\n{body}\n    {with};\n  END IF;\nEND$$;",
+        schema_lit = literal(schema),
+        name_lit = literal(&mv.name),
+        schema_ident = ident(schema),
+        name_ident = ident(&mv.name),
+        body = mv.sql,
+        with = with,
     )
 }
 

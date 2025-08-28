@@ -9,6 +9,11 @@ locals {
   updated_at_column = "updated_at"
 }
 
+enum "user_status" {
+  schema = var.schema
+  values = ["active", "disabled"]
+}
+
 table "users" {
   schema = var.schema
   if_not_exists = true
@@ -19,6 +24,10 @@ table "users" {
   }
   column "email" {
     type = "text"
+    nullable = false
+  }
+  column "status" {
+    type = "user_status"
     nullable = false
   }
   column "updated_at" {
@@ -40,6 +49,26 @@ function "set_updated_at" {
       NEW.${local.updated_at_column} = now();
       RETURN NEW;
     END;
+  SQL
+}
+
+view "active_users" {
+  schema  = var.schema
+  replace = true
+  sql = <<-SQL
+    SELECT id, email, updated_at
+    FROM public.users
+    WHERE updated_at IS NOT NULL
+  SQL
+}
+
+materialized "users_by_domain" {
+  schema = var.schema
+  with_data = true
+  sql = <<-SQL
+    SELECT split_part(email, '@', 2) as domain, count(*) as users
+    FROM public.users
+    GROUP BY domain
   SQL
 }
 

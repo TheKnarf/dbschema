@@ -133,7 +133,10 @@ pub struct Config {
     pub functions: Vec<FunctionSpec>,
     pub triggers: Vec<TriggerSpec>,
     pub extensions: Vec<ExtensionSpec>,
+    pub enums: Vec<EnumSpec>,
     pub tables: Vec<TableSpec>,
+    pub views: Vec<ViewSpec>,
+    pub materialized: Vec<MaterializedViewSpec>,
     pub tests: Vec<TestSpec>,
 }
 
@@ -167,6 +170,29 @@ pub struct ExtensionSpec {
     pub if_not_exists: bool,
     pub schema: Option<String>,
     pub version: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct EnumSpec {
+    pub name: String,
+    pub schema: Option<String>,
+    pub values: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ViewSpec {
+    pub name: String,
+    pub schema: Option<String>,
+    pub replace: bool, // OR REPLACE
+    pub sql: String,   // SELECT ... body
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct MaterializedViewSpec {
+    pub name: String,
+    pub schema: Option<String>,
+    pub with_data: bool, // WITH [NO] DATA
+    pub sql: String,     // SELECT ... body
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -398,6 +424,66 @@ fn load_file(loader: &dyn Loader, path: &Path, base: &Path, parent_env: &EnvVars
         }
     }
 
+    // views
+    for blk in body.blocks().filter(|b| b.identifier() == "view") {
+        let name = blk
+            .labels()
+            .get(0)
+            .ok_or_else(|| anyhow::anyhow!("view block missing name label"))?
+            .as_str()
+            .to_string();
+        let b = blk.body();
+        let parse_one = |name: &str, b: &hcl::Body, env: &EnvVars| -> Result<ViewSpec> {
+            let schema = get_attr_string(b, "schema", env)?;
+            let replace = get_attr_bool(b, "replace", env)?.unwrap_or(true);
+            let sql = get_attr_string(b, "sql", env)?.context("view 'sql' is required")?;
+            Ok(ViewSpec { name: name.to_string(), schema, replace, sql })
+        };
+        if let Some(fe) = find_attr(b, "for_each") {
+            let coll = eval::expr_to_value(fe.expr(), &env)?;
+            for_each_iter(&coll, &mut |k, v| {
+                let mut iter_env = env.clone();
+                iter_env.each = Some((k.clone(), v.clone()));
+                let v = parse_one(&name, b, &iter_env)?;
+                cfg.views.push(v);
+                Ok(())
+            })?;
+        } else {
+            let v = parse_one(&name, b, &env)?;
+            cfg.views.push(v);
+        }
+    }
+
+    // materialized views
+    for blk in body.blocks().filter(|b| b.identifier() == "materialized") {
+        let name = blk
+            .labels()
+            .get(0)
+            .ok_or_else(|| anyhow::anyhow!("materialized block missing name label"))?
+            .as_str()
+            .to_string();
+        let b = blk.body();
+        let parse_one = |name: &str, b: &hcl::Body, env: &EnvVars| -> Result<MaterializedViewSpec> {
+            let schema = get_attr_string(b, "schema", env)?;
+            let with_data = get_attr_bool(b, "with_data", env)?.unwrap_or(true);
+            let sql = get_attr_string(b, "sql", env)?.context("materialized 'sql' is required")?;
+            Ok(MaterializedViewSpec { name: name.to_string(), schema, with_data, sql })
+        };
+        if let Some(fe) = find_attr(b, "for_each") {
+            let coll = eval::expr_to_value(fe.expr(), &env)?;
+            for_each_iter(&coll, &mut |k, v| {
+                let mut iter_env = env.clone();
+                iter_env.each = Some((k.clone(), v.clone()));
+                let v = parse_one(&name, b, &iter_env)?;
+                cfg.materialized.push(v);
+                Ok(())
+            })?;
+        } else {
+            let v = parse_one(&name, b, &env)?;
+            cfg.materialized.push(v);
+        }
+    }
+
 
     for blk in body.blocks().filter(|b| b.identifier() == "function") {
         let name = blk
@@ -567,6 +653,38 @@ fn load_file(loader: &dyn Loader, path: &Path, base: &Path, parent_env: &EnvVars
         }
     }
 
+    // enums
+    for blk in body.blocks().filter(|b| b.identifier() == "enum") {
+        let name = blk
+            .labels()
+            .get(0)
+            .ok_or_else(|| anyhow::anyhow!("enum block missing name label"))?
+            .as_str()
+            .to_string();
+        let b = blk.body();
+        let parse_one = |name: &str, b: &hcl::Body, env: &EnvVars| -> Result<EnumSpec> {
+            let schema = get_attr_string(b, "schema", env)?;
+            let values = match find_attr(b, "values") {
+                Some(attr) => eval::expr_to_string_vec(attr.expr(), env)?,
+                None => bail!("enum '{}' requires values = [..]", name),
+            };
+            Ok(EnumSpec { name: name.to_string(), schema, values })
+        };
+        if let Some(fe) = find_attr(b, "for_each") {
+            let coll = eval::expr_to_value(fe.expr(), &env)?;
+            for_each_iter(&coll, &mut |k, v| {
+                let mut iter_env = env.clone();
+                iter_env.each = Some((k.clone(), v.clone()));
+                let e = parse_one(&name, b, &iter_env)?;
+                cfg.enums.push(e);
+                Ok(())
+            })?;
+        } else {
+            let e = parse_one(&name, b, &env)?;
+            cfg.enums.push(e);
+        }
+    }
+
     for blk in body.blocks().filter(|b| b.identifier() == "test") {
         let name = blk
             .labels()
@@ -613,6 +731,7 @@ fn load_file(loader: &dyn Loader, path: &Path, base: &Path, parent_env: &EnvVars
                 let mod_env = EnvVars { vars: mod_vars, locals: HashMap::new(), each: None };
             let sub = load_file(loader, &module_path.join("main.hcl"), &module_path, &mod_env, visited)
                 .with_context(|| format!("loading module '{}' from {}", label.as_str(), module_path.display()))?;
+            cfg.enums.extend(sub.enums);
             cfg.functions.extend(sub.functions);
             cfg.triggers.extend(sub.triggers);
             cfg.extensions.extend(sub.extensions);
@@ -632,6 +751,7 @@ fn load_file(loader: &dyn Loader, path: &Path, base: &Path, parent_env: &EnvVars
             let mod_env = EnvVars { vars: mod_vars, locals: HashMap::new(), each: None };
             let sub = load_file(loader, &module_path.join("main.hcl"), &module_path, &mod_env, visited)
                 .with_context(|| format!("loading module '{}' from {}", label.as_str(), module_path.display()))?;
+            cfg.enums.extend(sub.enums);
             cfg.functions.extend(sub.functions);
             cfg.triggers.extend(sub.triggers);
             cfg.extensions.extend(sub.extensions);

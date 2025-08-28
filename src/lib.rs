@@ -8,7 +8,7 @@ use anyhow::{bail, Result};
 use std::path::Path;
 
 // Public re-exports
-pub use parser::{Config, EnvVars, ExtensionSpec, FunctionSpec, TriggerSpec, TableSpec};
+pub use parser::{Config, EnvVars, ExtensionSpec, FunctionSpec, TriggerSpec, TableSpec, ViewSpec, MaterializedViewSpec};
 
 // Loader abstraction: lets callers control how files are read.
 pub trait Loader {
@@ -238,6 +238,83 @@ mod tests {
         assert!(json.contains("\"functions\""));
         assert!(json.contains("\"triggers\""));
         assert!(json.contains("\"extensions\""));
+    }
+
+    #[test]
+    fn parse_view_and_generate_sql_and_json() {
+        let mut files = HashMap::new();
+        files.insert(
+            p("/root/main.hcl"),
+            r#"
+            view "v_users" {
+              schema = "public"
+              replace = true
+              sql = "SELECT 1 as x"
+            }
+            "#.to_string(),
+        );
+        let loader = MapLoader { files };
+        let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
+        assert_eq!(cfg.views.len(), 1);
+        let sql = generate_sql(&cfg).unwrap();
+        assert!(sql.contains("CREATE OR REPLACE VIEW \"public\".\"v_users\" AS"));
+        let json = crate::generate_with_backend("json", &cfg).unwrap();
+        assert!(json.contains("\"views\""));
+    }
+
+    #[test]
+    fn parse_materialized_and_generate_sql_and_json() {
+        let mut files = HashMap::new();
+        files.insert(
+            p("/root/main.hcl"),
+            r#"
+            materialized "mv" {
+              schema = "public"
+              with_data = false
+              sql = "SELECT 42 as x"
+            }
+            "#.to_string(),
+        );
+        let loader = MapLoader { files };
+        let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
+        assert_eq!(cfg.materialized.len(), 1);
+        let sql = generate_sql(&cfg).unwrap();
+        assert!(sql.contains("CREATE MATERIALIZED VIEW \"public\".\"mv\" AS"));
+        assert!(sql.contains("WITH NO DATA"));
+        let json = crate::generate_with_backend("json", &cfg).unwrap();
+        assert!(json.contains("\"materialized\""));
+    }
+
+    #[test]
+    fn parse_enum_and_generate_sql_json_prisma() {
+        let mut files = HashMap::new();
+        files.insert(
+            p("/root/main.hcl"),
+            r#"
+            enum "status" { values = ["active", "disabled"] }
+            table "users" {
+              column "id" {
+                type = "serial"
+                nullable = false
+              }
+              column "status" {
+                type = "status"
+                nullable = false
+              }
+              primary_key { columns = ["id"] }
+            }
+            "#.to_string(),
+        );
+        let loader = MapLoader { files };
+        let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
+        assert_eq!(cfg.enums.len(), 1);
+        let sql = generate_sql(&cfg).unwrap();
+        assert!(sql.contains("CREATE TYPE \"public\".\"status\" AS ENUM"));
+        let json = crate::generate_with_backend("json", &cfg).unwrap();
+        assert!(json.contains("\"enums\""));
+        let prisma = crate::generate_with_backend("prisma", &cfg).unwrap();
+        assert!(prisma.contains("enum status"));
+        assert!(prisma.contains("status status"));
     }
 
     #[test]
