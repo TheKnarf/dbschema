@@ -1,6 +1,7 @@
 pub mod parser;
 pub mod sql;
 pub mod backends;
+pub mod test_runner;
 
 use anyhow::{bail, Result};
 // Keep types public via re-exports

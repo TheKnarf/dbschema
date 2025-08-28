@@ -133,6 +133,7 @@ pub struct Config {
     pub functions: Vec<FunctionSpec>,
     pub triggers: Vec<TriggerSpec>,
     pub extensions: Vec<ExtensionSpec>,
+    pub tests: Vec<TestSpec>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -165,6 +166,14 @@ pub struct ExtensionSpec {
     pub if_not_exists: bool,
     pub schema: Option<String>,
     pub version: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TestSpec {
+    pub name: String,
+    pub setup: Vec<String>,
+    pub assert_sql: String,
+    pub teardown: Vec<String>,
 }
 
 #[derive(Default, Clone, Debug)]
@@ -400,6 +409,26 @@ fn load_file(loader: &dyn Loader, path: &Path, base: &Path, parent_env: &EnvVars
             let version = get_attr_string(b, "version", &env)?;
             cfg.extensions.push(ExtensionSpec { name, if_not_exists, schema, version });
         }
+    }
+
+    for blk in body.blocks().filter(|b| b.identifier() == "test") {
+        let name = blk
+            .labels()
+            .get(0)
+            .ok_or_else(|| anyhow::anyhow!("test block missing name label"))?
+            .as_str()
+            .to_string();
+        let b = blk.body();
+        let setup = match find_attr(b, "setup") {
+            Some(attr) => eval::expr_to_string_vec(attr.expr(), &env)?,
+            None => Vec::new(),
+        };
+        let assert_sql = get_attr_string(b, "assert", &env)?.context("test 'assert' is required")?;
+        let teardown = match find_attr(b, "teardown") {
+            Some(attr) => eval::expr_to_string_vec(attr.expr(), &env)?,
+            None => Vec::new(),
+        };
+        cfg.tests.push(TestSpec { name, setup, assert_sql, teardown });
     }
 
     // 4) Load modules (merge their resources)

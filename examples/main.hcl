@@ -37,3 +37,14 @@ module "orders_timestamps" {
   table  = "orders"
   column = "updated_at"
 }
+
+test "users_updated_at_sets_timestamp" {
+  setup = [
+    "CREATE TABLE IF NOT EXISTS public.users(id serial primary key, updated_at timestamptz)",
+    "CREATE OR REPLACE FUNCTION public.set_updated_at() RETURNS trigger LANGUAGE plpgsql AS $$\nBEGIN\n  NEW.updated_at = now();\n  RETURN NEW;\nEND;\n$$;",
+    "DO $$\nBEGIN\n  IF NOT EXISTS (\n    SELECT 1 FROM pg_trigger tg\n    JOIN pg_class c ON c.oid = tg.tgrelid\n    JOIN pg_namespace n ON n.oid = c.relnamespace\n    WHERE tg.tgname = 'users_updated_at'\n      AND n.nspname = 'public'\n      AND c.relname = 'users'\n  ) THEN\n    CREATE TRIGGER users_updated_at\n    BEFORE UPDATE ON public.users\n    FOR EACH ROW\n    EXECUTE FUNCTION public.set_updated_at();\n  END IF;\nEND$$;",
+    "INSERT INTO public.users(updated_at) VALUES ('1970-01-01 00:00:00+00')",
+    "UPDATE public.users SET id = id"
+  ]
+  assert = "SELECT updated_at > '1970-01-01 00:00:00+00' FROM public.users LIMIT 1"
+}

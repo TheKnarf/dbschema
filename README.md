@@ -82,6 +82,8 @@ See `examples/main.hcl` and `examples/modules/timestamps/main.hcl`.
 - Identifiers are always quoted. Strings embedded into `when` or function `body` are passed through as-is.
 - Extension creation uses `CREATE EXTENSION [IF NOT EXISTS]` and is emitted before functions/triggers.
 - Trigger creation is idempotent with a `DO $$` guard; function creation uses `CREATE OR REPLACE`.
+- Variables can be arrays/objects; use `for_each` on blocks and `each.value` inside.
+- Tests currently run against Postgres only; each test executes inside a transaction and is rolled back.
 
 ## Variables, for_each, and each.value
 

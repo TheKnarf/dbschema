@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use dbschema::{load_config, validate, EnvVars, Loader};
+use dbschema::test_runner::TestBackend;
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -41,6 +42,15 @@ enum Commands {
         /// Optional migration name (used in filename when writing to a dir)
         #[arg(long)]
         name: Option<String>,
+    },
+    /// Run tests defined in HCL against a database
+    Test {
+        /// Database connection string (falls back to env DATABASE_URL)
+        #[arg(long)]
+        dsn: Option<String>,
+        /// Names of tests to run (repeatable). If omitted, runs all.
+        #[arg(long = "name")]
+        names: Vec<String>,
     },
 }
 
@@ -83,6 +93,24 @@ fn main() -> Result<()> {
             } else {
                 print!("{}", artifact);
             }
+        }
+        Commands::Test { dsn, names } => {
+            let dsn = dsn
+                .or_else(|| std::env::var("DATABASE_URL").ok())
+                .ok_or_else(|| anyhow::anyhow!("missing DSN: pass --dsn or set DATABASE_URL"))?;
+            // Only Postgres tests supported currently
+            let runner = dbschema::test_runner::postgres::PostgresTestBackend;
+            let only: Option<std::collections::HashSet<String>> = if names.is_empty() {
+                None
+            } else {
+                Some(names.into_iter().collect())
+            };
+            let summary = runner.run(&config, &dsn, only.as_ref())?;
+            for r in summary.results {
+                if r.passed { println!("ok - {}", r.name); } else { println!("FAIL - {}: {}", r.name, r.message); }
+            }
+            println!("Summary: {} passed, {} failed ({} total)", summary.passed, summary.failed, summary.total);
+            if summary.failed > 0 { std::process::exit(1); }
         }
     }
 
