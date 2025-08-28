@@ -1,4 +1,4 @@
-use crate::parser::{Config, ExtensionSpec, FunctionSpec, TriggerSpec, TableSpec, IndexSpec, ForeignKeySpec, ViewSpec, MaterializedViewSpec, EnumSpec, SchemaSpec};
+use crate::parser::{Config, ExtensionSpec, FunctionSpec, TriggerSpec, TableSpec, IndexSpec, ForeignKeySpec, ViewSpec, MaterializedViewSpec, EnumSpec, SchemaSpec, PolicySpec};
 use anyhow::Result;
 
 pub fn to_sql(cfg: &Config) -> Result<String> {
@@ -31,6 +31,12 @@ pub fn to_sql(cfg: &Config) -> Result<String> {
             out.push_str(&render_index(t, idx));
             out.push_str("\n\n");
         }
+    }
+
+    // Policies (row-level security) after tables
+    for p in &cfg.policies {
+        out.push_str(&render_policy(p));
+        out.push_str("\n\n");
     }
 
     for f in &cfg.functions {
@@ -258,6 +264,45 @@ fn render_trigger(t: &TriggerSpec) -> String {
         table_ident = ident(&t.table),
         fn_schema_ident = ident(fn_schema),
         fn_name = ident(&t.function)
+    )
+}
+
+fn render_policy(p: &PolicySpec) -> String {
+    let schema = p.schema.as_deref().unwrap_or("public");
+    let cmd = p.command.to_uppercase();
+    let as_clause = match p.r#as.as_ref().map(|s| s.to_uppercase()) {
+        Some(ref k) if k == "PERMISSIVE" || k == "RESTRICTIVE" => format!(" AS {}", k),
+        _ => String::new(),
+    };
+    let for_clause = if cmd == "ALL" { String::new() } else { format!(" FOR {}", cmd) };
+    let to_clause = if p.roles.is_empty() {
+        String::new()
+    } else {
+        let roles = p.roles.iter().map(|r| ident(r)).collect::<Vec<_>>().join(", ");
+        format!(" TO {}", roles)
+    };
+    let using_clause = match &p.using {
+        Some(u) => format!("\n    USING ({})", u),
+        None => String::new(),
+    };
+    let check_clause = match &p.check {
+        Some(c) => format!("\n    WITH CHECK ({})", c),
+        None => String::new(),
+    };
+
+    format!(
+        "DO $$\nBEGIN\n  IF NOT EXISTS (\n    SELECT 1 FROM pg_policies\n    WHERE policyname = {pname}\n      AND schemaname = {schema_lit}\n      AND tablename = {table_lit}\n  ) THEN\n    CREATE POLICY {pname_ident} ON {schema_ident}.{table_ident}{as_clause}{for_clause}{to_clause}{using}{check};\n  END IF;\nEND$$;",
+        pname = literal(&p.name),
+        schema_lit = literal(schema),
+        table_lit = literal(&p.table),
+        pname_ident = ident(&p.name),
+        schema_ident = ident(schema),
+        table_ident = ident(&p.table),
+        as_clause = as_clause,
+        for_clause = for_clause,
+        to_clause = to_clause,
+        using = using_clause,
+        check = check_clause,
     )
 }
 

@@ -63,7 +63,7 @@ enum Commands {
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, ValueEnum)]
-enum ResourceKind { Schemas, Enums, Tables, Views, Materialized, Functions, Triggers, Extensions, Tests }
+enum ResourceKind { Schemas, Enums, Tables, Views, Materialized, Functions, Triggers, Extensions, Policies, Tests }
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -209,7 +209,7 @@ impl Loader for FsLoader {
 fn apply_filters(cfg: &dbschema::Config, backend: &str, include: &[ResourceKind], exclude: &[ResourceKind]) -> dbschema::Config {
     use ResourceKind as R;
     let mut inc: std::collections::HashSet<R> = if include.is_empty() {
-        [R::Schemas, R::Enums, R::Tables, R::Views, R::Materialized, R::Functions, R::Triggers, R::Extensions, R::Tests]
+        [R::Schemas, R::Enums, R::Tables, R::Views, R::Materialized, R::Functions, R::Triggers, R::Extensions, R::Policies, R::Tests]
             .into_iter()
             .collect()
     } else {
@@ -233,6 +233,7 @@ fn apply_filters(cfg: &dbschema::Config, backend: &str, include: &[ResourceKind]
         functions: if inc.contains(&R::Functions) { cfg.functions.clone() } else { Vec::new() },
         triggers: if inc.contains(&R::Triggers) { cfg.triggers.clone() } else { Vec::new() },
         extensions: if inc.contains(&R::Extensions) { cfg.extensions.clone() } else { Vec::new() },
+        policies: if inc.contains(&R::Policies) { cfg.policies.clone() } else { Vec::new() },
         tests: if inc.contains(&R::Tests) { cfg.tests.clone() } else { Vec::new() },
     }
 }

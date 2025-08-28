@@ -138,6 +138,7 @@ pub struct Config {
     pub tables: Vec<TableSpec>,
     pub views: Vec<ViewSpec>,
     pub materialized: Vec<MaterializedViewSpec>,
+    pub policies: Vec<PolicySpec>,
     pub tests: Vec<TestSpec>,
 }
 
@@ -201,6 +202,18 @@ pub struct MaterializedViewSpec {
     pub schema: Option<String>,
     pub with_data: bool, // WITH [NO] DATA
     pub sql: String,     // SELECT ... body
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PolicySpec {
+    pub name: String,
+    pub schema: Option<String>,
+    pub table: String,
+    pub command: String,           // ALL | SELECT | INSERT | UPDATE | DELETE
+    pub r#as: Option<String>,      // PERMISSIVE | RESTRICTIVE
+    pub roles: Vec<String>,        // empty => PUBLIC (omit TO clause)
+    pub using: Option<String>,     // USING (expr)
+    pub check: Option<String>,     // WITH CHECK (expr)
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -521,6 +534,43 @@ fn load_file(loader: &dyn Loader, path: &Path, base: &Path, parent_env: &EnvVars
         }
     }
 
+    // policies (row-level security)
+    for blk in body.blocks().filter(|b| b.identifier() == "policy") {
+        let name = blk
+            .labels()
+            .get(0)
+            .ok_or_else(|| anyhow::anyhow!("policy block missing name label"))?
+            .as_str()
+            .to_string();
+        let b = blk.body();
+        let parse_one = |name: &str, b: &hcl::Body, env: &EnvVars| -> Result<PolicySpec> {
+            let schema = get_attr_string(b, "schema", env)?;
+            let table = get_attr_string(b, "table", env)?.context("policy 'table' is required")?;
+            let command = get_attr_string(b, "command", env)?.unwrap_or_else(|| "ALL".to_string());
+            let as_kind = get_attr_string(b, "as", env)?; // PERMISSIVE or RESTRICTIVE
+            let roles = match find_attr(b, "roles") {
+                Some(attr) => eval::expr_to_string_vec(attr.expr(), env)?,
+                None => Vec::new(),
+            };
+            let using = get_attr_string(b, "using", env)?;
+            let check = get_attr_string(b, "check", env)?;
+            Ok(PolicySpec { name: name.to_string(), schema, table, command, r#as: as_kind, roles, using, check })
+        };
+        if let Some(fe) = find_attr(b, "for_each") {
+            let coll = eval::expr_to_value(fe.expr(), &env)?;
+            for_each_iter(&coll, &mut |k, v| {
+                let mut iter_env = env.clone();
+                iter_env.each = Some((k.clone(), v.clone()));
+                let p = parse_one(&name, b, &iter_env)?;
+                cfg.policies.push(p);
+                Ok(())
+            })?;
+        } else {
+            let p = parse_one(&name, b, &env)?;
+            cfg.policies.push(p);
+        }
+    }
+
 
     for blk in body.blocks().filter(|b| b.identifier() == "function") {
         let name = blk
@@ -774,6 +824,9 @@ fn load_file(loader: &dyn Loader, path: &Path, base: &Path, parent_env: &EnvVars
             cfg.triggers.extend(sub.triggers);
             cfg.extensions.extend(sub.extensions);
             cfg.tables.extend(sub.tables);
+            cfg.views.extend(sub.views);
+            cfg.materialized.extend(sub.materialized);
+            cfg.policies.extend(sub.policies);
             Ok(())
         })?;
     } else {
@@ -795,6 +848,9 @@ fn load_file(loader: &dyn Loader, path: &Path, base: &Path, parent_env: &EnvVars
             cfg.triggers.extend(sub.triggers);
             cfg.extensions.extend(sub.extensions);
             cfg.tables.extend(sub.tables);
+            cfg.views.extend(sub.views);
+            cfg.materialized.extend(sub.materialized);
+            cfg.policies.extend(sub.policies);
         }
     }
 

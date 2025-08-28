@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-use crate::parser::{Config, ExtensionSpec, FunctionSpec, TriggerSpec, TableSpec, ColumnSpec, IndexSpec, ForeignKeySpec, ViewSpec, MaterializedViewSpec, EnumSpec, SchemaSpec};
+use crate::parser::{Config, ExtensionSpec, FunctionSpec, TriggerSpec, TableSpec, ColumnSpec, IndexSpec, ForeignKeySpec, ViewSpec, MaterializedViewSpec, EnumSpec, SchemaSpec, PolicySpec};
 use super::Backend;
 
 pub struct JsonBackend;
@@ -241,6 +241,28 @@ impl Backend for JsonBackend {
             s
         }
 
+        fn render_policies(items: &[PolicySpec]) -> String {
+            let mut s = String::from("[");
+            for (i, p) in items.iter().enumerate() {
+                if i > 0 { s.push(','); }
+                s.push('{');
+                s.push_str(&format!(
+                    "\"name\":{},\"schema\":{},\"table\":{},\"command\":{},\"as\":{},\"roles\":[{}],\"using\":{},\"check\":{}",
+                    q(&p.name),
+                    match &p.schema { Some(v) => q(v), None => "null".into() },
+                    q(&p.table),
+                    q(&p.command),
+                    match &p.r#as { Some(v) => q(v), None => "null".into() },
+                    p.roles.iter().map(|r| q(r)).collect::<Vec<_>>().join(","),
+                    match &p.using { Some(v) => q(v), None => "null".into() },
+                    match &p.check { Some(v) => q(v), None => "null".into() },
+                ));
+                s.push('}');
+            }
+            s.push(']');
+            s
+        }
+
         fn render_enums(items: &[EnumSpec]) -> String {
             let mut s = String::from("[");
             for (i, e) in items.iter().enumerate() {
@@ -294,6 +316,8 @@ impl Backend for JsonBackend {
         out.push_str(&render_materialized(&cfg.materialized));
         out.push_str(",\"extensions\":");
         out.push_str(&render_extensions(&cfg.extensions));
+        out.push_str(",\"policies\":");
+        out.push_str(&render_policies(&cfg.policies));
         out.push('}');
         Ok(out)
     }

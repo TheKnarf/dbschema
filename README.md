@@ -6,13 +6,11 @@ Status: early MVP. No network needed to read files; building requires Rust + cra
 
 ## Features
 
- - HCL blocks: `variable`, `locals`, `schema`, `table`, `function`, `trigger`, `module`.
-- HCL blocks: `variable`, `locals`, `table`, `view`, `materialized`, `function`, `trigger`, `module`.
-- HCL blocks: `variable`, `locals`, `schema`, `enum`, `table`, `view`, `materialized`, `function`, `trigger`, `module`.
-- Postgres `extension` blocks with options (schema, version, if_not_exists).
+- HCL blocks: `variable`, `locals`, `schema`, `enum`, `table`, `view`, `materialized`, `function`, `trigger`, `extension`, `policy`, `module`, `test`.
 - Variables via `--var key=value` and `--var-file`.
 - Modules (path-only): `module "name" { source = "./path" ... }`.
-- Validate config, then generate SQL with safe `CREATE OR REPLACE FUNCTION` and idempotent `DO $$ IF NOT EXISTS CREATE TRIGGER $$`.
+- Postgres `extension` blocks with options (schema, version, if_not_exists).
+- Validate config, then generate SQL with safe `CREATE OR REPLACE FUNCTION` and idempotent guards for triggers/enums/materialized views.
 
 ## Non-goals (for now)
 
@@ -48,6 +46,11 @@ function "<name>" {
   SQL
 }
 
+enum "<name>" {
+  schema = "public"    # optional, default "public"
+  values = ["a", "b"]  # required
+}
+
 trigger "<name>" {
   schema     = "public"        # optional, default "public"
   table      = "users"         # required
@@ -57,6 +60,16 @@ trigger "<name>" {
   function   = "set_updated_at"# required (unqualified name)
   function_schema = "public"   # optional, defaults to trigger schema
   when       = null             # optional raw SQL condition
+}
+
+policy "<name>" {
+  schema  = "public"          # optional, default "public" (table schema)
+  table   = "users"           # required
+  as      = "permissive"       # optional: permissive|restrictive (default permissive)
+  command = "select"           # optional: all|select|insert|update|delete (default all)
+  roles   = ["app_user"]       # optional: omit for PUBLIC
+  using   = "email is not null"# optional: USING (...) predicate
+  check   = null               # optional: WITH CHECK (...) predicate
 }
 
 view "<name>" {
@@ -132,14 +145,14 @@ The root example now includes a `table` resource for `users`, a `view` (`active_
 - Extension creation uses `CREATE EXTENSION [IF NOT EXISTS]` and is emitted before functions/triggers.
 - Trigger creation is idempotent with a `DO $$` guard; function creation uses `CREATE OR REPLACE`.
 - Table creation uses `CREATE TABLE IF NOT EXISTS` with inline primary keys and foreign keys. Indexes (including uniques) are emitted as `CREATE [UNIQUE] INDEX IF NOT EXISTS` after the table.
-- Prisma backend: generates a Prisma schema with models for each `table`. It ignores functions/triggers/extensions.
-- Prisma backend: outputs only enums (`enum`) and models (`table`) — no generator/datasource blocks. It ignores functions/triggers/extensions/views/materialized.
+- Prisma backend: outputs only enums (`enum`) and models (`table`) — no generator/datasource blocks; ignores functions/triggers/extensions/views/materialized.
 
 ## Resource Filters
 
 - Control which resources are included per run:
   - `--include tables --include functions` (repeatable)
   - `--exclude tables` (repeatable)
+  - Resource kinds: `schemas, enums, tables, views, materialized, functions, triggers, extensions, policies, tests`
 - Example split-output workflow:
   - Prisma models for tables: `dbschema --backend prisma --include tables --input examples/main.hcl create-migration --out-dir prisma --name schema`
   - SQL for everything else: `dbschema --backend postgres --exclude tables --input examples/main.hcl create-migration --out-dir migrations --name non_tables`
@@ -174,7 +187,3 @@ trigger "upd" {
 - Better expression support (concat, conditionals, maps).
 - Optional `drop` generation for cleanup.
 - Lints: existence of referenced tables/columns by inspecting a live DB (opt-in).
-enum "<name>" {
-  schema = "public"    # optional, default "public"
-  values = ["a", "b"]  # required
-}

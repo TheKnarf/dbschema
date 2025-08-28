@@ -8,7 +8,7 @@ use anyhow::{bail, Result};
 use std::path::Path;
 
 // Public re-exports
-pub use parser::{Config, EnvVars, ExtensionSpec, FunctionSpec, TriggerSpec, TableSpec, ViewSpec, MaterializedViewSpec, EnumSpec, SchemaSpec};
+pub use parser::{Config, EnvVars, ExtensionSpec, FunctionSpec, TriggerSpec, TableSpec, ViewSpec, MaterializedViewSpec, EnumSpec, SchemaSpec, PolicySpec};
 
 // Loader abstraction: lets callers control how files are read.
 pub trait Loader {
@@ -345,5 +345,36 @@ mod tests {
         let sql = generate_sql(&cfg).unwrap();
         assert!(sql.contains("CREATE TABLE IF NOT EXISTS \"public\".\"users\""));
         assert!(sql.contains("CREATE UNIQUE INDEX IF NOT EXISTS \"users_email_key\" ON \"public\".\"users\" (\"email\");"));
+    }
+
+    #[test]
+    fn parse_policy_and_generate_sql_and_json() {
+        let mut files = HashMap::new();
+        files.insert(
+            p("/root/main.hcl"),
+            r#"
+            table "users" {
+              schema = "public"
+              column "id" { type = "serial" nullable = false }
+              primary_key { columns = ["id"] }
+            }
+            policy "p_users_select" {
+              schema = "public"
+              table = "users"
+              as = "permissive"
+              command = "select"
+              roles = ["app_user"]
+              using = "true"
+            }
+            "#.to_string(),
+        );
+        let loader = MapLoader { files };
+        let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
+        assert_eq!(cfg.policies.len(), 1);
+        let sql = generate_sql(&cfg).unwrap();
+        assert!(sql.contains("CREATE POLICY \"p_users_select\" ON \"public\".\"users\""));
+        let json = crate::generate_with_backend("json", &cfg).unwrap();
+        assert!(json.contains("\"policies\""));
+        assert!(json.contains("\"p_users_select\""));
     }
 }
