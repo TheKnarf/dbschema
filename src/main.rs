@@ -63,7 +63,7 @@ enum Commands {
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, ValueEnum)]
-enum ResourceKind { Enums, Tables, Views, Materialized, Functions, Triggers, Extensions, Tests }
+enum ResourceKind { Schemas, Enums, Tables, Views, Materialized, Functions, Triggers, Extensions, Tests }
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -87,7 +87,8 @@ fn main() -> Result<()> {
         Commands::Validate {} => {
             validate(&filtered)?;
             println!(
-                "Valid: {} enum(s), {} table(s), {} view(s), {} materialized view(s), {} function(s), {} trigger(s)",
+                "Valid: {} schema(s), {} enum(s), {} table(s), {} view(s), {} materialized view(s), {} function(s), {} trigger(s)",
+                filtered.schemas.len(),
                 filtered.enums.len(),
                 filtered.tables.len(),
                 filtered.views.len(),
@@ -208,23 +209,23 @@ impl Loader for FsLoader {
 fn apply_filters(cfg: &dbschema::Config, backend: &str, include: &[ResourceKind], exclude: &[ResourceKind]) -> dbschema::Config {
     use ResourceKind as R;
     let mut inc: std::collections::HashSet<R> = if include.is_empty() {
-        [R::Enums, R::Tables, R::Views, R::Materialized, R::Functions, R::Triggers, R::Extensions, R::Tests].into_iter().collect()
+        [R::Schemas, R::Enums, R::Tables, R::Views, R::Materialized, R::Functions, R::Triggers, R::Extensions, R::Tests]
+            .into_iter()
+            .collect()
     } else {
         include.iter().copied().collect()
     };
     for r in exclude { inc.remove(r); }
 
-    // Prisma backend supports tables and enums; enforce that regardless of flags unless explicitly excluded
+    // Prisma backend supports tables and enums only; enforce that regardless of flags unless explicitly excluded
     if backend.eq_ignore_ascii_case("prisma") {
         inc = [R::Enums, R::Tables].into_iter().collect();
-        // If user excluded tables, keep enums if allowed
         if exclude.iter().any(|e| *e == R::Tables) { inc.retain(|r| *r != R::Tables); }
-        // If user excluded enums, keep tables if allowed
         if exclude.iter().any(|e| *e == R::Enums) { inc.retain(|r| *r != R::Enums); }
-        // Prisma will only emit tables/enums even if includes specify more
     }
 
     dbschema::Config {
+        schemas: if inc.contains(&R::Schemas) { cfg.schemas.clone() } else { Vec::new() },
         enums: if inc.contains(&R::Enums) { cfg.enums.clone() } else { Vec::new() },
         tables: if inc.contains(&R::Tables) { cfg.tables.clone() } else { Vec::new() },
         views: if inc.contains(&R::Views) { cfg.views.clone() } else { Vec::new() },

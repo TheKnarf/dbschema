@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-use crate::parser::{Config, ExtensionSpec, FunctionSpec, TriggerSpec, TableSpec, ColumnSpec, IndexSpec, ForeignKeySpec, ViewSpec, MaterializedViewSpec, EnumSpec};
+use crate::parser::{Config, ExtensionSpec, FunctionSpec, TriggerSpec, TableSpec, ColumnSpec, IndexSpec, ForeignKeySpec, ViewSpec, MaterializedViewSpec, EnumSpec, SchemaSpec};
 use super::Backend;
 
 pub struct JsonBackend;
@@ -258,6 +258,23 @@ impl Backend for JsonBackend {
             s
         }
 
+        fn render_schemas(items: &[SchemaSpec]) -> String {
+            let mut s = String::from("[");
+            for (i, sc) in items.iter().enumerate() {
+                if i > 0 { s.push(','); }
+                s.push('{');
+                s.push_str(&format!(
+                    "\"name\":{},\"if_not_exists\":{},\"authorization\":{}",
+                    q(&sc.name),
+                    sc.if_not_exists,
+                    match &sc.authorization { Some(v) => q(v), None => "null".into() },
+                ));
+                s.push('}');
+            }
+            s.push(']');
+            s
+        }
+
         let mut out = String::new();
         out.push('{');
         out.push_str(&format!("\"backend\":\"{}\"", self.name()));
@@ -267,6 +284,8 @@ impl Backend for JsonBackend {
         out.push_str(&render_triggers(&cfg.triggers));
         out.push_str(",\"tables\":");
         out.push_str(&render_tables(&cfg.tables));
+        out.push_str(",\"schemas\":");
+        out.push_str(&render_schemas(&cfg.schemas));
         out.push_str(",\"enums\":");
         out.push_str(&render_enums(&cfg.enums));
         out.push_str(",\"views\":");

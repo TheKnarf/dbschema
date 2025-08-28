@@ -1,6 +1,8 @@
 # Root example: defines a function and a trigger directly,
 # and also uses a module that creates the same pattern for another table.
 
+schema "public" {}
+
 extension "pgcrypto" {}
 
 variable "schema" { default = "public" }

@@ -133,6 +133,7 @@ pub struct Config {
     pub functions: Vec<FunctionSpec>,
     pub triggers: Vec<TriggerSpec>,
     pub extensions: Vec<ExtensionSpec>,
+    pub schemas: Vec<SchemaSpec>,
     pub enums: Vec<EnumSpec>,
     pub tables: Vec<TableSpec>,
     pub views: Vec<ViewSpec>,
@@ -170,6 +171,13 @@ pub struct ExtensionSpec {
     pub if_not_exists: bool,
     pub schema: Option<String>,
     pub version: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SchemaSpec {
+    pub name: String,
+    pub if_not_exists: bool,
+    pub authorization: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -312,6 +320,35 @@ fn load_file(loader: &dyn Loader, path: &Path, base: &Path, parent_env: &EnvVars
 
     // 3) Parse functions and triggers with env
     let mut cfg = Config::default();
+
+    // schemas
+    for blk in body.blocks().filter(|b| b.identifier() == "schema") {
+        let name = blk
+            .labels()
+            .get(0)
+            .ok_or_else(|| anyhow::anyhow!("schema block missing name label"))?
+            .as_str()
+            .to_string();
+        let b = blk.body();
+        let parse_one = |name: &str, b: &hcl::Body, env: &EnvVars| -> Result<SchemaSpec> {
+            let if_not_exists = get_attr_bool(b, "if_not_exists", env)?.unwrap_or(true);
+            let authorization = get_attr_string(b, "authorization", env)?;
+            Ok(SchemaSpec { name: name.to_string(), if_not_exists, authorization })
+        };
+        if let Some(fe) = find_attr(b, "for_each") {
+            let coll = eval::expr_to_value(fe.expr(), &env)?;
+            for_each_iter(&coll, &mut |k, v| {
+                let mut iter_env = env.clone();
+                iter_env.each = Some((k.clone(), v.clone()));
+                let s = parse_one(&name, b, &iter_env)?;
+                cfg.schemas.push(s);
+                Ok(())
+            })?;
+        } else {
+            let s = parse_one(&name, b, &env)?;
+            cfg.schemas.push(s);
+        }
+    }
 
     // tables
     for blk in body.blocks().filter(|b| b.identifier() == "table") {
@@ -731,6 +768,7 @@ fn load_file(loader: &dyn Loader, path: &Path, base: &Path, parent_env: &EnvVars
                 let mod_env = EnvVars { vars: mod_vars, locals: HashMap::new(), each: None };
             let sub = load_file(loader, &module_path.join("main.hcl"), &module_path, &mod_env, visited)
                 .with_context(|| format!("loading module '{}' from {}", label.as_str(), module_path.display()))?;
+            cfg.schemas.extend(sub.schemas);
             cfg.enums.extend(sub.enums);
             cfg.functions.extend(sub.functions);
             cfg.triggers.extend(sub.triggers);
@@ -751,6 +789,7 @@ fn load_file(loader: &dyn Loader, path: &Path, base: &Path, parent_env: &EnvVars
             let mod_env = EnvVars { vars: mod_vars, locals: HashMap::new(), each: None };
             let sub = load_file(loader, &module_path.join("main.hcl"), &module_path, &mod_env, visited)
                 .with_context(|| format!("loading module '{}' from {}", label.as_str(), module_path.display()))?;
+            cfg.schemas.extend(sub.schemas);
             cfg.enums.extend(sub.enums);
             cfg.functions.extend(sub.functions);
             cfg.triggers.extend(sub.triggers);

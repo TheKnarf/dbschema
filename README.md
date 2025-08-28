@@ -6,9 +6,9 @@ Status: early MVP. No network needed to read files; building requires Rust + cra
 
 ## Features
 
-- HCL blocks: `variable`, `locals`, `table`, `function`, `trigger`, `module`.
+ - HCL blocks: `variable`, `locals`, `schema`, `table`, `function`, `trigger`, `module`.
 - HCL blocks: `variable`, `locals`, `table`, `view`, `materialized`, `function`, `trigger`, `module`.
- - HCL blocks: `variable`, `locals`, `enum`, `table`, `view`, `materialized`, `function`, `trigger`, `module`.
+- HCL blocks: `variable`, `locals`, `schema`, `enum`, `table`, `view`, `materialized`, `function`, `trigger`, `module`.
 - Postgres `extension` blocks with options (schema, version, if_not_exists).
 - Variables via `--var key=value` and `--var-file`.
 - Modules (path-only): `module "name" { source = "./path" ... }`.

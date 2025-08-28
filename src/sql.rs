@@ -1,8 +1,14 @@
-use crate::parser::{Config, ExtensionSpec, FunctionSpec, TriggerSpec, TableSpec, IndexSpec, ForeignKeySpec, ViewSpec, MaterializedViewSpec, EnumSpec};
+use crate::parser::{Config, ExtensionSpec, FunctionSpec, TriggerSpec, TableSpec, IndexSpec, ForeignKeySpec, ViewSpec, MaterializedViewSpec, EnumSpec, SchemaSpec};
 use anyhow::Result;
 
 pub fn to_sql(cfg: &Config) -> Result<String> {
     let mut out = String::new();
+
+    // Schemas first
+    for s in &cfg.schemas {
+        out.push_str(&render_schema(s));
+        out.push_str("\n\n");
+    }
 
     // Extensions first
     for e in &cfg.extensions {
@@ -72,6 +78,18 @@ fn render_extension(e: &ExtensionSpec) -> String {
     }
     s.push(';');
     s
+}
+
+fn render_schema(s: &SchemaSpec) -> String {
+    let mut stmt = String::from("CREATE ");
+    if s.if_not_exists { stmt.push_str("SCHEMA IF NOT EXISTS "); } else { stmt.push_str("SCHEMA "); }
+    stmt.push_str(&ident(&s.name));
+    if let Some(auth) = &s.authorization {
+        stmt.push_str(" AUTHORIZATION ");
+        stmt.push_str(&ident(auth));
+    }
+    stmt.push(';');
+    stmt
 }
 
 fn render_enum(e: &EnumSpec) -> String {

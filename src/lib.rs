@@ -8,7 +8,7 @@ use anyhow::{bail, Result};
 use std::path::Path;
 
 // Public re-exports
-pub use parser::{Config, EnvVars, ExtensionSpec, FunctionSpec, TriggerSpec, TableSpec, ViewSpec, MaterializedViewSpec};
+pub use parser::{Config, EnvVars, ExtensionSpec, FunctionSpec, TriggerSpec, TableSpec, ViewSpec, MaterializedViewSpec, EnumSpec, SchemaSpec};
 
 // Loader abstraction: lets callers control how files are read.
 pub trait Loader {
