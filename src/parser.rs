@@ -133,6 +133,7 @@ pub struct Config {
     pub functions: Vec<FunctionSpec>,
     pub triggers: Vec<TriggerSpec>,
     pub extensions: Vec<ExtensionSpec>,
+    pub tables: Vec<TableSpec>,
     pub tests: Vec<TestSpec>,
 }
 
@@ -166,6 +167,49 @@ pub struct ExtensionSpec {
     pub if_not_exists: bool,
     pub schema: Option<String>,
     pub version: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TableSpec {
+    pub name: String,
+    pub schema: Option<String>,
+    pub if_not_exists: bool,
+    pub columns: Vec<ColumnSpec>,
+    pub primary_key: Option<PrimaryKeySpec>,
+    pub indexes: Vec<IndexSpec>,
+    pub foreign_keys: Vec<ForeignKeySpec>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ColumnSpec {
+    pub name: String,
+    pub r#type: String,
+    pub nullable: bool,
+    pub default: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PrimaryKeySpec {
+    pub name: Option<String>,
+    pub columns: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct IndexSpec {
+    pub name: Option<String>,
+    pub columns: Vec<String>,
+    pub unique: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ForeignKeySpec {
+    pub name: Option<String>,
+    pub columns: Vec<String>,
+    pub ref_schema: Option<String>,
+    pub ref_table: String,
+    pub ref_columns: Vec<String>,
+    pub on_delete: Option<String>,
+    pub on_update: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -242,6 +286,118 @@ fn load_file(loader: &dyn Loader, path: &Path, base: &Path, parent_env: &EnvVars
 
     // 3) Parse functions and triggers with env
     let mut cfg = Config::default();
+
+    // tables
+    for blk in body.blocks().filter(|b| b.identifier() == "table") {
+        let name = blk
+            .labels()
+            .get(0)
+            .ok_or_else(|| anyhow::anyhow!("table block missing name label"))?
+            .as_str()
+            .to_string();
+        let b = blk.body();
+        let parse_one = |name: &str, b: &hcl::Body, env: &EnvVars| -> Result<TableSpec> {
+            let schema = get_attr_string(b, "schema", env)?;
+            let if_not_exists = get_attr_bool(b, "if_not_exists", env)?.unwrap_or(true);
+
+            // columns
+            let mut columns: Vec<ColumnSpec> = Vec::new();
+            for cblk in b.blocks().filter(|bb| bb.identifier() == "column") {
+                let cname = cblk
+                    .labels()
+                    .get(0)
+                    .ok_or_else(|| anyhow::anyhow!("column block missing name label"))?
+                    .as_str()
+                    .to_string();
+                let cb = cblk.body();
+                let ctype = get_attr_string(cb, "type", env)?
+                    .with_context(|| format!("column '{}' missing type", cname))?;
+                let nullable = get_attr_bool(cb, "nullable", env)?.unwrap_or(true);
+                let default = get_attr_string(cb, "default", env)?;
+                columns.push(ColumnSpec { name: cname, r#type: ctype, nullable, default });
+            }
+
+            // primary_key
+            let mut primary_key: Option<PrimaryKeySpec> = None;
+            for pkblk in b.blocks().filter(|bb| bb.identifier() == "primary_key") {
+                let pb = pkblk.body();
+                let cols = match find_attr(pb, "columns") {
+                    Some(attr) => eval::expr_to_string_vec(attr.expr(), env)?,
+                    None => bail!("primary_key requires columns = [..]"),
+                };
+                let name = get_attr_string(pb, "name", env)?;
+                primary_key = Some(PrimaryKeySpec { name, columns: cols });
+            }
+
+            // indexes (including unique blocks)
+            let mut indexes: Vec<IndexSpec> = Vec::new();
+            for iblk in b.blocks().filter(|bb| bb.identifier() == "index") {
+                let name_attr = iblk.labels().get(0).map(|s| s.as_str().to_string());
+                let ib = iblk.body();
+                let cols = match find_attr(ib, "columns") {
+                    Some(attr) => eval::expr_to_string_vec(attr.expr(), env)?,
+                    None => bail!("index requires columns = [..]"),
+                };
+                let unique = get_attr_bool(ib, "unique", env)?.unwrap_or(false);
+                indexes.push(IndexSpec { name: name_attr, columns: cols, unique });
+            }
+            for ublk in b.blocks().filter(|bb| bb.identifier() == "unique") {
+                let name_attr = ublk.labels().get(0).map(|s| s.as_str().to_string());
+                let ub = ublk.body();
+                let cols = match find_attr(ub, "columns") {
+                    Some(attr) => eval::expr_to_string_vec(attr.expr(), env)?,
+                    None => bail!("unique requires columns = [..]"),
+                };
+                indexes.push(IndexSpec { name: name_attr, columns: cols, unique: true });
+            }
+
+            // foreign keys
+            let mut fks: Vec<ForeignKeySpec> = Vec::new();
+            for fkblk in b.blocks().filter(|bb| bb.identifier() == "foreign_key") {
+                let fb = fkblk.body();
+                let columns = match find_attr(fb, "columns") {
+                    Some(attr) => eval::expr_to_string_vec(attr.expr(), env)?,
+                    None => bail!("foreign_key requires columns = [..]"),
+                };
+                // ref {} block
+                let mut ref_schema: Option<String> = None;
+                let mut ref_table: Option<String> = None;
+                let mut ref_columns: Option<Vec<String>> = None;
+                for rblk in fb.blocks().filter(|bb| bb.identifier() == "ref") {
+                    let rb = rblk.body();
+                    ref_schema = get_attr_string(rb, "schema", env)?;
+                    ref_table = get_attr_string(rb, "table", env)?;
+                    ref_columns = Some(match find_attr(rb, "columns") {
+                        Some(attr) => eval::expr_to_string_vec(attr.expr(), env)?,
+                        None => bail!("foreign_key.ref requires columns = [..]"),
+                    });
+                }
+                let name = get_attr_string(fb, "name", env)?;
+                let on_delete = get_attr_string(fb, "on_delete", env)?;
+                let on_update = get_attr_string(fb, "on_update", env)?;
+                let ref_table = ref_table.context("foreign_key.ref requires table")?;
+                let ref_columns = ref_columns.context("foreign_key.ref requires columns = [..]")?;
+                fks.push(ForeignKeySpec { name, columns, ref_schema, ref_table, ref_columns, on_delete, on_update });
+            }
+
+            Ok(TableSpec { name: name.to_string(), schema, if_not_exists, columns, primary_key, indexes, foreign_keys: fks })
+        };
+
+        if let Some(fe) = find_attr(b, "for_each") {
+            let coll = eval::expr_to_value(fe.expr(), &env)?;
+            for_each_iter(&coll, &mut |k, v| {
+                let mut iter_env = env.clone();
+                iter_env.each = Some((k.clone(), v.clone()));
+                let t = parse_one(&name, b, &iter_env)?;
+                cfg.tables.push(t);
+                Ok(())
+            })?;
+        } else {
+            let t = parse_one(&name, b, &env)?;
+            cfg.tables.push(t);
+        }
+    }
+
 
     for blk in body.blocks().filter(|b| b.identifier() == "function") {
         let name = blk
@@ -455,14 +611,15 @@ fn load_file(loader: &dyn Loader, path: &Path, base: &Path, parent_env: &EnvVars
                     mod_vars.insert(k.to_string(), v);
                 }
                 let mod_env = EnvVars { vars: mod_vars, locals: HashMap::new(), each: None };
-                let sub = load_file(loader, &module_path.join("main.hcl"), &module_path, &mod_env, visited)
-                    .with_context(|| format!("loading module '{}' from {}", label.as_str(), module_path.display()))?;
-                cfg.functions.extend(sub.functions);
-                cfg.triggers.extend(sub.triggers);
-                cfg.extensions.extend(sub.extensions);
-                Ok(())
-            })?;
-        } else {
+            let sub = load_file(loader, &module_path.join("main.hcl"), &module_path, &mod_env, visited)
+                .with_context(|| format!("loading module '{}' from {}", label.as_str(), module_path.display()))?;
+            cfg.functions.extend(sub.functions);
+            cfg.triggers.extend(sub.triggers);
+            cfg.extensions.extend(sub.extensions);
+            cfg.tables.extend(sub.tables);
+            Ok(())
+        })?;
+    } else {
             // Prepare vars for module: start empty, collect its own defaults while loading; pass overrides from attrs (excluding 'source'/'for_each')
             let mut mod_vars: HashMap<String, hcl::Value> = HashMap::new();
             for attr in b.attributes() {
@@ -478,6 +635,7 @@ fn load_file(loader: &dyn Loader, path: &Path, base: &Path, parent_env: &EnvVars
             cfg.functions.extend(sub.functions);
             cfg.triggers.extend(sub.triggers);
             cfg.extensions.extend(sub.extensions);
+            cfg.tables.extend(sub.tables);
         }
     }
 

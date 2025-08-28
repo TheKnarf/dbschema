@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-use crate::parser::{Config, ExtensionSpec, FunctionSpec, TriggerSpec};
+use crate::parser::{Config, ExtensionSpec, FunctionSpec, TriggerSpec, TableSpec, ColumnSpec, IndexSpec, ForeignKeySpec};
 use super::Backend;
 
 pub struct JsonBackend;
@@ -101,6 +101,110 @@ impl Backend for JsonBackend {
             s
         }
 
+        fn render_columns(items: &[ColumnSpec]) -> String {
+            let mut s = String::from("[");
+            for (i, c) in items.iter().enumerate() {
+                if i > 0 { s.push(','); }
+                s.push('{');
+                s.push_str(&format!(
+                    "\"name\":{},\"type\":{},\"nullable\":{},\"default\":{}",
+                    q(&c.name), q(&c.r#type), c.nullable,
+                    match &c.default { Some(v) => q(v), None => "null".into() },
+                ));
+                s.push('}');
+            }
+            s.push(']');
+            s
+        }
+
+        fn render_indexes(items: &[IndexSpec]) -> String {
+            let mut s = String::from("[");
+            for (i, ix) in items.iter().enumerate() {
+                if i > 0 { s.push(','); }
+                s.push('{');
+                s.push_str(&format!(
+                    "\"name\":{},\"columns\":{},\"unique\":{}",
+                    match &ix.name { Some(v) => q(v), None => "null".into() },
+                    {
+                        let mut t = String::from("[");
+                        for (j, c) in ix.columns.iter().enumerate() { if j>0 { t.push(','); } t.push_str(&q(c)); }
+                        t.push(']');
+                        t
+                    },
+                    ix.unique,
+                ));
+                s.push('}');
+            }
+            s.push(']');
+            s
+        }
+
+        fn render_fk(items: &[ForeignKeySpec]) -> String {
+            let mut s = String::from("[");
+            for (i, fk) in items.iter().enumerate() {
+                if i > 0 { s.push(','); }
+                s.push('{');
+                s.push_str(&format!(
+                    "\"name\":{},\"columns\":{},\"ref_schema\":{},\"ref_table\":{},\"ref_columns\":{},\"on_delete\":{},\"on_update\":{}",
+                    match &fk.name { Some(v) => q(v), None => "null".into() },
+                    {
+                        let mut t = String::from("[");
+                        for (j, c) in fk.columns.iter().enumerate() { if j>0 { t.push(','); } t.push_str(&q(c)); }
+                        t.push(']');
+                        t
+                    },
+                    match &fk.ref_schema { Some(v) => q(v), None => "null".into() },
+                    q(&fk.ref_table),
+                    {
+                        let mut t = String::from("[");
+                        for (j, c) in fk.ref_columns.iter().enumerate() { if j>0 { t.push(','); } t.push_str(&q(c)); }
+                        t.push(']');
+                        t
+                    },
+                    match &fk.on_delete { Some(v) => q(v), None => "null".into() },
+                    match &fk.on_update { Some(v) => q(v), None => "null".into() },
+                ));
+                s.push('}');
+            }
+            s.push(']');
+            s
+        }
+
+        fn render_tables(items: &[TableSpec]) -> String {
+            let mut s = String::from("[");
+            for (i, t) in items.iter().enumerate() {
+                if i > 0 { s.push(','); }
+                s.push('{');
+                // primary key
+                let pk = match &t.primary_key {
+                    Some(pk) => {
+                        let mut pkjson = String::from("{");
+                        pkjson.push_str(&format!(
+                            "\"name\":{},\"columns\":[{}]",
+                            match &pk.name { Some(v) => q(v), None => "null".into() },
+                            pk.columns.iter().map(|c| q(c)).collect::<Vec<_>>().join(",")
+                        ));
+                        pkjson.push('}');
+                        pkjson
+                    }
+                    None => "null".into(),
+                };
+                s.push_str(&format!(
+                    "\"name\":{},\"schema\":{},\"if_not_exists\":{},\"columns\":{},\"primary_key\":{},\"indexes\":{},\"foreign_keys\":{}",
+                    q(&t.name),
+                    match &t.schema { Some(v) => q(v), None => "null".into() },
+                    t.if_not_exists,
+                    render_columns(&t.columns),
+                    pk,
+                    render_indexes(&t.indexes),
+                    render_fk(&t.foreign_keys),
+                ));
+                s.push('}');
+            }
+            s.push(']');
+            s
+        }
+
         let mut out = String::new();
         out.push('{');
         out.push_str(&format!("\"backend\":\"{}\"", self.name()));
@@ -108,6 +212,8 @@ impl Backend for JsonBackend {
         out.push_str(&render_functions(&cfg.functions));
         out.push_str(",\"triggers\":");
         out.push_str(&render_triggers(&cfg.triggers));
+        out.push_str(",\"tables\":");
+        out.push_str(&render_tables(&cfg.tables));
         out.push_str(",\"extensions\":");
         out.push_str(&render_extensions(&cfg.extensions));
         out.push('}');

@@ -9,6 +9,27 @@ locals {
   updated_at_column = "updated_at"
 }
 
+table "users" {
+  schema = var.schema
+  if_not_exists = true
+
+  column "id" {
+    type = "serial"
+    nullable = false
+  }
+  column "email" {
+    type = "text"
+    nullable = false
+  }
+  column "updated_at" {
+    type = "timestamptz"
+  }
+
+  primary_key { columns = ["id"] }
+  unique "users_email_key" { columns = ["email"] }
+  index  "users_updated_at_idx" { columns = ["updated_at"] }
+}
+
 function "set_updated_at" {
   schema   = var.schema
   language = "plpgsql"

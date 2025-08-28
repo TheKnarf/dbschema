@@ -6,7 +6,7 @@ Status: early MVP. No network needed to read files; building requires Rust + cra
 
 ## Features
 
-- HCL blocks: `variable`, `locals`, `function`, `trigger`, `module`.
+- HCL blocks: `variable`, `locals`, `table`, `function`, `trigger`, `module`.
 - Postgres `extension` blocks with options (schema, version, if_not_exists).
 - Variables via `--var key=value` and `--var-file`.
 - Modules (path-only): `module "name" { source = "./path" ... }`.
@@ -56,6 +56,34 @@ trigger "<name>" {
   when       = null             # optional raw SQL condition
 }
 
+table "<name>" {
+  schema        = "public"      # optional, default "public"
+  if_not_exists = true          # optional, default true
+
+  # Columns
+  column "id" {
+    type     = "serial"         # required (raw SQL type string)
+    nullable = false            # optional (default true)
+    default  = null             # optional raw SQL expression (e.g., "now()")
+  }
+  column "email" { type = "text" nullable = false }
+
+  # Primary key (created inline only on CREATE TABLE)
+  primary_key { columns = ["id"] }
+
+  # Indexes (emitted as CREATE [UNIQUE] INDEX IF NOT EXISTS ... after table)
+  unique "users_email_key" { columns = ["email"] }
+  index  "users_created_idx" { columns = ["created_at"] }
+
+  # Foreign keys (created inline only on CREATE TABLE)
+  foreign_key {
+    columns = ["org_id"]
+    ref { schema = "public" table = "orgs" columns = ["id"] }
+    on_delete = "CASCADE"      # optional
+    on_update = "NO ACTION"    # optional
+  }
+}
+
 extension "<name>" {
   # Creates `CREATE EXTENSION IF NOT EXISTS "<name>" [WITH SCHEMA "..." VERSION '...'];`
   if_not_exists = true     # optional, default true
@@ -77,11 +105,14 @@ module "<name>" {
 
 See `examples/main.hcl` and `examples/modules/timestamps/main.hcl`.
 
+The root example now includes a `table` resource for `users`, a function, and a trigger.
+
 ## Notes
 
 - Identifiers are always quoted. Strings embedded into `when` or function `body` are passed through as-is.
 - Extension creation uses `CREATE EXTENSION [IF NOT EXISTS]` and is emitted before functions/triggers.
 - Trigger creation is idempotent with a `DO $$` guard; function creation uses `CREATE OR REPLACE`.
+- Table creation uses `CREATE TABLE IF NOT EXISTS` with inline primary keys and foreign keys. Indexes (including uniques) are emitted as `CREATE [UNIQUE] INDEX IF NOT EXISTS` after the table.
 - Variables can be arrays/objects; use `for_each` on blocks and `each.value` inside.
 - Tests currently run against Postgres only; each test executes inside a transaction and is rolled back.
 

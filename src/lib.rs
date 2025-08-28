@@ -8,7 +8,7 @@ use anyhow::{bail, Result};
 use std::path::Path;
 
 // Public re-exports
-pub use parser::{Config, EnvVars, ExtensionSpec, FunctionSpec, TriggerSpec};
+pub use parser::{Config, EnvVars, ExtensionSpec, FunctionSpec, TriggerSpec, TableSpec};
 
 // Loader abstraction: lets callers control how files are read.
 pub trait Loader {
@@ -238,5 +238,35 @@ mod tests {
         assert!(json.contains("\"functions\""));
         assert!(json.contains("\"triggers\""));
         assert!(json.contains("\"extensions\""));
+    }
+
+    #[test]
+    fn parse_table_and_generate_sql() {
+        let mut files = HashMap::new();
+        files.insert(
+            p("/root/main.hcl"),
+            r#"
+            table "users" {
+              schema = "public"
+              column "id" {
+                type = "serial"
+                nullable = false
+              }
+              column "email" {
+                type = "text"
+                nullable = false
+              }
+              primary_key { columns = ["id"] }
+              unique "users_email_key" { columns = ["email"] }
+            }
+            "#
+            .to_string(),
+        );
+        let loader = MapLoader { files };
+        let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
+        assert_eq!(cfg.tables.len(), 1);
+        let sql = generate_sql(&cfg).unwrap();
+        assert!(sql.contains("CREATE TABLE IF NOT EXISTS \"public\".\"users\""));
+        assert!(sql.contains("CREATE UNIQUE INDEX IF NOT EXISTS \"users_email_key\" ON \"public\".\"users\" (\"email\");"));
     }
 }

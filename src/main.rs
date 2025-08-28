@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 #[derive(Parser)]
 #[command(name = "dbschema")] 
-#[command(about = "HCL-driven functions & triggers for Postgres", long_about = None)]
+#[command(about = "HCL-driven tables, functions & triggers for Postgres", long_about = None)]
 struct Cli {
     /// Root HCL file (default: main.hcl)
     #[arg(long, default_value = "main.hcl")]
@@ -74,7 +74,8 @@ fn main() -> Result<()> {
         Commands::Validate {} => {
             validate(&config)?;
             println!(
-                "Valid: {} function(s), {} trigger(s)",
+                "Valid: {} table(s), {} function(s), {} trigger(s)",
+                config.tables.len(),
                 config.functions.len(),
                 config.triggers.len()
             );

@@ -1,4 +1,4 @@
-use crate::parser::{Config, ExtensionSpec, FunctionSpec, TriggerSpec};
+use crate::parser::{Config, ExtensionSpec, FunctionSpec, TriggerSpec, TableSpec, IndexSpec, ForeignKeySpec};
 use anyhow::Result;
 
 pub fn to_sql(cfg: &Config) -> Result<String> {
@@ -8,6 +8,17 @@ pub fn to_sql(cfg: &Config) -> Result<String> {
     for e in &cfg.extensions {
         out.push_str(&render_extension(e));
         out.push_str("\n\n");
+    }
+
+    // Tables next
+    for t in &cfg.tables {
+        out.push_str(&render_table(t));
+        out.push_str("\n\n");
+        // Indexes after table creation
+        for idx in &t.indexes {
+            out.push_str(&render_index(t, idx));
+            out.push_str("\n\n");
+        }
     }
 
     for f in &cfg.functions {
@@ -58,6 +69,81 @@ fn render_function(f: &FunctionSpec) -> String {
         lang = lang,
         definer = definer,
         body = f.body
+    )
+}
+
+fn render_table(t: &TableSpec) -> String {
+    let schema = t.schema.as_deref().unwrap_or("public");
+    let mut lines: Vec<String> = Vec::new();
+    for c in &t.columns {
+        let mut l = format!("{} {}", ident(&c.name), c.r#type);
+        if !c.nullable { l.push_str(" NOT NULL"); }
+        if let Some(d) = &c.default { l.push_str(&format!(" DEFAULT {}", d)); }
+        lines.push(l);
+    }
+    if let Some(pk) = &t.primary_key {
+        let cols = pk.columns.iter().map(|c| ident(c)).collect::<Vec<_>>().join(", ");
+        match &pk.name {
+            Some(n) => lines.push(format!("CONSTRAINT {} PRIMARY KEY ({})", ident(n), cols)),
+            None => lines.push(format!("PRIMARY KEY ({})", cols)),
+        }
+    }
+    for fk in &t.foreign_keys {
+        lines.push(render_fk_inline(fk));
+    }
+    let body = lines
+        .into_iter()
+        .map(|l| format!("  {}", l))
+        .collect::<Vec<_>>()
+        .join(",\n");
+    let ine = if t.if_not_exists { " IF NOT EXISTS" } else { "" };
+    format!(
+        "CREATE TABLE{ine} {schema}.{name} (\n{body}\n);",
+        ine = ine,
+        schema = ident(schema),
+        name = ident(&t.name),
+        body = body,
+    )
+}
+
+fn render_fk_inline(fk: &ForeignKeySpec) -> String {
+    let cols = fk.columns.iter().map(|c| ident(c)).collect::<Vec<_>>().join(", ");
+    let ref_schema = fk.ref_schema.as_deref().unwrap_or("public");
+    let ref_cols = fk.ref_columns.iter().map(|c| ident(c)).collect::<Vec<_>>().join(", ");
+    let mut s = String::new();
+    if let Some(n) = &fk.name { s.push_str(&format!("CONSTRAINT {} ", ident(n))); }
+    s.push_str(&format!(
+        "FOREIGN KEY ({cols}) REFERENCES {rschema}.{rtable} ({rcols})",
+        cols = cols,
+        rschema = ident(ref_schema),
+        rtable = ident(&fk.ref_table),
+        rcols = ref_cols,
+    ));
+    if let Some(od) = &fk.on_delete { s.push_str(&format!(" ON DELETE {}", od)); }
+    if let Some(ou) = &fk.on_update { s.push_str(&format!(" ON UPDATE {}", ou)); }
+    s
+}
+
+fn render_index(t: &TableSpec, idx: &IndexSpec) -> String {
+    let schema = t.schema.as_deref().unwrap_or("public");
+    let cols = idx.columns.iter().map(|c| ident(c)).collect::<Vec<_>>().join(", ");
+    let unique = if idx.unique { "UNIQUE " } else { "" };
+    let name = match &idx.name {
+        Some(n) => ident(n),
+        None => {
+            // derive name: <table>_<col1>_<col2>_idx/uniq
+            let mut n = format!("{}_{}_{}", t.name, idx.columns.join("_"), if idx.unique { "uniq" } else { "idx" });
+            n = n.replace('.', "_");
+            ident(&n)
+        }
+    };
+    format!(
+        "CREATE {unique}INDEX IF NOT EXISTS {name} ON {schema}.{table} ({cols});",
+        unique = unique,
+        name = name,
+        schema = ident(schema),
+        table = ident(&t.name),
+        cols = cols,
     )
 }
 
