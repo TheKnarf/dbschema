@@ -1,0 +1,113 @@
+# dbschema (HCL → Postgres functions & triggers)
+
+A tiny Rust CLI to define Postgres trigger functions and triggers in a small HCL dialect and generate idempotent SQL migrations. Designed to complement Prisma (or any tool) when you just want declarative triggers without a paid feature.
+
+Status: early MVP. No network needed to read files; building requires Rust + crates.
+
+## Features
+
+- HCL blocks: `variable`, `locals`, `function`, `trigger`, `module`.
+- Postgres `extension` blocks with options (schema, version, if_not_exists).
+- Variables via `--var key=value` and `--var-file`.
+- Modules (path-only): `module "name" { source = "./path" ... }`.
+- Validate config, then generate SQL with safe `CREATE OR REPLACE FUNCTION` and idempotent `DO $$ IF NOT EXISTS CREATE TRIGGER $$`.
+
+## Non-goals (for now)
+
+- Full HCL expression language. Supported expressions: strings, numbers/bools (to-string), arrays of strings, traversals `var.*` and `local.*`, and string templates `${...}`. No arithmetic or conditionals yet.
+- Module outputs/`module.*` references. Pass everything via inputs.
+- Migration “down” scripts.
+
+## Install
+
+- Ensure Rust toolchain is installed.
+- Build: `cargo build --release` (requires network to fetch crates on first build).
+
+## Usage
+
+- Validate: `./target/release/dbschema --input examples/main.hcl validate`
+- Create migration: `./target/release/dbschema --input examples/main.hcl create-migration --out-dir migrations --name triggers`
+- Variables: `--var schema=public` or `--var-file .env.hcl`
+
+## HCL Schema
+
+function "<name>" {
+  schema   = "public"         # optional, default "public"
+  language = "plpgsql"         # required (default plpgsql)
+  returns  = "trigger"         # optional (default trigger)
+  replace  = true               # optional (default true)
+  security_definer = false      # optional
+  body     = <<-SQL
+    BEGIN
+      NEW.updated_at = now();
+      RETURN NEW;
+    END;
+  SQL
+}
+
+trigger "<name>" {
+  schema     = "public"        # optional, default "public"
+  table      = "users"         # required
+  timing     = "BEFORE"        # default BEFORE
+  events     = ["UPDATE"]      # INSERT | UPDATE | DELETE (any combination)
+  level      = "ROW"           # ROW | STATEMENT
+  function   = "set_updated_at"# required (unqualified name)
+  function_schema = "public"   # optional, defaults to trigger schema
+  when       = null             # optional raw SQL condition
+}
+
+extension "<name>" {
+  # Creates `CREATE EXTENSION IF NOT EXISTS "<name>" [WITH SCHEMA "..." VERSION '...'];`
+  if_not_exists = true     # optional, default true
+  schema        = "public" # optional
+  version       = "1.1"    # optional
+}
+
+variable "<name>" { default = "value" }
+
+locals { some = "${var.name}-suffix" }
+
+module "<name>" {
+  source = "./modules/timestamps"  # directory containing main.hcl
+  schema = var.schema
+  table  = "orders"
+}
+
+## Examples
+
+See `examples/main.hcl` and `examples/modules/timestamps/main.hcl`.
+
+## Notes
+
+- Identifiers are always quoted. Strings embedded into `when` or function `body` are passed through as-is.
+- Extension creation uses `CREATE EXTENSION [IF NOT EXISTS]` and is emitted before functions/triggers.
+- Trigger creation is idempotent with a `DO $$` guard; function creation uses `CREATE OR REPLACE`.
+
+## Variables, for_each, and each.value
+
+- Variables can be strings, numbers, booleans, arrays, or objects.
+- Use `variable "name" { default = [...] }` or provide via `--var-file`.
+- Replicate blocks with `for_each` on the block (arrays or objects):
+  - Arrays: `each.key` is the index (number), `each.value` is the element.
+  - Objects: `each.key` is the object key (string), `each.value` is the value.
+- Example:
+
+variable "tables" { default = ["users", "orders"] }
+
+trigger "upd" {
+  schema   = "public"
+  for_each = var.tables       # will create two triggers
+  table    = each.value       # "users" then "orders"
+  timing   = "BEFORE"
+  events   = ["UPDATE"]
+  level    = "ROW"
+  function = "set_updated_at"
+}
+- Apply order: run your normal migrations first (e.g., Prisma), then this tool’s migration to ensure tables exist.
+
+## Roadmap
+
+- Module outputs and references (`module.foo.*`).
+- Better expression support (concat, conditionals, maps).
+- Optional `drop` generation for cleanup.
+- Lints: existence of referenced tables/columns by inspecting a live DB (opt-in).
