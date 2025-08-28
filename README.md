@@ -26,7 +26,8 @@ Status: early MVP. No network needed to read files; building requires Rust + cra
 ## Usage
 
 - Validate: `./target/release/dbschema --input examples/main.hcl validate`
-- Create migration: `./target/release/dbschema --input examples/main.hcl create-migration --out-dir migrations --name triggers`
+- Create migration (Postgres SQL): `./target/release/dbschema --input examples/main.hcl create-migration --out-dir migrations --name triggers`
+- Create Prisma schema from tables: `./target/release/dbschema --backend prisma --input examples/main.hcl create-migration --out-dir prisma --name schema`
 - Variables: `--var schema=public` or `--var-file .env.hcl`
 
 ## HCL Schema
@@ -113,6 +114,16 @@ The root example now includes a `table` resource for `users`, a function, and a 
 - Extension creation uses `CREATE EXTENSION [IF NOT EXISTS]` and is emitted before functions/triggers.
 - Trigger creation is idempotent with a `DO $$` guard; function creation uses `CREATE OR REPLACE`.
 - Table creation uses `CREATE TABLE IF NOT EXISTS` with inline primary keys and foreign keys. Indexes (including uniques) are emitted as `CREATE [UNIQUE] INDEX IF NOT EXISTS` after the table.
+- Prisma backend: generates a Prisma schema with models for each `table`. It ignores functions/triggers/extensions.
+
+## Resource Filters
+
+- Control which resources are included per run:
+  - `--include tables --include functions` (repeatable)
+  - `--exclude tables` (repeatable)
+- Example split-output workflow:
+  - Prisma models for tables: `dbschema --backend prisma --include tables --input examples/main.hcl create-migration --out-dir prisma --name schema`
+  - SQL for everything else: `dbschema --backend postgres --exclude tables --input examples/main.hcl create-migration --out-dir migrations --name non_tables`
 - Variables can be arrays/objects; use `for_each` on blocks and `each.value` inside.
 - Tests currently run against Postgres only; each test executes inside a transaction and is rolled back.
 

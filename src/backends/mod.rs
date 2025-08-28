@@ -4,6 +4,7 @@ use crate::parser::Config;
 
 pub mod postgres;
 pub mod json;
+pub mod prisma;
 
 pub trait Backend {
     fn name(&self) -> &'static str;
@@ -15,7 +16,7 @@ pub fn get_backend(name: &str) -> Option<Box<dyn Backend>> {
     match name.to_lowercase().as_str() {
         "postgres" | "pg" => Some(Box::new(postgres::PostgresBackend)),
         "json" => Some(Box::new(json::JsonBackend)),
+        "prisma" => Some(Box::new(prisma::PrismaBackend)),
         _ => None,
     }
 }
-

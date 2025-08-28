@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use dbschema::{load_config, validate, EnvVars, Loader};
 use dbschema::test_runner::TestBackend;
 use std::collections::HashMap;
@@ -25,6 +25,14 @@ struct Cli {
     /// Backend to use: postgres|json
     #[arg(long, default_value = "postgres")]
     backend: String,
+
+    /// Include only these resources (repeatable). If none, includes all.
+    #[arg(long = "include", value_enum)]
+    include_resources: Vec<ResourceKind>,
+
+    /// Exclude these resources (repeatable)
+    #[arg(long = "exclude", value_enum)]
+    exclude_resources: Vec<ResourceKind>,
 
     #[command(subcommand)]
     command: Commands,
@@ -54,6 +62,9 @@ enum Commands {
     },
 }
 
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, ValueEnum)]
+enum ResourceKind { Tables, Functions, Triggers, Extensions, Tests }
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
@@ -70,19 +81,21 @@ fn main() -> Result<()> {
     let config = load_config(&cli.input, &fs_loader, EnvVars { vars, locals: HashMap::new(), each: None })
         .with_context(|| format!("loading root HCL {}", cli.input.display()))?;
 
+    let filtered = apply_filters(&config, &cli.backend, &cli.include_resources, &cli.exclude_resources);
+
     match cli.command {
         Commands::Validate {} => {
-            validate(&config)?;
+            validate(&filtered)?;
             println!(
                 "Valid: {} table(s), {} function(s), {} trigger(s)",
-                config.tables.len(),
-                config.functions.len(),
-                config.triggers.len()
+                filtered.tables.len(),
+                filtered.functions.len(),
+                filtered.triggers.len()
             );
         }
         Commands::CreateMigration { out_dir, name } => {
-            validate(&config)?;
-            let artifact = dbschema::generate_with_backend(&cli.backend, &config)?;
+            validate(&filtered)?;
+            let artifact = dbschema::generate_with_backend(&cli.backend, &filtered)?;
             if let Some(dir) = out_dir {
                 let name = name.unwrap_or_else(|| "triggers".to_string());
                 let ext = dbschema::backends::get_backend(&cli.backend)
@@ -106,6 +119,7 @@ fn main() -> Result<()> {
             } else {
                 Some(names.into_iter().collect())
             };
+            // Tests run against full config regardless of filters
             let summary = runner.run(&config, &dsn, only.as_ref())?;
             for r in summary.results {
                 if r.passed { println!("ok - {}", r.name); } else { println!("FAIL - {}: {}", r.name, r.message); }
@@ -185,5 +199,31 @@ struct FsLoader;
 impl Loader for FsLoader {
     fn load(&self, path: &Path) -> Result<String> {
         Ok(fs::read_to_string(path)?)
+    }
+}
+
+fn apply_filters(cfg: &dbschema::Config, backend: &str, include: &[ResourceKind], exclude: &[ResourceKind]) -> dbschema::Config {
+    use ResourceKind as R;
+    let mut inc: std::collections::HashSet<R> = if include.is_empty() {
+        [R::Tables, R::Functions, R::Triggers, R::Extensions, R::Tests].into_iter().collect()
+    } else {
+        include.iter().copied().collect()
+    };
+    for r in exclude { inc.remove(r); }
+
+    // Prisma backend only supports tables; enforce that regardless of flags unless explicitly excluded
+    if backend.eq_ignore_ascii_case("prisma") {
+        inc = [R::Tables].into_iter().collect();
+        // If user excluded tables, respect it → yields empty config
+        if exclude.iter().any(|e| *e == R::Tables) { inc.clear(); }
+        // If user included something else, ignore; Prisma will only emit tables
+    }
+
+    dbschema::Config {
+        tables: if inc.contains(&R::Tables) { cfg.tables.clone() } else { Vec::new() },
+        functions: if inc.contains(&R::Functions) { cfg.functions.clone() } else { Vec::new() },
+        triggers: if inc.contains(&R::Triggers) { cfg.triggers.clone() } else { Vec::new() },
+        extensions: if inc.contains(&R::Extensions) { cfg.extensions.clone() } else { Vec::new() },
+        tests: if inc.contains(&R::Tests) { cfg.tests.clone() } else { Vec::new() },
     }
 }
