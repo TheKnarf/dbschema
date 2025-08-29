@@ -77,7 +77,7 @@ fn render_field(c: &ColumnSpec, t: &TableSpec, enums: &[EnumSpec]) -> String {
     // type + nullability
     let (ptype, db_attr) = match find_enum_for_type(enums, &c.r#type, t.schema.as_deref()) {
         Some(e) => (e.name.clone(), None),
-        None => prisma_type(&c.r#type),
+        None => prisma_type(&c.r#type, c.db_type.as_deref()),
     };
     let type_with_null = if c.nullable { format!("{}?", ptype) } else { ptype };
     parts.push(type_with_null);
@@ -169,7 +169,22 @@ fn prisma_enum_variant(db_value: &str) -> (String, Option<String>) {
     if out == db_value { (out, None) } else { (out, Some(format!("@map(\"{}\")", db_value))) }
 }
 
-fn prisma_type(pg: &str) -> (String, Option<String>) {
+fn prisma_type(pg: &str, db_specific: Option<&str>) -> (String, Option<String>) {
+    // If we have a specific database type annotation, use it
+    if let Some(db_type) = db_specific {
+        let dt = db_type.to_uppercase();
+        if dt.starts_with("CHAR(") {
+            return ("String".into(), Some(format!("@db.Char{}", &db_type[4..])));
+        } else if dt.starts_with("VARCHAR(") {
+            return ("String".into(), Some(format!("@db.VarChar{}", &db_type[7..])));
+        } else if dt == "TEXT" {
+            return ("String".into(), Some("@db.Text".into()));
+        } else if dt == "UUID" {
+            return ("String".into(), Some("@db.Uuid".into()));
+        }
+    }
+
+    // Fall back to type-based inference
     let t = pg.to_lowercase();
     let (base, db): (String, Option<&str>) = if t.contains("serial") {
         ("Int".into(), None)

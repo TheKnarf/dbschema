@@ -40,9 +40,10 @@ impl ForEachSupport for crate::model::TableSpec {
             let cb = cblk.body();
             let ctype = get_attr_string(cb, "type", env)?
                 .with_context(|| format!("column '{}' missing type", cname))?;
-            let nullable = get_attr_bool(cb, "nullable", env)?.unwrap_or(true);
-            let default = get_attr_string(cb, "default", env)?;
-            columns.push(ColumnSpec { name: cname, r#type: ctype, nullable, default });
+                let nullable = get_attr_bool(cb, "nullable", env)?.unwrap_or(true);
+                let default = get_attr_string(cb, "default", env)?;
+                let db_type = get_attr_string(cb, "db_type", env)?;
+                columns.push(ColumnSpec { name: cname, r#type: ctype, nullable, default, db_type });
         }
 
         // primary_key

@@ -106,6 +106,7 @@ pub struct ColumnSpec {
     pub r#type: String,
     pub nullable: bool,
     pub default: Option<String>,
+    pub db_type: Option<String>, // NEW: Database-specific type like "CHAR(32)", "VARCHAR(255)"
 }
 
 #[derive(Debug, Clone, Serialize)]
