@@ -1,6 +1,7 @@
 use anyhow::{bail, Context, Result};
 use hcl::template::{Element as TplElement, Template};
 use hcl::{expr::TemplateExpr, Traversal, TraversalOperator, Value};
+use hcl::eval::{Evaluate, Context as HclContext};
 use path_absolutize::Absolutize;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -8,10 +9,15 @@ use std::path::{Path, PathBuf};
 use crate::model::{Config, EnvVars};
 use crate::Loader;
 use crate::eval::for_each::execute_for_each;
+use crate::eval::builtins;
 
 pub fn expr_to_string(expr: &hcl::Expression, env: &EnvVars) -> Result<String> {
     match expr {
         hcl::Expression::String(s) => Ok(s.clone()),
+        hcl::Expression::FuncCall(_) => {
+            let v = evaluate_expr(expr, env)?;
+            value_to_string(&v)
+        }
         hcl::Expression::TemplateExpr(t) => {
             let tpl = Template::from_expr(t as &TemplateExpr)?;
             let mut out = String::new();
@@ -49,6 +55,7 @@ pub fn expr_to_value(expr: &hcl::Expression, env: &EnvVars) -> Result<Value> {
         hcl::Expression::String(s) => Ok(Value::String(s.clone())),
         hcl::Expression::Number(n) => Ok(Value::Number(n.clone())),
         hcl::Expression::Bool(b) => Ok(Value::Bool(*b)),
+        hcl::Expression::FuncCall(_) => evaluate_expr(expr, env),
         hcl::Expression::Traversal(t) => resolve_traversal_value(t, env),
         hcl::Expression::TemplateExpr(t) => {
             let s = expr_to_string(&hcl::Expression::TemplateExpr(t.clone()), env)?;
@@ -152,6 +159,54 @@ pub fn get_attr_bool(body: &hcl::Body, name: &str, env: &EnvVars) -> Result<Opti
         },
         None => None,
     })
+}
+
+/// Create an HCL evaluation context with built-in functions and custom variable resolvers
+pub fn create_eval_context(env: &EnvVars) -> HclContext {
+    let mut ctx = builtins::create_context();
+
+    // Add custom variable resolvers for our special variables (var, local, each)
+    for (key, value) in &env.vars {
+        ctx.declare_var(key.clone(), value.clone());
+    }
+
+    for (key, value) in &env.locals {
+        // For locals, we'll prefix them to avoid conflicts
+        ctx.declare_var(format!("local_{}", key), value.clone());
+    }
+
+    if let Some((key, value)) = &env.each {
+        ctx.declare_var("each_key", key.clone());
+        ctx.declare_var("each_value", value.clone());
+    }
+
+    ctx
+}
+
+/// Evaluate an expression using the HCL evaluation context with built-in functions
+pub fn evaluate_expr(expr: &hcl::Expression, env: &EnvVars) -> Result<Value> {
+    // Try to use HCL's built-in evaluation for expressions that support functions
+    match expr {
+        hcl::Expression::FuncCall(_) => {
+            // Function calls should be evaluated by HCL's context
+            let ctx = create_eval_context(env);
+            // Convert the expression to a string and parse it back as an evaluable expression
+            let expr_str = format!("{}", expr);
+            let body: hcl::Body = hcl::from_str(&format!("temp = {}", expr_str))
+                .map_err(|e| anyhow::anyhow!("Failed to parse expression: {}", e))?;
+            let temp_attr = body.attributes().find(|a| a.key() == "temp").unwrap();
+            let temp_expr = temp_attr.expr();
+            temp_expr.evaluate(&ctx).map_err(|e| anyhow::anyhow!("Function evaluation error: {}", e))
+        }
+        hcl::Expression::Traversal(tr) => {
+            // Handle our custom traversals (var, local, each)
+            resolve_traversal_value(tr, env)
+        }
+        _ => {
+            // Fall back to our custom evaluation for other expression types
+            expr_to_value(expr, env)
+        }
+    }
 }
 
 pub fn resolve_module_path(base: &Path, source: &str) -> Result<PathBuf> {
