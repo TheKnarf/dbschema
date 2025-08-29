@@ -1,4 +1,6 @@
 pub mod parser;
+pub mod eval;
+pub mod model;
 pub mod backends;
 pub mod test_runner;
 
@@ -7,7 +9,7 @@ use anyhow::{bail, Result};
 use std::path::Path;
 
 // Public re-exports
-pub use parser::{Config, EnvVars, ExtensionSpec, FunctionSpec, TriggerSpec, TableSpec, ViewSpec, MaterializedViewSpec, EnumSpec, SchemaSpec, PolicySpec};
+pub use model::{Config, EnvVars, ExtensionSpec, FunctionSpec, TriggerSpec, TableSpec, ViewSpec, MaterializedViewSpec, EnumSpec, SchemaSpec, PolicySpec};
 
 // Loader abstraction: lets callers control how files are read.
 pub trait Loader {

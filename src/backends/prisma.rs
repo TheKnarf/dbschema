@@ -1,7 +1,7 @@
 use anyhow::Result;
 
 use super::Backend;
-use crate::parser::{Config, TableSpec, ColumnSpec, EnumSpec};
+use crate::model::{Config, TableSpec, ColumnSpec, EnumSpec};
 
 pub struct PrismaBackend;
 

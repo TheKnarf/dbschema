@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-use crate::parser::{Config, ExtensionSpec, FunctionSpec, TriggerSpec, TableSpec, ColumnSpec, IndexSpec, ForeignKeySpec, ViewSpec, MaterializedViewSpec, EnumSpec, SchemaSpec, PolicySpec};
+use crate::model::{Config, ExtensionSpec, FunctionSpec, TriggerSpec, TableSpec, ColumnSpec, IndexSpec, ForeignKeySpec, ViewSpec, MaterializedViewSpec, EnumSpec, SchemaSpec, PolicySpec};
 use super::Backend;
 
 pub struct JsonBackend;

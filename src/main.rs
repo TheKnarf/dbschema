@@ -175,7 +175,7 @@ fn load_var_file(path: &Path) -> Result<HashMap<String, hcl::Value>> {
     let mut out = HashMap::new();
     for attr in body.attributes() {
         let name = attr.key();
-        let v = dbschema::parser::eval::expr_to_value(attr.expr(), &EnvVars::default())
+        let v = dbschema::eval::expr_to_value(attr.expr(), &EnvVars::default())
             .with_context(|| format!("evaluating var '{}': unsupported expression", name))?;
         out.insert(name.to_string(), v);
     }
