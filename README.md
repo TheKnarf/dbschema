@@ -43,6 +43,62 @@ cargo build --release
 - Create migration (Postgres SQL): `./target/release/dbschema --input examples/main.hcl create-migration --out-dir migrations --name triggers`
 - Create Prisma models/enums only (no generator/datasource): `./target/release/dbschema --backend prisma --input examples/main.hcl create-migration --out-dir prisma --name schema`
 - Variables: `--var schema=public` or `--var-file .env.hcl`
+- Using config file: `dbschema --config` or `dbschema --config --target <target_name>`
+
+## Configuration File
+
+dbschema can be configured using a `dbschema.toml` file in the root of your project. This file allows you to define multiple generation targets, each with its own settings.
+
+### Structure
+
+The configuration file consists of a global `[settings]` block and one or more `[[targets]]` blocks.
+
+```toml
+# Global settings (optional)
+[settings]
+input = "main.hcl"
+var_files = ["vars.tfvars"]
+env = { DATABASE_URL = "postgres://localhost:5432/mydb" }
+
+# Target definitions
+[[targets]]
+name = "postgres_schema"
+description = "Generate PostgreSQL schema for production"
+backend = "postgres"
+input = "main.hcl"
+output = "schema.sql"
+include = ["schemas", "tables", "views", "functions", "triggers", "extensions", "policies"]
+exclude = []
+vars = { environment = "production" }
+
+[[targets]]
+name = "prisma_client"
+description = "Generate Prisma schema for client applications"
+backend = "prisma"
+input = "main.hcl"
+output = "prisma/schema.prisma"
+include = ["tables", "enums"]
+exclude = ["functions", "triggers", "extensions", "policies", "views", "materialized"]
+vars = { generate_client = "true" }
+```
+
+### `[settings]` block
+
+- `input`: The root HCL file to use. Defaults to `main.hcl`.
+- `var_files`: A list of variable files to load.
+- `env`: A map of environment variables to set before running a target.
+
+### `[[targets]]` block
+
+- `name`: A unique name for the target.
+- `description`: A description of the target.
+- `backend`: The backend to use for generation (`postgres`, `prisma`, or `json`).
+- `input`: The root HCL file for this target. Overrides the global `input` setting.
+- `output`: The output file path. If not specified, the output is printed to stdout.
+- `include`: A list of resource types to include.
+- `exclude`: A list of resource types to exclude.
+- `vars`: A map of variables to pass to the HCL evaluation context.
+- `var_files`: A list of variable files to load for this target. These are loaded in addition to the global `var_files`.
 
 ## HCL Schema
 

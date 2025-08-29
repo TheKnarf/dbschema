@@ -1,13 +1,17 @@
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
-use dbschema::{load_config, validate, EnvVars, Loader};
+use dbschema::{
+    apply_filters, load_config,
+    config::{self, Config as DbschemaConfig, TargetConfig},
+    validate, EnvVars, Loader,
+};
 use dbschema::test_runner::TestBackend;
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 #[derive(Parser)]
-#[command(name = "dbschema")] 
+#[command(name = "dbschema")]
 #[command(about = "HCL-driven tables, functions & triggers for Postgres", long_about = None)]
 struct Cli {
     /// Root HCL file (default: main.hcl)
@@ -22,7 +26,7 @@ struct Cli {
     #[arg(long)]
     var_file: Vec<PathBuf>,
 
-    /// Backend to use: postgres|json
+    /// Backend to use: postgres|prisma|json (ignored if using config file)
     #[arg(long, default_value = "postgres")]
     backend: String,
 
@@ -34,8 +38,16 @@ struct Cli {
     #[arg(long = "exclude", value_enum)]
     exclude_resources: Vec<ResourceKind>,
 
+    /// Use dbschema.toml configuration file
+    #[arg(long)]
+    config: bool,
+
+    /// Target name to run (when using config file)
+    #[arg(long)]
+    target: Option<String>,
+
     #[command(subcommand)]
-    command: Commands,
+    command: Option<Commands>,
 }
 
 #[derive(Subcommand)]
@@ -63,77 +75,213 @@ enum Commands {
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, ValueEnum)]
-enum ResourceKind { Schemas, Enums, Tables, Views, Materialized, Functions, Triggers, Extensions, Policies, Tests }
+enum ResourceKind {
+    Schemas,
+    Enums,
+    Tables,
+    Views,
+    Materialized,
+    Functions,
+    Triggers,
+    Extensions,
+    Policies,
+    Tests,
+}
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    let mut vars: HashMap<String, hcl::Value> = HashMap::new();
-    for vf in &cli.var_file {
-        let loaded = load_var_file(vf).with_context(|| format!("loading var file {}", vf.display()))?;
-        vars.extend(loaded);
-    }
-    for (k, v) in cli.var.iter() {
-        vars.insert(k.clone(), hcl::Value::String(v.clone()));
-    }
+    if cli.config {
+        let dbschema_config = config::load_config()
+            .map_err(|e| anyhow::Error::msg(e.to_string()))
+            .with_context(|| "failed to load dbschema.toml")?
+            .ok_or_else(|| anyhow!("dbschema.toml not found"))?;
 
-    let fs_loader = FsLoader;
-    let config = load_config(&cli.input, &fs_loader, EnvVars { vars, locals: HashMap::new(), each: None })
+        let targets_to_run = if let Some(name) = cli.target {
+            vec![dbschema_config
+                .targets
+                .iter()
+                .find(|t| t.name == name)
+                .ok_or_else(|| anyhow!("target '{}' not found in dbschema.toml", name))?
+                .clone()]
+        } else {
+            dbschema_config.targets.clone()
+        };
+
+        for target in targets_to_run {
+            run_target(&dbschema_config, &target)?;
+        }
+    } else if let Some(command) = cli.command {
+        let mut vars: HashMap<String, hcl::Value> = HashMap::new();
+        for vf in &cli.var_file {
+            let loaded = load_var_file(vf)
+                .with_context(|| format!("loading var file {}", vf.display()))?;
+            vars.extend(loaded);
+        }
+        for (k, v) in cli.var.iter() {
+            vars.insert(k.clone(), hcl::Value::String(v.clone()));
+        }
+
+        let fs_loader = FsLoader;
+        let env = EnvVars {
+            vars,
+            locals: HashMap::new(),
+            each: None,
+        };
+        let config = load_config(
+            &cli.input,
+            &fs_loader,
+            env.clone(),
+        )
         .with_context(|| format!("loading root HCL {}", cli.input.display()))?;
 
-    let filtered = apply_filters(&config, &cli.backend, &cli.include_resources, &cli.exclude_resources);
+        let filtered = apply_cli_filters(
+            &config,
+            &cli.backend,
+            &cli.include_resources,
+            &cli.exclude_resources,
+        );
 
-    match cli.command {
-        Commands::Validate {} => {
-            validate(&filtered)?;
-            println!(
-                "Valid: {} schema(s), {} enum(s), {} table(s), {} view(s), {} materialized view(s), {} function(s), {} trigger(s)",
-                filtered.schemas.len(),
-                filtered.enums.len(),
-                filtered.tables.len(),
-                filtered.views.len(),
-                filtered.materialized.len(),
-                filtered.functions.len(),
-                filtered.triggers.len()
-            );
-        }
-        Commands::CreateMigration { out_dir, name } => {
-            validate(&filtered)?;
-            let artifact = dbschema::generate_with_backend(&cli.backend, &filtered)?;
-            if let Some(dir) = out_dir {
-                let name = name.unwrap_or_else(|| "triggers".to_string());
-                let ext = dbschema::backends::get_backend(&cli.backend)
-                    .as_ref()
-                    .map(|b| b.file_extension())
-                    .unwrap_or("txt");
-                let path = write_artifact(&dir, &name, ext, &artifact)?;
-                println!("Wrote migration: {}", path.display());
-            } else {
-                print!("{}", artifact);
+        match command {
+            Commands::Validate {} => {
+                validate(&filtered)?;
+                println!(
+                    "Valid: {} schema(s), {} enum(s), {} table(s), {} view(s), {} materialized view(s), {} function(s), {} trigger(s)",
+                    filtered.schemas.len(),
+                    filtered.enums.len(),
+                    filtered.tables.len(),
+                    filtered.views.len(),
+                    filtered.materialized.len(),
+                    filtered.functions.len(),
+                    filtered.triggers.len()
+                );
             }
-        }
-        Commands::Test { dsn, names } => {
-            let dsn = dsn
-                .or_else(|| std::env::var("DATABASE_URL").ok())
-                .ok_or_else(|| anyhow::anyhow!("missing DSN: pass --dsn or set DATABASE_URL"))?;
-            // Only Postgres tests supported currently
-            let runner = dbschema::test_runner::postgres::PostgresTestBackend;
-            let only: Option<std::collections::HashSet<String>> = if names.is_empty() {
-                None
-            } else {
-                Some(names.into_iter().collect())
-            };
-            // Tests run against full config regardless of filters
-            let summary = runner.run(&config, &dsn, only.as_ref())?;
-            for r in summary.results {
-                if r.passed { println!("ok - {}", r.name); } else { println!("FAIL - {}: {}", r.name, r.message); }
+            Commands::CreateMigration { out_dir, name } => {
+                validate(&filtered)?;
+                let artifact = dbschema::generate_with_backend(&cli.backend, &filtered, &env)?;
+                if let Some(dir) = out_dir {
+                    let name = name.unwrap_or_else(|| "triggers".to_string());
+                    let ext = dbschema::backends::get_backend(&cli.backend)
+                        .as_ref()
+                        .map(|b| b.file_extension())
+                        .unwrap_or("txt");
+                    let path = write_artifact(&dir, &name, ext, &artifact)?;
+                    println!("Wrote migration: {}", path.display());
+                } else {
+                    print!("{}", artifact);
+                }
             }
-            println!("Summary: {} passed, {} failed ({} total)", summary.passed, summary.failed, summary.total);
-            if summary.failed > 0 { std::process::exit(1); }
+            Commands::Test { dsn, names } => {
+                let dsn = dsn
+                    .or_else(|| std::env::var("DATABASE_URL").ok())
+                    .ok_or_else(|| anyhow!("missing DSN: pass --dsn or set DATABASE_URL"))?;
+                // Only Postgres tests supported currently
+                let runner = dbschema::test_runner::postgres::PostgresTestBackend;
+                let only: Option<std::collections::HashSet<String>> = if names.is_empty() {
+                    None
+                } else {
+                    Some(names.into_iter().collect())
+                };
+                // Tests run against full config regardless of filters
+                let summary = runner.run(&config, &dsn, only.as_ref())?;
+                for r in summary.results {
+                    if r.passed {
+                        println!("ok - {}", r.name);
+                    } else {
+                        println!("FAIL - {}: {}", r.name, r.message);
+                    }
+                }
+                println!(
+                    "Summary: {} passed, {} failed ({} total)",
+                    summary.passed, summary.failed, summary.total
+                );
+                if summary.failed > 0 {
+                    std::process::exit(1);
+                }
+            }
         }
     }
 
     Ok(())
+}
+
+fn run_target(dbschema_config: &DbschemaConfig, target: &TargetConfig) -> Result<()> {
+    println!("Running target: {}", target.name);
+
+    for (key, value) in &dbschema_config.settings.env {
+        std::env::set_var(key, value);
+    }
+
+    let input_path = target
+        .input
+        .as_deref()
+        .or(dbschema_config.settings.input.as_deref())
+        .unwrap_or("main.hcl");
+
+    let mut vars = HashMap::new();
+    for var_file in &dbschema_config.settings.var_files {
+        vars.extend(load_var_file(&PathBuf::from(var_file))?);
+    }
+    for var_file in &target.var_files {
+        vars.extend(load_var_file(&PathBuf::from(var_file))?);
+    }
+    for (key, value) in &target.vars {
+        vars.insert(key.clone(), toml_to_hcl(value)?);
+    }
+
+    let fs_loader = FsLoader;
+    let env = EnvVars { vars, ..EnvVars::default() };
+    let config = load_config(
+        &PathBuf::from(input_path),
+        &fs_loader,
+        env.clone(),
+    )
+    .with_context(|| format!("loading root HCL from {}", input_path))?;
+
+    let include_set = target.get_include_set();
+    let exclude_set = target.get_exclude_set();
+
+    let filtered = apply_filters(&config, &include_set, &exclude_set);
+
+    validate(&filtered)?;
+    let artifact = dbschema::generate_with_backend(&target.backend, &filtered, &env)?;
+
+    if let Some(output_path) = &target.output {
+        let path = Path::new(output_path);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(path, artifact)?;
+        println!("Wrote output to: {}", output_path);
+    } else {
+        print!("{}", artifact);
+    }
+
+    Ok(())
+}
+
+fn toml_to_hcl(value: &toml::Value) -> Result<hcl::Value> {
+    match value {
+        toml::Value::String(s) => Ok(hcl::Value::String(s.clone())),
+        toml::Value::Integer(i) => Ok(hcl::Value::Number(hcl::Number::from(*i))),
+        toml::Value::Float(f) => Ok(hcl::Value::Number(hcl::Number::from_f64(*f).ok_or_else(|| anyhow!("invalid float"))?)),
+        toml::Value::Boolean(b) => Ok(hcl::Value::Bool(*b)),
+        toml::Value::Array(arr) => {
+            let mut values = Vec::new();
+            for v in arr {
+                values.push(toml_to_hcl(v)?);
+            }
+            Ok(hcl::Value::Array(values))
+        }
+        toml::Value::Table(map) => {
+            let mut hcl_map = hcl::Map::new();
+            for (k, v) in map {
+                hcl_map.insert(k.clone(), toml_to_hcl(v)?);
+            }
+            Ok(hcl::Value::Object(hcl_map))
+        }
+        _ => Err(anyhow!("Unsupported toml value type")),
+    }
 }
 
 fn write_artifact(out_dir: &Path, name: &str, ext: &str, contents: &str) -> Result<PathBuf> {
@@ -147,30 +295,37 @@ fn write_artifact(out_dir: &Path, name: &str, ext: &str, contents: &str) -> Resu
 
 fn sanitize_filename(s: &str) -> String {
     s.chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '-' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '-'
+            }
+        })
         .collect()
 }
 
 fn load_var_file(path: &Path) -> Result<HashMap<String, hcl::Value>> {
     let content = fs::read_to_string(path)?;
     // Try HCL body, collect top-level attributes as strings
-    let body: hcl::Body = hcl::from_str(&content).or_else(|_| {
-        // Fallback: simple key = "value" lines parsing
-        let mut structs: Vec<hcl::Structure> = Vec::new();
-        for line in content.lines() {
-            let line = line.trim();
-            if line.is_empty() || line.starts_with('#') || line.starts_with("//") {
-                continue;
+    let body: hcl::Body = hcl::from_str(&content)
+        .or_else(|_| {
+            // Fallback: simple key = "value" lines parsing
+            let mut structs: Vec<hcl::Structure> = Vec::new();
+            for line in content.lines() {
+                let line = line.trim();
+                if line.is_empty() || line.starts_with('#') || line.starts_with("//") {
+                    continue;
+                }
+                if let Some((k, v)) = line.split_once('=') {
+                    let key = k.trim();
+                    let val = v.trim().trim_matches('"').to_string();
+                    structs.push(hcl::Structure::Attribute(hcl::Attribute::new(key, val)));
+                }
             }
-            if let Some((k, v)) = line.split_once('=') {
-                let key = k.trim();
-                let val = v.trim().trim_matches('"').to_string();
-                structs.push(hcl::Structure::Attribute(hcl::Attribute::new(key, val)));
-            }
-        }
-        Ok::<_, hcl::Error>(hcl::Body::from(structs))
-    })
-        .map_err(|e| anyhow::anyhow!("failed to parse var file as HCL: {e}"))?;
+            Ok::<_, hcl::Error>(hcl::Body::from(structs))
+        })
+        .map_err(|e| anyhow!("failed to parse var file as HCL: {}", e))?;
 
     let mut out = HashMap::new();
     for attr in body.attributes() {
@@ -189,13 +344,15 @@ where
     <K as std::str::FromStr>::Err: std::fmt::Display,
     <V as std::str::FromStr>::Err: std::fmt::Display,
 {
-    let pos = s.find('=').ok_or_else(|| anyhow::anyhow!("expected key=value"))?;
+    let pos = s
+        .find('=')
+        .ok_or_else(|| anyhow!("expected key=value"))?;
     let key = s[..pos]
         .parse()
-        .map_err(|e| anyhow::anyhow!("failed to parse key: {e}"))?;
+        .map_err(|e| anyhow!("failed to parse key: {}", e))?;
     let value = s[pos + 1..]
         .parse()
-        .map_err(|e| anyhow::anyhow!("failed to parse value: {e}"))?;
+        .map_err(|e| anyhow!("failed to parse value: {}", e))?;
     Ok((key, value))
 }
 
@@ -206,34 +363,206 @@ impl Loader for FsLoader {
     }
 }
 
-fn apply_filters(cfg: &dbschema::Config, backend: &str, include: &[ResourceKind], exclude: &[ResourceKind]) -> dbschema::Config {
+fn apply_cli_filters(
+    cfg: &dbschema::Config,
+    backend: &str,
+    include: &[ResourceKind],
+    exclude: &[ResourceKind],
+) -> dbschema::Config {
     use ResourceKind as R;
     let mut inc: std::collections::HashSet<R> = if include.is_empty() {
-        [R::Schemas, R::Enums, R::Tables, R::Views, R::Materialized, R::Functions, R::Triggers, R::Extensions, R::Policies, R::Tests]
-            .into_iter()
-            .collect()
+        [
+            R::Schemas,
+            R::Enums,
+            R::Tables,
+            R::Views,
+            R::Materialized,
+            R::Functions,
+            R::Triggers,
+            R::Extensions,
+            R::Policies,
+            R::Tests,
+        ]
+        .into_iter()
+        .collect()
     } else {
         include.iter().copied().collect()
     };
-    for r in exclude { inc.remove(r); }
+    for r in exclude {
+        inc.remove(r);
+    }
 
     // Prisma backend supports tables and enums only; enforce that regardless of flags unless explicitly excluded
     if backend.eq_ignore_ascii_case("prisma") {
         inc = [R::Enums, R::Tables].into_iter().collect();
-        if exclude.iter().any(|e| *e == R::Tables) { inc.retain(|r| *r != R::Tables); }
-        if exclude.iter().any(|e| *e == R::Enums) { inc.retain(|r| *r != R::Enums); }
+        if exclude.iter().any(|e| *e == R::Tables) {
+            inc.retain(|r| *r != R::Tables);
+        }
+        if exclude.iter().any(|e| *e == R::Enums) {
+            inc.retain(|r| *r != R::Enums);
+        }
     }
 
     dbschema::Config {
-        schemas: if inc.contains(&R::Schemas) { cfg.schemas.clone() } else { Vec::new() },
-        enums: if inc.contains(&R::Enums) { cfg.enums.clone() } else { Vec::new() },
-        tables: if inc.contains(&R::Tables) { cfg.tables.clone() } else { Vec::new() },
-        views: if inc.contains(&R::Views) { cfg.views.clone() } else { Vec::new() },
-        materialized: if inc.contains(&R::Materialized) { cfg.materialized.clone() } else { Vec::new() },
-        functions: if inc.contains(&R::Functions) { cfg.functions.clone() } else { Vec::new() },
-        triggers: if inc.contains(&R::Triggers) { cfg.triggers.clone() } else { Vec::new() },
-        extensions: if inc.contains(&R::Extensions) { cfg.extensions.clone() } else { Vec::new() },
-        policies: if inc.contains(&R::Policies) { cfg.policies.clone() } else { Vec::new() },
-        tests: if inc.contains(&R::Tests) { cfg.tests.clone() } else { Vec::new() },
+        schemas: if inc.contains(&R::Schemas) {
+            cfg.schemas.clone()
+        } else {
+            Vec::new()
+        },
+        enums: if inc.contains(&R::Enums) {
+            cfg.enums.clone()
+        } else {
+            Vec::new()
+        },
+        tables: if inc.contains(&R::Tables) {
+            cfg.tables.clone()
+        } else {
+            Vec::new()
+        },
+        views: if inc.contains(&R::Views) {
+            cfg.views.clone()
+        } else {
+            Vec::new()
+        },
+        materialized: if inc.contains(&R::Materialized) {
+            cfg.materialized.clone()
+        } else {
+            Vec::new()
+        },
+        functions: if inc.contains(&R::Functions) {
+            cfg.functions.clone()
+        } else {
+            Vec::new()
+        },
+        triggers: if inc.contains(&R::Triggers) {
+            cfg.triggers.clone()
+        } else {
+            Vec::new()
+        },
+        extensions: if inc.contains(&R::Extensions) {
+            cfg.extensions.clone()
+        } else {
+            Vec::new()
+        },
+        policies: if inc.contains(&R::Policies) {
+            cfg.policies.clone()
+        } else {
+            Vec::new()
+        },
+        tests: if inc.contains(&R::Tests) {
+            cfg.tests.clone()
+        } else {
+            Vec::new()
+        },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn test_run_target() -> Result<()> {
+        let dir = tempdir()?;
+        let dbschema_toml_path = dir.path().join("dbschema.toml");
+        let main_hcl_path = dir.path().join("main.hcl");
+        let another_hcl_path = dir.path().join("another.hcl");
+        let var_file_path = dir.path().join("vars.hcl");
+
+        let dbschema_toml = r#"
+[settings]
+input = "main.hcl"
+var_files = ["vars.hcl"]
+
+[[targets]]
+name = "json_all"
+backend = "json"
+output = "all.json"
+
+[[targets]]
+name = "json_tables"
+backend = "json"
+output = "tables.json"
+include = ["tables"]
+
+[[targets]]
+name = "another_input"
+backend = "json"
+input = "another.hcl"
+output = "another.json"
+include = ["functions"]
+
+[[targets]]
+name = "with_vars"
+backend = "json"
+output = "with_vars.json"
+vars = { test_var = "hello" }
+include = ["tables"]
+"#;
+        fs::write(&dbschema_toml_path, dbschema_toml)?;
+
+        let main_hcl = r#"
+variable "test_var" { default = "default" }
+table "users" {}
+function "my_func" {
+    returns = "trigger"
+    language = "plpgsql"
+    body = "BEGIN RETURN NEW; END;"
+}
+"#;
+        fs::write(&main_hcl_path, main_hcl)?;
+
+        let another_hcl = r#"
+function "another_func" {
+    returns = "trigger"
+    language = "plpgsql"
+    body = "BEGIN RETURN NEW; END;"
+}
+"#;
+        fs::write(&another_hcl_path, another_hcl)?;
+
+        let var_file = r#"
+test_var = "from_file"
+"#;
+        fs::write(&var_file_path, var_file)?;
+
+        let dbschema_config = config::load_config_from_path(&dbschema_toml_path)
+            .map_err(|e| anyhow::Error::msg(e.to_string()))
+            .with_context(|| "failed to load dbschema.toml")? 
+            .ok_or_else(|| anyhow!("dbschema.toml not found"))?;
+
+        std::env::set_current_dir(dir.path())?;
+
+        // Test target "json_all"
+        let target_all = dbschema_config.targets.iter().find(|t| t.name == "json_all").unwrap();
+        run_target(&dbschema_config, target_all)?;
+        let output_all = fs::read_to_string("all.json")?;
+        assert!(output_all.contains("users"));
+        assert!(output_all.contains("my_func"));
+
+        // Test target "json_tables"
+        let target_tables = dbschema_config.targets.iter().find(|t| t.name == "json_tables").unwrap();
+        run_target(&dbschema_config, target_tables)?;
+        let output_tables = fs::read_to_string("tables.json")?;
+        assert!(output_tables.contains("users"));
+        assert!(!output_tables.contains("my_func"));
+
+        // Test target "another_input"
+        let target_another = dbschema_config.targets.iter().find(|t| t.name == "another_input").unwrap();
+        run_target(&dbschema_config, target_another)?;
+        let output_another = fs::read_to_string("another.json")?;
+        assert!(output_another.contains("another_func"));
+        assert!(!output_another.contains("my_func"));
+
+        // Test target "with_vars"
+        let target_vars = dbschema_config.targets.iter().find(|t| t.name == "with_vars").unwrap();
+        run_target(&dbschema_config, target_vars)?;
+        let output_vars = fs::read_to_string("with_vars.json")?;
+        // The variable from the target should be used
+        assert!(output_vars.contains("hello"));
+
+        dir.close()?;
+        Ok(())
     }
 }

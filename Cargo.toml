@@ -11,6 +11,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 hcl = { package = "hcl-rs", version = "0.16" }
 regex = "1"
+toml = "0.8"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 sha2 = "0.10"
 base64 = "0.22"
@@ -18,6 +19,9 @@ md5 = "0.7"
 walkdir = "2"
 path-absolutize = "3"
 postgres = "0.19"
+
+[dev-dependencies]
+tempfile = "3"
 
 [profile.release]
 opt-level = 3

@@ -8,7 +8,7 @@ pub struct PrismaBackend;
 impl Backend for PrismaBackend {
     fn name(&self) -> &'static str { "prisma" }
     fn file_extension(&self) -> &'static str { "prisma" }
-    fn generate(&self, cfg: &Config) -> Result<String> {
+    fn generate(&self, cfg: &Config, _env: &crate::model::EnvVars) -> Result<String> {
         let mut out = String::new();
         // Output only enums and models; generator/datasource are managed externally.
 

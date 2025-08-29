@@ -8,7 +8,7 @@ pub struct PostgresBackend;
 impl Backend for PostgresBackend {
     fn name(&self) -> &'static str { "postgres" }
     fn file_extension(&self) -> &'static str { "sql" }
-    fn generate(&self, cfg: &Config) -> Result<String> {
+    fn generate(&self, cfg: &Config, _env: &crate::model::EnvVars) -> Result<String> {
         to_sql(cfg)
     }
 }

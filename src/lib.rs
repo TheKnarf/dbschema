@@ -1,6 +1,7 @@
 pub mod parser;
 pub mod eval;
 pub mod model;
+pub mod config;
 pub mod backends;
 pub mod test_runner;
 
@@ -10,6 +11,21 @@ use std::path::Path;
 
 // Public re-exports
 pub use model::{Config, EnvVars, ExtensionSpec, FunctionSpec, TriggerSpec, TableSpec, ViewSpec, MaterializedViewSpec, EnumSpec, SchemaSpec, PolicySpec};
+
+/// Resource kinds that can be filtered
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ResourceKind {
+    Schemas,
+    Enums,
+    Tables,
+    Views,
+    Materialized,
+    Functions,
+    Triggers,
+    Extensions,
+    Policies,
+    Tests,
+}
 
 // Loader abstraction: lets callers control how files are read.
 pub trait Loader {
@@ -43,15 +59,113 @@ pub fn validate(cfg: &Config) -> Result<()> {
     Ok(())
 }
 
+/// Apply filters to a configuration based on target settings
+pub fn apply_filters(
+    cfg: &Config,
+    include: &std::collections::HashSet<crate::config::ResourceKind>,
+    exclude: &std::collections::HashSet<crate::config::ResourceKind>,
+) -> Config {
+    use crate::config::ResourceKind as R;
+
+    Config {
+        functions: if include.contains(&R::Functions) && !exclude.contains(&R::Functions) {
+            cfg.functions.clone()
+        } else {
+            Vec::new()
+        },
+        triggers: if include.contains(&R::Triggers) && !exclude.contains(&R::Triggers) {
+            cfg.triggers.clone()
+        } else {
+            Vec::new()
+        },
+        extensions: if include.contains(&R::Extensions) && !exclude.contains(&R::Extensions) {
+            cfg.extensions.clone()
+        } else {
+            Vec::new()
+        },
+        schemas: if include.contains(&R::Schemas) && !exclude.contains(&R::Schemas) {
+            cfg.schemas.clone()
+        } else {
+            Vec::new()
+        },
+        enums: if include.contains(&R::Enums) && !exclude.contains(&R::Enums) {
+            cfg.enums.clone()
+        } else {
+            Vec::new()
+        },
+        tables: if include.contains(&R::Tables) && !exclude.contains(&R::Tables) {
+            cfg.tables.clone()
+        } else {
+            Vec::new()
+        },
+        views: if include.contains(&R::Views) && !exclude.contains(&R::Views) {
+            cfg.views.clone()
+        } else {
+            Vec::new()
+        },
+        materialized: if include.contains(&R::Materialized) && !exclude.contains(&R::Materialized) {
+            cfg.materialized.clone()
+        } else {
+            Vec::new()
+        },
+        policies: if include.contains(&R::Policies) && !exclude.contains(&R::Policies) {
+            cfg.policies.clone()
+        } else {
+            Vec::new()
+        },
+        tests: if include.contains(&R::Tests) && !exclude.contains(&R::Tests) {
+            cfg.tests.clone()
+        } else {
+            Vec::new()
+        },
+    }
+}
+
+/// Apply resource filters to a configuration (string-based for TOML config)
+pub fn apply_resource_filters(cfg: &Config, include: &[String], exclude: &[String]) -> Config {
+    use model::*;
+
+    // If no filters specified, include everything
+    let include_all = include.is_empty() && exclude.is_empty();
+
+    // Convert filter lists to sets for efficient lookup
+    let include_set: std::collections::HashSet<String> = include.iter().cloned().collect();
+    let exclude_set: std::collections::HashSet<String> = exclude.iter().cloned().collect();
+
+    // Helper function to check if a resource type should be included
+    let should_include = |resource_type: &str| -> bool {
+        if include_all {
+            true
+        } else if !include_set.is_empty() {
+            include_set.contains(resource_type)
+        } else {
+            !exclude_set.contains(resource_type)
+        }
+    };
+
+    Config {
+        functions: if should_include("functions") { cfg.functions.clone() } else { Vec::new() },
+        triggers: if should_include("triggers") { cfg.triggers.clone() } else { Vec::new() },
+        extensions: if should_include("extensions") { cfg.extensions.clone() } else { Vec::new() },
+        schemas: if should_include("schemas") { cfg.schemas.clone() } else { Vec::new() },
+        enums: if should_include("enums") { cfg.enums.clone() } else { Vec::new() },
+        tables: if should_include("tables") { cfg.tables.clone() } else { Vec::new() },
+        views: if should_include("views") { cfg.views.clone() } else { Vec::new() },
+        materialized: if should_include("materialized") { cfg.materialized.clone() } else { Vec::new() },
+        policies: if should_include("policies") { cfg.policies.clone() } else { Vec::new() },
+        tests: if should_include("tests") { cfg.tests.clone() } else { Vec::new() },
+    }
+}
+
 // Pure SQL generation wrapper - uses postgres backend by default
 pub fn generate_sql(cfg: &Config) -> Result<String> {
     backends::postgres::to_sql(cfg)
 }
 
-pub fn generate_with_backend(backend: &str, cfg: &Config) -> Result<String> {
+pub fn generate_with_backend(backend: &str, cfg: &Config, env: &EnvVars) -> Result<String> {
     let be = backends::get_backend(backend)
         .ok_or_else(|| anyhow::anyhow!(format!("unknown backend '{backend}'")))?;
-    be.generate(cfg)
+    be.generate(cfg, env)
 }
 
 #[cfg(test)]
@@ -234,7 +348,8 @@ mod tests {
         );
         let loader = MapLoader { files };
         let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
-        let json = crate::generate_with_backend("json", &cfg).unwrap();
+        let env = EnvVars::default();
+        let json = crate::generate_with_backend("json", &cfg, &env).unwrap();
         assert!(json.contains("\"backend\": \"json\""));
         assert!(json.contains("\"functions\""));
         assert!(json.contains("\"triggers\""));
@@ -259,7 +374,8 @@ mod tests {
         assert_eq!(cfg.views.len(), 1);
         let sql = generate_sql(&cfg).unwrap();
         assert!(sql.contains("CREATE OR REPLACE VIEW \"public\".\"v_users\" AS"));
-        let json = crate::generate_with_backend("json", &cfg).unwrap();
+        let env = EnvVars::default();
+        let json = crate::generate_with_backend("json", &cfg, &env).unwrap();
         assert!(json.contains("\"views\""));
     }
 
@@ -282,7 +398,8 @@ mod tests {
         let sql = generate_sql(&cfg).unwrap();
         assert!(sql.contains("CREATE MATERIALIZED VIEW \"public\".\"mv\" AS"));
         assert!(sql.contains("WITH NO DATA"));
-        let json = crate::generate_with_backend("json", &cfg).unwrap();
+        let env = EnvVars::default();
+        let json = crate::generate_with_backend("json", &cfg, &env).unwrap();
         assert!(json.contains("\"materialized\""));
     }
 
@@ -311,9 +428,11 @@ mod tests {
         assert_eq!(cfg.enums.len(), 1);
         let sql = generate_sql(&cfg).unwrap();
         assert!(sql.contains("CREATE TYPE \"public\".\"status\" AS ENUM"));
-        let json = crate::generate_with_backend("json", &cfg).unwrap();
+        let env = EnvVars::default();
+        let json = crate::generate_with_backend("json", &cfg, &env).unwrap();
         assert!(json.contains("\"enums\""));
-        let prisma = crate::generate_with_backend("prisma", &cfg).unwrap();
+        let env = EnvVars::default();
+        let prisma = crate::generate_with_backend("prisma", &cfg, &env).unwrap();
         assert!(prisma.contains("enum status"));
         assert!(prisma.contains("status status"));
     }
@@ -377,7 +496,8 @@ mod tests {
         assert_eq!(cfg.policies.len(), 1);
         let sql = generate_sql(&cfg).unwrap();
         assert!(sql.contains("CREATE POLICY \"p_users_select\" ON \"public\".\"users\""));
-        let json = crate::generate_with_backend("json", &cfg).unwrap();
+        let env = EnvVars::default();
+        let json = crate::generate_with_backend("json", &cfg, &env).unwrap();
         assert!(json.contains("\"policies\""));
         assert!(json.contains("\"p_users_select\""));
     }
