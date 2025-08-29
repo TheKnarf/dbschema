@@ -235,7 +235,7 @@ mod tests {
         let loader = MapLoader { files };
         let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
         let json = crate::generate_with_backend("json", &cfg).unwrap();
-        assert!(json.contains("\"backend\":\"json\""));
+        assert!(json.contains("\"backend\": \"json\""));
         assert!(json.contains("\"functions\""));
         assert!(json.contains("\"triggers\""));
         assert!(json.contains("\"extensions\""));
