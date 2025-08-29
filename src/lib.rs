@@ -1,5 +1,4 @@
 pub mod parser;
-pub mod sql;
 pub mod backends;
 pub mod test_runner;
 
@@ -42,9 +41,9 @@ pub fn validate(cfg: &Config) -> Result<()> {
     Ok(())
 }
 
-// Pure SQL generation wrapper
+// Pure SQL generation wrapper - uses postgres backend by default
 pub fn generate_sql(cfg: &Config) -> Result<String> {
-    sql::to_sql(cfg)
+    backends::postgres::to_sql(cfg)
 }
 
 pub fn generate_with_backend(backend: &str, cfg: &Config) -> Result<String> {
@@ -355,7 +354,10 @@ mod tests {
             r#"
             table "users" {
               schema = "public"
-              column "id" { type = "serial" nullable = false }
+              column "id" {
+                type = "serial"
+                nullable = false
+              }
               primary_key { columns = ["id"] }
             }
             policy "p_users_select" {
