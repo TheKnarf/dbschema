@@ -1,5 +1,7 @@
 use hcl::eval::{Context, FuncArgs, FuncDef, ParamType};
 use hcl::Value;
+use sha2::{Sha256, Sha512, Digest};
+use base64::{Engine as _, engine::general_purpose};
 
 /// Create a context with built-in functions
 pub fn create_context() -> Context<'static> {
@@ -25,6 +27,15 @@ pub fn create_context() -> Context<'static> {
     ctx.declare_func("coalesce", create_coalesce_func());
     ctx.declare_func("join", create_join_func());
     ctx.declare_func("split", create_split_func());
+
+    // Cryptographic functions
+    ctx.declare_func("md5", create_md5_func());
+    ctx.declare_func("sha256", create_sha256_func());
+    ctx.declare_func("sha512", create_sha512_func());
+
+    // Base64 functions
+    ctx.declare_func("base64encode", create_base64encode_func());
+    ctx.declare_func("base64decode", create_base64decode_func());
 
     ctx
 }
@@ -208,6 +219,69 @@ fn create_split_func() -> FuncDef {
         })
 }
 
+// Cryptographic functions
+fn create_md5_func() -> FuncDef {
+    FuncDef::builder()
+        .param(ParamType::String)
+        .build(|args: FuncArgs| {
+            let input = args[0].as_str().unwrap();
+            let digest = md5::compute(input.as_bytes());
+            Ok(Value::from(format!("{:x}", digest)))
+        })
+}
+
+fn create_sha256_func() -> FuncDef {
+    FuncDef::builder()
+        .param(ParamType::String)
+        .build(|args: FuncArgs| {
+            let input = args[0].as_str().unwrap();
+            let mut hasher = Sha256::new();
+            hasher.update(input.as_bytes());
+            let result = hasher.finalize();
+            Ok(Value::from(format!("{:x}", result)))
+        })
+}
+
+fn create_sha512_func() -> FuncDef {
+    FuncDef::builder()
+        .param(ParamType::String)
+        .build(|args: FuncArgs| {
+            let input = args[0].as_str().unwrap();
+            let mut hasher = Sha512::new();
+            hasher.update(input.as_bytes());
+            let result = hasher.finalize();
+            Ok(Value::from(format!("{:x}", result)))
+        })
+}
+
+// Base64 functions
+fn create_base64encode_func() -> FuncDef {
+    FuncDef::builder()
+        .param(ParamType::String)
+        .build(|args: FuncArgs| {
+            let input = args[0].as_str().unwrap();
+            let encoded = general_purpose::STANDARD.encode(input.as_bytes());
+            Ok(Value::from(encoded))
+        })
+}
+
+fn create_base64decode_func() -> FuncDef {
+    FuncDef::builder()
+        .param(ParamType::String)
+        .build(|args: FuncArgs| {
+            let input = args[0].as_str().unwrap();
+            match general_purpose::STANDARD.decode(input) {
+                Ok(decoded_bytes) => {
+                    match String::from_utf8(decoded_bytes) {
+                        Ok(decoded_string) => Ok(Value::from(decoded_string)),
+                        Err(_) => Err("Invalid UTF-8 in decoded data".to_string()),
+                    }
+                }
+                Err(_) => Err("Invalid base64 string".to_string()),
+            }
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -307,5 +381,70 @@ mod tests {
         let body: hcl::Body = hcl::from_str(&format!("test = {}", expr_str)).unwrap();
         let expr = body.attributes().find(|a| a.key() == "test").unwrap().expr();
         assert_eq!(expr.evaluate(&ctx).unwrap(), Value::from("default"));
+    }
+
+    #[test]
+    fn test_md5_function() {
+        let ctx = create_context();
+        let expr_str = "md5(\"hello world\")";
+        let body: hcl::Body = hcl::from_str(&format!("test = {}", expr_str)).unwrap();
+        let expr = body.attributes().find(|a| a.key() == "test").unwrap().expr();
+        let result = expr.evaluate(&ctx).unwrap();
+        // MD5 of "hello world" is "5eb63bbbe01eeed093cb22bb8f5acdc3"
+        assert_eq!(result, Value::from("5eb63bbbe01eeed093cb22bb8f5acdc3"));
+    }
+
+    #[test]
+    fn test_sha256_function() {
+        let ctx = create_context();
+        let expr_str = "sha256(\"hello world\")";
+        let body: hcl::Body = hcl::from_str(&format!("test = {}", expr_str)).unwrap();
+        let expr = body.attributes().find(|a| a.key() == "test").unwrap().expr();
+        let result = expr.evaluate(&ctx).unwrap();
+        // SHA256 of "hello world" is "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"
+        assert_eq!(result, Value::from("b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"));
+    }
+
+    #[test]
+    fn test_sha512_function() {
+        let ctx = create_context();
+        let expr_str = "sha512(\"hello world\")";
+        let body: hcl::Body = hcl::from_str(&format!("test = {}", expr_str)).unwrap();
+        let expr = body.attributes().find(|a| a.key() == "test").unwrap().expr();
+        let result = expr.evaluate(&ctx).unwrap();
+        // SHA512 of "hello world" is "309ecc489c12d6eb4cc40f50c902f2b4d0ed77ee511a7c7a9bcd3ca86d4cd86f989dd35bc5ff499670da34255b45b0cfd830e81f605dcf7dc5542e93ae9cd76f"
+        assert_eq!(result, Value::from("309ecc489c12d6eb4cc40f50c902f2b4d0ed77ee511a7c7a9bcd3ca86d4cd86f989dd35bc5ff499670da34255b45b0cfd830e81f605dcf7dc5542e93ae9cd76f"));
+    }
+
+    #[test]
+    fn test_base64encode_function() {
+        let ctx = create_context();
+        let expr_str = "base64encode(\"hello world\")";
+        let body: hcl::Body = hcl::from_str(&format!("test = {}", expr_str)).unwrap();
+        let expr = body.attributes().find(|a| a.key() == "test").unwrap().expr();
+        let result = expr.evaluate(&ctx).unwrap();
+        // Base64 of "hello world" is "aGVsbG8gd29ybGQ="
+        assert_eq!(result, Value::from("aGVsbG8gd29ybGQ="));
+    }
+
+    #[test]
+    fn test_base64decode_function() {
+        let ctx = create_context();
+        let expr_str = "base64decode(\"aGVsbG8gd29ybGQ=\")";
+        let body: hcl::Body = hcl::from_str(&format!("test = {}", expr_str)).unwrap();
+        let expr = body.attributes().find(|a| a.key() == "test").unwrap().expr();
+        let result = expr.evaluate(&ctx).unwrap();
+        assert_eq!(result, Value::from("hello world"));
+    }
+
+    #[test]
+    fn test_base64decode_invalid() {
+        let ctx = create_context();
+        let expr_str = "base64decode(\"invalid-base64!\")";
+        let body: hcl::Body = hcl::from_str(&format!("test = {}", expr_str)).unwrap();
+        let expr = body.attributes().find(|a| a.key() == "test").unwrap().expr();
+        let result = expr.evaluate(&ctx);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Invalid base64"));
     }
 }

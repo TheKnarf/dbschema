@@ -13,6 +13,8 @@ hcl = { package = "hcl-rs", version = "0.16" }
 regex = "1"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 sha2 = "0.10"
+base64 = "0.22"
+md5 = "0.7"
 walkdir = "2"
 path-absolutize = "3"
 postgres = "0.19"
