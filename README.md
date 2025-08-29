@@ -1,27 +1,41 @@
-# dbschema (HCL → Postgres functions & triggers)
+# dbschema
 
-A tiny Rust CLI to define Postgres trigger functions and triggers in a small HCL dialect and generate idempotent SQL migrations. Designed to complement Prisma (or any tool) when you just want declarative triggers without a paid feature.
+A Rust CLI to define database schema's in a small HCL dialect, and generate idempotent SQL migrations.
+It aims to support all PostgreSQL features (like extensions, functions, triggers, etc).
 
-Status: early MVP. No network needed to read files; building requires Rust + crates.
+
+Designed to complement Prisma (or any tool) when you want to declaratively define features that the ORM might not support out of the box (ex. postgres triggers).
+Prisma ORM support custom migrations, so you can use this tool to generate an SQL migration to add together with the other Prisma migrations.
 
 ## Features
 
-- HCL blocks: `variable`, `locals`, `schema`, `enum`, `table`, `view`, `materialized`, `function`, `trigger`, `extension`, `policy`, `module`, `test`.
+- HCL blocks:
+   - `variable`
+   - `locals`
+   - `schema`
+   - `enum`
+   - `table`
+   - `view`
+   - `materialized`
+   - `function`
+   - `trigger`
+   - `extension`
+   - `policy`
+   - `module`
+   - `test`
+
 - Variables via `--var key=value` and `--var-file`.
-- Modules (path-only): `module "name" { source = "./path" ... }`.
-- Postgres `extension` blocks with options (schema, version, if_not_exists).
+- Modules: `module "name" { source = "./path" ... }`.
 - Validate config, then generate SQL with safe `CREATE OR REPLACE FUNCTION` and idempotent guards for triggers/enums/materialized views.
-
-## Non-goals (for now)
-
-- Full HCL expression language. Supported expressions: strings, numbers/bools (to-string), arrays of strings, traversals `var.*` and `local.*`, and string templates `${...}`. No arithmetic or conditionals yet.
-- Module outputs/`module.*` references. Pass everything via inputs.
-- Migration “down” scripts.
 
 ## Install
 
 - Ensure Rust toolchain is installed.
-- Build: `cargo build --release` (requires network to fetch crates on first build).
+- Build:
+
+```bash
+cargo build --release
+```
 
 ## Usage
 
@@ -31,6 +45,15 @@ Status: early MVP. No network needed to read files; building requires Rust + cra
 - Variables: `--var schema=public` or `--var-file .env.hcl`
 
 ## HCL Schema
+
+```hcl
+variable "<name>" {
+  default = "value"
+}
+
+locals {
+  some = "${var.name}-suffix"
+}
 
 function "<name>" {
   schema   = "public"         # optional, default "public"
@@ -123,21 +146,16 @@ extension "<name>" {
   version       = "1.1"    # optional
 }
 
-variable "<name>" { default = "value" }
-
-locals { some = "${var.name}-suffix" }
-
 module "<name>" {
   source = "./modules/timestamps"  # directory containing main.hcl
   schema = var.schema
   table  = "orders"
 }
+```
 
 ## Examples
 
 See `examples/main.hcl` and `examples/modules/timestamps/main.hcl`.
-
-The root example now includes a `table` resource for `users`, a `view` (`active_users`), a function, and a trigger.
 
 ## Notes
 
@@ -168,6 +186,7 @@ The root example now includes a `table` resource for `users`, a `view` (`active_
   - Objects: `each.key` is the object key (string), `each.value` is the value.
 - Example:
 
+```hcl
 variable "tables" { default = ["users", "orders"] }
 
 trigger "upd" {
@@ -179,11 +198,22 @@ trigger "upd" {
   level    = "ROW"
   function = "set_updated_at"
 }
-- Apply order: run your normal migrations first (e.g., Prisma), then this tool’s migration to ensure tables exist.
+```
 
 ## Roadmap
 
+### Planned feature
+
+- Full HCL expression language.
+    - Supported expressions:
+       - strings
+       - numbers/bools (to-string)
+       - arrays of strings
+       - traversals `var.*` and `local.*`
+       - and string templates `${...}`.
 - Module outputs and references (`module.foo.*`).
-- Better expression support (concat, conditionals, maps).
-- Optional `drop` generation for cleanup.
+
+### Non-goals (for now)
+
+- Migration “down” scripts.
 - Lints: existence of referenced tables/columns by inspecting a live DB (opt-in).
