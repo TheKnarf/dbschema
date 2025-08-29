@@ -27,8 +27,9 @@ impl Backend for PrismaBackend {
 }
 
 fn render_model(t: &TableSpec, enums: &[EnumSpec]) -> String {
+    let name = t.alt_name.as_deref().unwrap_or(&t.name);
     let mut s = String::new();
-    let model_name = to_model_name(&t.name);
+    let model_name = to_model_name(name);
     s.push_str(&format!("model {} {{\n", model_name));
 
     // columns → fields
@@ -62,8 +63,8 @@ fn render_model(t: &TableSpec, enums: &[EnumSpec]) -> String {
     }
 
     // Map model to table name if model name differs
-    if model_name != t.name {
-        s.push_str(&format!("  @@map(\"{}\")\n", t.name));
+    if model_name != name {
+        s.push_str(&format!("  @@map(\"{}\")\n", name));
     }
 
     s.push_str("}\n");
@@ -71,12 +72,13 @@ fn render_model(t: &TableSpec, enums: &[EnumSpec]) -> String {
 }
 
 fn render_field(c: &ColumnSpec, t: &TableSpec, enums: &[EnumSpec]) -> String {
+    let _table_name = t.alt_name.as_deref().unwrap_or(&t.name);
     let mut parts: Vec<String> = Vec::new();
     // name
     parts.push(c.name.clone());
     // type + nullability
     let (ptype, db_attr) = match find_enum_for_type(enums, &c.r#type, t.schema.as_deref()) {
-        Some(e) => (e.name.clone(), None),
+        Some(e) => (e.alt_name.as_deref().unwrap_or(&e.name).to_string(), None),
         None => prisma_type(&c.r#type, c.db_type.as_deref()),
     };
     let type_with_null = if c.nullable { format!("{}?", ptype) } else { ptype };
@@ -137,9 +139,10 @@ fn render_field(c: &ColumnSpec, t: &TableSpec, enums: &[EnumSpec]) -> String {
 }
 
 fn render_enum(e: &EnumSpec) -> String {
+    let name = e.alt_name.as_deref().unwrap_or(&e.name);
     // Keep enum name as DB name to avoid relying on @@map on enums.
     let mut s = String::new();
-    s.push_str(&format!("enum {} {{\n", e.name));
+    s.push_str(&format!("enum {} {{\n", name));
     for v in &e.values {
         let (ident, map) = prisma_enum_variant(v);
         if let Some(mapattr) = map {
@@ -151,6 +154,7 @@ fn render_enum(e: &EnumSpec) -> String {
     s.push_str("}\n");
     s
 }
+
 
 fn prisma_enum_variant(db_value: &str) -> (String, Option<String>) {
     // Prisma enum value must match [A-Za-z_][A-Za-z0-9_]*

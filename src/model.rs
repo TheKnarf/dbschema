@@ -18,6 +18,7 @@ pub struct Config {
 #[derive(Debug, Clone, Serialize)]
 pub struct FunctionSpec {
     pub name: String,
+    pub alt_name: Option<String>,
     pub schema: Option<String>,
     pub language: String,
     pub returns: String,
@@ -29,6 +30,7 @@ pub struct FunctionSpec {
 #[derive(Debug, Clone, Serialize)]
 pub struct TriggerSpec {
     pub name: String,
+    pub alt_name: Option<String>,
     pub schema: Option<String>,
     pub table: String,
     pub timing: String,         // BEFORE | AFTER
@@ -42,6 +44,7 @@ pub struct TriggerSpec {
 #[derive(Debug, Clone, Serialize)]
 pub struct ExtensionSpec {
     pub name: String,
+    pub alt_name: Option<String>,
     pub if_not_exists: bool,
     pub schema: Option<String>,
     pub version: Option<String>,
@@ -50,6 +53,7 @@ pub struct ExtensionSpec {
 #[derive(Debug, Clone, Serialize)]
 pub struct SchemaSpec {
     pub name: String,
+    pub alt_name: Option<String>,
     pub if_not_exists: bool,
     pub authorization: Option<String>,
 }
@@ -57,6 +61,7 @@ pub struct SchemaSpec {
 #[derive(Debug, Clone, Serialize)]
 pub struct EnumSpec {
     pub name: String,
+    pub alt_name: Option<String>,
     pub schema: Option<String>,
     pub values: Vec<String>,
 }
@@ -64,6 +69,7 @@ pub struct EnumSpec {
 #[derive(Debug, Clone, Serialize)]
 pub struct ViewSpec {
     pub name: String,
+    pub alt_name: Option<String>,
     pub schema: Option<String>,
     pub replace: bool, // OR REPLACE
     pub sql: String,   // SELECT ... body
@@ -72,6 +78,7 @@ pub struct ViewSpec {
 #[derive(Debug, Clone, Serialize)]
 pub struct MaterializedViewSpec {
     pub name: String,
+    pub alt_name: Option<String>,
     pub schema: Option<String>,
     pub with_data: bool, // WITH [NO] DATA
     pub sql: String,     // SELECT ... body
@@ -80,6 +87,7 @@ pub struct MaterializedViewSpec {
 #[derive(Debug, Clone, Serialize)]
 pub struct PolicySpec {
     pub name: String,
+    pub alt_name: Option<String>,
     pub schema: Option<String>,
     pub table: String,
     pub command: String,           // ALL | SELECT | INSERT | UPDATE | DELETE
@@ -92,6 +100,7 @@ pub struct PolicySpec {
 #[derive(Debug, Clone, Serialize)]
 pub struct TableSpec {
     pub name: String,
+    pub alt_name: Option<String>,
     pub schema: Option<String>,
     pub if_not_exists: bool,
     pub columns: Vec<ColumnSpec>,

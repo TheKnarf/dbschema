@@ -497,14 +497,22 @@ include = ["functions"]
 name = "with_vars"
 backend = "json"
 output = "with_vars.json"
-vars = { test_var = "hello" }
+vars = { table_name = "my_users_table" }
+include = ["tables"]
+
+[[targets]]
+name = "with_alt_name"
+backend = "json"
+output = "with_alt_name.json"
 include = ["tables"]
 "#;
         fs::write(&dbschema_toml_path, dbschema_toml)?;
 
         let main_hcl = r#"
-variable "test_var" { default = "default" }
-table "users" {}
+variable "table_name" { default = "users" }
+table "users" {
+    name = var.table_name
+}
 function "my_func" {
     returns = "trigger"
     language = "plpgsql"
@@ -523,7 +531,7 @@ function "another_func" {
         fs::write(&another_hcl_path, another_hcl)?;
 
         let var_file = r#"
-test_var = "from_file"
+table_name = "from_file"
 "#;
         fs::write(&var_file_path, var_file)?;
 
@@ -560,7 +568,13 @@ test_var = "from_file"
         run_target(&dbschema_config, target_vars)?;
         let output_vars = fs::read_to_string("with_vars.json")?;
         // The variable from the target should be used
-        assert!(output_vars.contains("hello"));
+        assert!(output_vars.contains("my_users_table"));
+
+        // Test target "with_alt_name"
+        let target_alt_name = dbschema_config.targets.iter().find(|t| t.name == "with_alt_name").unwrap();
+        run_target(&dbschema_config, target_alt_name)?;
+        let output_alt_name = fs::read_to_string("with_alt_name.json")?;
+        assert!(output_alt_name.contains("from_file"));
 
         dir.close()?;
         Ok(())

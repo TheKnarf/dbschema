@@ -3,6 +3,16 @@ use anyhow::Result;
 use crate::model::{Config, ExtensionSpec, FunctionSpec, TriggerSpec, TableSpec, IndexSpec, ForeignKeySpec, ViewSpec, MaterializedViewSpec, EnumSpec, SchemaSpec, PolicySpec};
 use super::Backend;
 
+fn ident(s: &str) -> String {
+    let escaped = s.replace('"', "\"");
+    format!("\"{}\"", escaped)
+}
+
+fn literal(s: &str) -> String {
+    let escaped = s.replace("'", "''");
+    format!("'{}'", escaped)
+}
+
 pub struct PostgresBackend;
 
 impl Backend for PostgresBackend {
@@ -77,11 +87,12 @@ pub fn to_sql(cfg: &Config) -> Result<String> {
 }
 
 fn render_extension(e: &ExtensionSpec) -> String {
+    let name = e.alt_name.as_deref().unwrap_or(&e.name);
     let mut s = String::from("CREATE EXTENSION ");
     if e.if_not_exists {
         s.push_str("IF NOT EXISTS ");
     }
-    s.push_str(&ident(&e.name));
+    s.push_str(&ident(name));
     let mut with_parts = Vec::new();
     if let Some(schema) = &e.schema {
         with_parts.push(format!("SCHEMA {}", ident(schema)));
@@ -99,9 +110,10 @@ fn render_extension(e: &ExtensionSpec) -> String {
 }
 
 fn render_schema(s: &SchemaSpec) -> String {
+    let name = s.alt_name.as_deref().unwrap_or(&s.name);
     let mut stmt = String::from("CREATE ");
     if s.if_not_exists { stmt.push_str("SCHEMA IF NOT EXISTS "); } else { stmt.push_str("SCHEMA "); }
-    stmt.push_str(&ident(&s.name));
+    stmt.push_str(&ident(name));
     if let Some(auth) = &s.authorization {
         stmt.push_str(" AUTHORIZATION ");
         stmt.push_str(&ident(auth));
@@ -111,6 +123,7 @@ fn render_schema(s: &SchemaSpec) -> String {
 }
 
 fn render_enum(e: &EnumSpec) -> String {
+    let name = e.alt_name.as_deref().unwrap_or(&e.name);
     let schema = e.schema.as_deref().unwrap_or("public");
     let values = e
         .values
@@ -121,22 +134,23 @@ fn render_enum(e: &EnumSpec) -> String {
     format!(
         "DO $$\nBEGIN\n  IF NOT EXISTS (\n    SELECT 1 FROM pg_type t\n    JOIN pg_namespace n ON n.oid = t.typnamespace\n    WHERE t.typname = {name_lit}\n      AND n.nspname = {schema_lit}\n  ) THEN\n    CREATE TYPE {schema_ident}.{name_ident} AS ENUM ({values});\n  END IF;\nEND$$;",
         schema_lit = literal(schema),
-        name_lit = literal(&e.name),
+        name_lit = literal(name),
         schema_ident = ident(schema),
-        name_ident = ident(&e.name),
+        name_ident = ident(name),
         values = values,
     )
 }
 
 fn render_function(f: &FunctionSpec) -> String {
+    let name = f.alt_name.as_deref().unwrap_or(&f.name);
     let schema = f.schema.as_deref().unwrap_or("public");
     let definer = if f.security_definer { " SECURITY DEFINER" } else { "" };
     let or_replace = if f.replace { "OR REPLACE " } else { "" };
     let lang = f.language.to_lowercase();
     format!(
-        "CREATE {or_replace}FUNCTION {schema}.{name}() RETURNS {returns} LANGUAGE {lang}{definer} AS $$\n{body}\n$$;",
+        "CREATE {or_replace}FUNCTION {schema}.{name}() RETURNS {returns} LANGUAGE {lang}{definer} AS $$\\n{body}\\n$$;",
         schema = ident(schema),
-        name = ident(&f.name),
+        name = ident(name),
         returns = f.returns,
         lang = lang,
         definer = definer,
@@ -145,32 +159,35 @@ fn render_function(f: &FunctionSpec) -> String {
 }
 
 fn render_view(v: &ViewSpec) -> String {
+    let name = v.alt_name.as_deref().unwrap_or(&v.name);
     let schema = v.schema.as_deref().unwrap_or("public");
     let or_replace = if v.replace { "OR REPLACE " } else { "" };
     format!(
-        "CREATE {or_replace}VIEW {schema}.{name} AS\n{body};",
+        "CREATE {or_replace}VIEW {schema}.{name} AS\\n{body};",
         or_replace = or_replace,
         schema = ident(schema),
-        name = ident(&v.name),
+        name = ident(name),
         body = v.sql
     )
 }
 
 fn render_materialized(mv: &MaterializedViewSpec) -> String {
+    let name = mv.alt_name.as_deref().unwrap_or(&mv.name);
     let schema = mv.schema.as_deref().unwrap_or("public");
     let with = if mv.with_data { "WITH DATA" } else { "WITH NO DATA" };
     format!(
-        "DO $$\nBEGIN\n  IF NOT EXISTS (\n    SELECT 1 FROM pg_matviews WHERE schemaname = {schema_lit} AND matviewname = {name_lit}\n  ) THEN\n    CREATE MATERIALIZED VIEW {schema_ident}.{name_ident} AS\n{body}\n    {with};\n  END IF;\nEND$$;",
+        "DO $$\nBEGIN\n  IF NOT EXISTS (\n    SELECT 1 FROM pg_matviews WHERE schemaname = {schema_lit} AND matviewname = {name_lit}\n  ) THEN\n    CREATE MATERIALIZED VIEW {schema_ident}.{name_ident} AS\\n{body}\\n    {with};\n  END IF;\nEND$$;",
         schema_lit = literal(schema),
-        name_lit = literal(&mv.name),
+        name_lit = literal(name),
         schema_ident = ident(schema),
-        name_ident = ident(&mv.name),
+        name_ident = ident(name),
         body = mv.sql,
         with = with,
     )
 }
 
 fn render_table(t: &TableSpec) -> String {
+    let name = t.alt_name.as_deref().unwrap_or(&t.name);
     let schema = t.schema.as_deref().unwrap_or("public");
     let mut lines: Vec<String> = Vec::new();
     for c in &t.columns {
@@ -196,10 +213,10 @@ fn render_table(t: &TableSpec) -> String {
         .join(",\n");
     let ine = if t.if_not_exists { " IF NOT EXISTS" } else { "" };
     format!(
-        "CREATE TABLE{ine} {schema}.{name} (\n{body}\n);",
+        "CREATE TABLE{ine} {schema}.{name} (\\n{body}\\n);",
         ine = ine,
         schema = ident(schema),
-        name = ident(&t.name),
+        name = ident(name),
         body = body,
     )
 }
@@ -223,6 +240,7 @@ fn render_fk_inline(fk: &ForeignKeySpec) -> String {
 }
 
 fn render_index(t: &TableSpec, idx: &IndexSpec) -> String {
+    let table_name = t.alt_name.as_deref().unwrap_or(&t.name);
     let schema = t.schema.as_deref().unwrap_or("public");
     let cols = idx.columns.iter().map(|c| ident(c)).collect::<Vec<_>>().join(", ");
     let unique = if idx.unique { "UNIQUE " } else { "" };
@@ -230,7 +248,7 @@ fn render_index(t: &TableSpec, idx: &IndexSpec) -> String {
         Some(n) => ident(n),
         None => {
             // derive name: <table>_<col1>_<col2>_idx/uniq
-            let mut n = format!("{}_{}_{}", t.name, idx.columns.join("_"), if idx.unique { "uniq" } else { "idx" });
+            let mut n = format!("{}_{}_{}", table_name, idx.columns.join("_"), if idx.unique { "uniq" } else { "idx" });
             n = n.replace('.', "_");
             ident(&n)
         }
@@ -240,12 +258,13 @@ fn render_index(t: &TableSpec, idx: &IndexSpec) -> String {
         unique = unique,
         name = name,
         schema = ident(schema),
-        table = ident(&t.name),
+        table = ident(table_name),
         cols = cols,
     )
 }
 
 fn render_trigger(t: &TriggerSpec) -> String {
+    let name = t.alt_name.as_deref().unwrap_or(&t.name);
     let schema = t.schema.as_deref().unwrap_or("public");
     let fn_schema = t.function_schema.as_deref().unwrap_or(schema);
     let timing = t.timing.to_uppercase();
@@ -259,15 +278,15 @@ fn render_trigger(t: &TriggerSpec) -> String {
     let when = t
         .when
         .as_ref()
-        .map(|w| format!("\n    WHEN ({w})"))
+        .map(|w| format!("\n    WHEN ({})", w))
         .unwrap_or_default();
 
     format!(
         "DO $$\nBEGIN\n  IF NOT EXISTS (\n    SELECT 1 FROM pg_trigger tg\n    JOIN pg_class c ON c.oid = tg.tgrelid\n    JOIN pg_namespace n ON n.oid = c.relnamespace\n    WHERE tg.tgname = {tgname}\n      AND n.nspname = {schema_lit}\n      AND c.relname = {table_lit}\n  ) THEN\n    CREATE TRIGGER {tg}\n    {timing} {events} ON {schema_ident}.{table_ident}\n    FOR EACH {for_each}{when}\n    EXECUTE FUNCTION {fn_schema_ident}.{fn_name}();\n  END IF;\nEND$$;",
-        tgname = literal(&t.name),
+        tgname = literal(name),
         schema_lit = literal(schema),
         table_lit = literal(&t.table),
-        tg = ident(&t.name),
+        tg = ident(name),
         timing = timing,
         events = events,
         for_each = for_each,
@@ -280,6 +299,7 @@ fn render_trigger(t: &TriggerSpec) -> String {
 }
 
 fn render_policy(p: &PolicySpec) -> String {
+    let name = p.alt_name.as_deref().unwrap_or(&p.name);
     let schema = p.schema.as_deref().unwrap_or("public");
     let cmd = p.command.to_uppercase();
     let as_clause = match p.r#as.as_ref().map(|s| s.to_uppercase()) {
@@ -304,10 +324,10 @@ fn render_policy(p: &PolicySpec) -> String {
 
     format!(
         "DO $$\nBEGIN\n  IF NOT EXISTS (\n    SELECT 1 FROM pg_policies\n    WHERE policyname = {pname}\n      AND schemaname = {schema_lit}\n      AND tablename = {table_lit}\n  ) THEN\n    CREATE POLICY {pname_ident} ON {schema_ident}.{table_ident}{as_clause}{for_clause}{to_clause}{using}{check};\n  END IF;\nEND$$;",
-        pname = literal(&p.name),
+        pname = literal(name),
         schema_lit = literal(schema),
         table_lit = literal(&p.table),
-        pname_ident = ident(&p.name),
+        pname_ident = ident(name),
         schema_ident = ident(schema),
         table_ident = ident(&p.table),
         as_clause = as_clause,
@@ -316,14 +336,4 @@ fn render_policy(p: &PolicySpec) -> String {
         using = using_clause,
         check = check_clause,
     )
-}
-
-fn ident(s: &str) -> String {
-    let escaped = s.replace('"', "\"");
-    format!("\"{}\"", escaped)
-}
-
-fn literal(s: &str) -> String {
-    let escaped = s.replace("'", "''");
-    format!("'{}'", escaped)
 }

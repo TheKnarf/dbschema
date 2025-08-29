@@ -10,9 +10,10 @@ impl ForEachSupport for crate::model::SchemaSpec {
     type Item = Self;
 
     fn parse_one(name: &str, body: &Body, env: &EnvVars) -> Result<Self::Item> {
+        let alt_name = get_attr_string(body, "name", env)?;
         let if_not_exists = get_attr_bool(body, "if_not_exists", env)?.unwrap_or(true);
         let authorization = get_attr_string(body, "authorization", env)?;
-        Ok(SchemaSpec { name: name.to_string(), if_not_exists, authorization })
+        Ok(SchemaSpec { name: name.to_string(), alt_name, if_not_exists, authorization })
     }
 
     fn add_to_config(item: Self::Item, config: &mut Config) {
@@ -25,6 +26,7 @@ impl ForEachSupport for crate::model::TableSpec {
     type Item = Self;
 
     fn parse_one(name: &str, body: &Body, env: &EnvVars) -> Result<Self::Item> {
+        let alt_name = get_attr_string(body, "name", env)?;
         let schema = get_attr_string(body, "schema", env)?;
         let if_not_exists = get_attr_bool(body, "if_not_exists", env)?.unwrap_or(true);
 
@@ -109,7 +111,7 @@ impl ForEachSupport for crate::model::TableSpec {
             fks.push(ForeignKeySpec { name, columns, ref_schema, ref_table, ref_columns, on_delete, on_update });
         }
 
-        Ok(TableSpec { name: name.to_string(), schema, if_not_exists, columns, primary_key, indexes, foreign_keys: fks })
+        Ok(TableSpec { name: name.to_string(), alt_name, schema, if_not_exists, columns, primary_key, indexes, foreign_keys: fks })
     }
 
     fn add_to_config(item: Self::Item, config: &mut Config) {
@@ -122,10 +124,11 @@ impl ForEachSupport for crate::model::ViewSpec {
     type Item = Self;
 
     fn parse_one(name: &str, body: &Body, env: &EnvVars) -> Result<Self::Item> {
+        let alt_name = get_attr_string(body, "name", env)?;
         let schema = get_attr_string(body, "schema", env)?;
         let replace = get_attr_bool(body, "replace", env)?.unwrap_or(true);
         let sql = get_attr_string(body, "sql", env)?.context("view 'sql' is required")?;
-        Ok(ViewSpec { name: name.to_string(), schema, replace, sql })
+        Ok(ViewSpec { name: name.to_string(), alt_name, schema, replace, sql })
     }
 
     fn add_to_config(item: Self::Item, config: &mut Config) {
@@ -138,10 +141,11 @@ impl ForEachSupport for crate::model::MaterializedViewSpec {
     type Item = Self;
 
     fn parse_one(name: &str, body: &Body, env: &EnvVars) -> Result<Self::Item> {
+        let alt_name = get_attr_string(body, "name", env)?;
         let schema = get_attr_string(body, "schema", env)?;
         let with_data = get_attr_bool(body, "with_data", env)?.unwrap_or(true);
         let sql = get_attr_string(body, "sql", env)?.context("materialized 'sql' is required")?;
-        Ok(MaterializedViewSpec { name: name.to_string(), schema, with_data, sql })
+        Ok(MaterializedViewSpec { name: name.to_string(), alt_name, schema, with_data, sql })
     }
 
     fn add_to_config(item: Self::Item, config: &mut Config) {
@@ -154,6 +158,7 @@ impl ForEachSupport for crate::model::PolicySpec {
     type Item = Self;
 
     fn parse_one(name: &str, body: &Body, env: &EnvVars) -> Result<Self::Item> {
+        let alt_name = get_attr_string(body, "name", env)?;
         let schema = get_attr_string(body, "schema", env)?;
         let table = get_attr_string(body, "table", env)?.context("policy 'table' is required")?;
         let command = get_attr_string(body, "command", env)?.unwrap_or_else(|| "ALL".to_string());
@@ -164,7 +169,7 @@ impl ForEachSupport for crate::model::PolicySpec {
         };
         let using = get_attr_string(body, "using", env)?;
         let check = get_attr_string(body, "check", env)?;
-        Ok(PolicySpec { name: name.to_string(), schema, table, command, r#as: as_kind, roles, using, check })
+        Ok(PolicySpec { name: name.to_string(), alt_name, schema, table, command, r#as: as_kind, roles, using, check })
     }
 
     fn add_to_config(item: Self::Item, config: &mut Config) {
@@ -177,6 +182,7 @@ impl ForEachSupport for crate::model::FunctionSpec {
     type Item = Self;
 
     fn parse_one(name: &str, body: &Body, env: &EnvVars) -> Result<Self::Item> {
+        let alt_name = get_attr_string(body, "name", env)?;
         let language = get_attr_string(body, "language", env)?.unwrap_or_else(|| "plpgsql".to_string());
         let body_sql = get_attr_string(body, "body", env)?.context("function 'body' is required")?;
         let returns = get_attr_string(body, "returns", env)?.unwrap_or_else(|| "trigger".to_string());
@@ -185,6 +191,7 @@ impl ForEachSupport for crate::model::FunctionSpec {
         let security_definer = get_attr_bool(body, "security_definer", env)?.unwrap_or(false);
         Ok(FunctionSpec {
             name: name.to_string(),
+            alt_name,
             schema,
             language,
             returns,
@@ -204,6 +211,7 @@ impl ForEachSupport for crate::model::TriggerSpec {
     type Item = Self;
 
     fn parse_one(name: &str, body: &Body, env: &EnvVars) -> Result<Self::Item> {
+        let alt_name = get_attr_string(body, "name", env)?;
         let schema = get_attr_string(body, "schema", env)?;
         let table = get_attr_string(body, "table", env)?.context("trigger 'table' is required")?;
         let timing = get_attr_string(body, "timing", env)?.unwrap_or_else(|| "BEFORE".to_string());
@@ -217,6 +225,7 @@ impl ForEachSupport for crate::model::TriggerSpec {
         let when = get_attr_string(body, "when", env)?;
         Ok(TriggerSpec {
             name: name.to_string(),
+            alt_name,
             schema,
             table,
             timing,
@@ -238,10 +247,11 @@ impl ForEachSupport for crate::model::ExtensionSpec {
     type Item = Self;
 
     fn parse_one(name: &str, body: &Body, env: &EnvVars) -> Result<Self::Item> {
+        let alt_name = get_attr_string(body, "name", env)?;
         let if_not_exists = get_attr_bool(body, "if_not_exists", env)?.unwrap_or(true);
         let schema = get_attr_string(body, "schema", env)?;
         let version = get_attr_string(body, "version", env)?;
-        Ok(ExtensionSpec { name: name.to_string(), if_not_exists, schema, version })
+        Ok(ExtensionSpec { name: name.to_string(), alt_name, if_not_exists, schema, version })
     }
 
     fn add_to_config(item: Self::Item, config: &mut Config) {
@@ -254,12 +264,13 @@ impl ForEachSupport for crate::model::EnumSpec {
     type Item = Self;
 
     fn parse_one(name: &str, body: &Body, env: &EnvVars) -> Result<Self::Item> {
+        let alt_name = get_attr_string(body, "name", env)?;
         let schema = get_attr_string(body, "schema", env)?;
         let values = match find_attr(body, "values") {
             Some(attr) => expr_to_string_vec(attr.expr(), env)?,
             None => bail!("enum '{}' requires values = [..]", name),
         };
-        Ok(EnumSpec { name: name.to_string(), schema, values })
+        Ok(EnumSpec { name: name.to_string(), alt_name, schema, values })
     }
 
     fn add_to_config(item: Self::Item, config: &mut Config) {

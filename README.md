@@ -112,6 +112,7 @@ locals {
 }
 
 function "<name>" {
+  name     = "<new_name>"     # optional, overrides the block name
   schema   = "public"         # optional, default "public"
   language = "plpgsql"         # required (default plpgsql)
   returns  = "trigger"         # optional (default trigger)
@@ -126,11 +127,13 @@ function "<name>" {
 }
 
 enum "<name>" {
+  name   = "<new_name>"     # optional, overrides the block name
   schema = "public"    # optional, default "public"
   values = ["a", "b"]  # required
 }
 
 trigger "<name>" {
+  name     = "<new_name>"     # optional, overrides the block name
   schema     = "public"        # optional, default "public"
   table      = "users"         # required
   timing     = "BEFORE"        # default BEFORE
@@ -142,6 +145,7 @@ trigger "<name>" {
 }
 
 policy "<name>" {
+  name    = "<new_name>"     # optional, overrides the block name
   schema  = "public"          # optional, default "public" (table schema)
   table   = "users"           # required
   as      = "permissive"       # optional: permissive|restrictive (default permissive)
@@ -152,6 +156,7 @@ policy "<name>" {
 }
 
 view "<name>" {
+  name    = "<new_name>"     # optional, overrides the block name
   schema  = "public"     # optional, default "public"
   replace = true          # optional, default true (OR REPLACE)
   sql     = <<-SQL        # required SELECT ... body (no trailing semicolon needed)
@@ -160,6 +165,7 @@ view "<name>" {
 }
 
 materialized "<name>" {
+  name      = "<new_name>"   # optional, overrides the block name
   schema    = "public"   # optional, default "public"
   with_data = true        # optional, default true (WITH [NO] DATA)
   sql       = <<-SQL      # required SELECT ... body
@@ -168,6 +174,7 @@ materialized "<name>" {
 }
 
 table "<name>" {
+  name          = "<new_name>"  # optional, overrides the block name
   schema        = "public"      # optional, default "public"
   if_not_exists = true          # optional, default true
 
@@ -196,6 +203,7 @@ table "<name>" {
 }
 
 extension "<name>" {
+  name          = "<new_name>" # optional, overrides the block name
   # Creates `CREATE EXTENSION IF NOT EXISTS "<name>" [WITH SCHEMA "..." VERSION '...'];`
   if_not_exists = true     # optional, default true
   schema        = "public" # optional
