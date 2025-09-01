@@ -169,7 +169,7 @@ pub fn get_attr_bool(body: &hcl::Body, name: &str, env: &EnvVars) -> Result<Opti
 }
 
 /// Create an HCL evaluation context with built-in functions and custom variable resolvers
-pub fn create_eval_context(env: &EnvVars) -> HclContext {
+pub fn create_eval_context(env: &EnvVars) -> HclContext<'_> {
     let mut ctx = builtins::create_context();
 
     // Add custom variable resolvers for our special variables (var, local, each)
