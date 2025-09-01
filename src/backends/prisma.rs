@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Result, bail};
 
 use super::Backend;
 use crate::model::{ColumnSpec, Config, EnumSpec, TableSpec};
@@ -12,7 +12,7 @@ impl Backend for PrismaBackend {
     fn file_extension(&self) -> &'static str {
         "prisma"
     }
-    fn generate(&self, cfg: &Config, _env: &crate::model::EnvVars, assume_enums_exist: bool) -> Result<String> {
+    fn generate(&self, cfg: &Config, _env: &crate::model::EnvVars, strict: bool) -> Result<String> {
         let mut out = String::new();
         // Output only enums and models; generator/datasource are managed externally.
 
@@ -23,14 +23,14 @@ impl Backend for PrismaBackend {
         }
 
         for t in &cfg.tables {
-            out.push_str(&render_model(t, &cfg.enums, assume_enums_exist));
+            out.push_str(&render_model(t, &cfg.enums, strict)?);
             out.push_str("\n\n");
         }
         Ok(out)
     }
 }
 
-fn render_model(t: &TableSpec, enums: &[EnumSpec], assume_enums_exist: bool) -> String {
+fn render_model(t: &TableSpec, enums: &[EnumSpec], strict: bool) -> Result<String> {
     let mut s = String::new();
     let model_name = to_model_name(&t.name);
     s.push_str(&format!("model {} {{\n", model_name));
@@ -38,7 +38,7 @@ fn render_model(t: &TableSpec, enums: &[EnumSpec], assume_enums_exist: bool) -> 
     // columns → fields
     for c in &t.columns {
         s.push_str("  ");
-        s.push_str(&render_field(c, t, enums, assume_enums_exist));
+        s.push_str(&render_field(c, t, enums, strict)?);
         s.push_str("\n");
     }
 
@@ -76,28 +76,32 @@ fn render_model(t: &TableSpec, enums: &[EnumSpec], assume_enums_exist: bool) -> 
     }
 
     s.push_str("}\n");
-    s
+    Ok(s)
 }
 
-fn render_field(c: &ColumnSpec, t: &TableSpec, enums: &[EnumSpec], assume_enums_exist: bool) -> String {
+fn render_field(c: &ColumnSpec, t: &TableSpec, enums: &[EnumSpec], strict: bool) -> Result<String> {
     let _table_name = t.table_name.as_deref().unwrap_or(&t.name);
-    let mut parts: Vec<String> = Vec::new();
-    // name
-    parts.push(c.name.clone());
-    // type + nullability
     let (ptype, db_attr) = {
         let found_enum = find_enum_for_type(enums, &c.r#type, t.schema.as_deref());
         if let Some(e) = found_enum {
             // Enum is defined in HCL
             (e.alt_name.as_deref().unwrap_or(&e.name).to_string(), None)
-        } else if assume_enums_exist && is_likely_enum(&c.r#type) {
-            // Assume enum exists externally, use its raw name
+        } else if strict {
+            // Strict mode: error if enum not found
+            bail!("Enum type '{}' not found in HCL and strict mode is enabled", c.r#type);
+        } else if is_likely_enum(&c.r#type) {
+            // Non-strict mode: assume enum exists externally, use its raw name
             (c.r#type.clone(), None)
         } else {
             // Not an enum, or enum not assumed to exist externally
             prisma_type(&c.r#type, c.db_type.as_deref())
         }
     };
+
+    let mut parts: Vec<String> = Vec::new();
+    // name
+    parts.push(c.name.clone());
+    // type + nullability
     let type_with_null = if c.nullable {
         format!("{}?", ptype)
     } else {
@@ -177,16 +181,16 @@ fn render_field(c: &ColumnSpec, t: &TableSpec, enums: &[EnumSpec], assume_enums_
             fk.ref_columns.join(", ")
         );
         if let Some(od) = &fk.on_delete {
-            rel.push_str(&format!(", onDelete: {}", map_fk_action(od)));
+            rel.push_str(&format!( ", onDelete: {}", map_fk_action(od)));
         }
         if let Some(ou) = &fk.on_update {
-            rel.push_str(&format!(", onUpdate: {}", map_fk_action(ou)));
+            rel.push_str(&format!( ", onUpdate: {}", map_fk_action(ou)));
         }
         rel.push(')');
         line.push_str(&rel);
     }
 
-    line
+    Ok(line)
 }
 
 fn render_enum(e: &EnumSpec) -> String {
@@ -321,7 +325,7 @@ fn map_fk_action(s: &str) -> &str {
     }
 }
 
-fn find_enum_for_type<'a>(
+pub fn find_enum_for_type<'a>(
     enums: &'a [EnumSpec],
     coltype: &str,
     table_schema: Option<&str>,
@@ -351,7 +355,7 @@ fn find_enum_for_type<'a>(
     })
 }
 
-fn is_likely_enum(s: &str) -> bool {
+pub fn is_likely_enum(s: &str) -> bool {
     // Simple heuristic: starts with uppercase letter and contains only alphanumeric characters
     // This is a basic check and might need refinement based on actual enum naming conventions
     s.chars().next().map_or(false, |c| c.is_ascii_uppercase()) && s.chars().all(|c| c.is_ascii_alphanumeric())

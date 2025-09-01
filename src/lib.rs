@@ -41,7 +41,7 @@ pub fn load_config(root_path: &Path, loader: &dyn Loader, env: EnvVars) -> Resul
 }
 
 // Pure validation: check references etc.
-pub fn validate(cfg: &Config) -> Result<()> {
+pub fn validate(cfg: &Config, strict: bool) -> Result<()> {
     for t in &cfg.triggers {
         let fqn = format!(
             "{}.{}",
@@ -59,6 +59,21 @@ pub fn validate(cfg: &Config) -> Result<()> {
             );
         }
     }
+
+    if strict {
+        for table in &cfg.tables {
+            for column in &table.columns {
+                // Check if column type is an enum and if it's defined in HCL
+                if backends::prisma::is_likely_enum(&column.r#type) {
+                    let found_enum = backends::prisma::find_enum_for_type(&cfg.enums, &column.r#type, table.schema.as_deref());
+                    if found_enum.is_none() {
+                        bail!("Strict mode: Enum type '{}' referenced in table '{}' column '{}' is not defined in HCL", column.r#type, table.name, column.name);
+                    }
+                }
+            }
+        }
+    }
+
     Ok(())
 }
 
@@ -205,10 +220,10 @@ pub fn generate_sql(cfg: &Config) -> Result<String> {
     backends::postgres::to_sql(cfg)
 }
 
-pub fn generate_with_backend(backend: &str, cfg: &Config, env: &EnvVars, assume_enums_exist: bool) -> Result<String> {
+pub fn generate_with_backend(backend: &str, cfg: &Config, env: &EnvVars, strict: bool) -> Result<String> {
     let be = backends::get_backend(backend)
         .ok_or_else(|| anyhow::anyhow!(format!("unknown backend '{backend}'")))?;
-    be.generate(cfg, env, assume_enums_exist)
+    be.generate(cfg, env, strict)
 }
 
 #[cfg(test)]
