@@ -187,7 +187,7 @@ fn render_materialized(mv: &MaterializedViewSpec) -> String {
 }
 
 fn render_table(t: &TableSpec) -> String {
-    let name = t.alt_name.as_deref().unwrap_or(&t.name);
+    let name = t.table_name.as_deref().unwrap_or(&t.name);
     let schema = t.schema.as_deref().unwrap_or("public");
     let mut lines: Vec<String> = Vec::new();
     for c in &t.columns {
@@ -240,7 +240,7 @@ fn render_fk_inline(fk: &ForeignKeySpec) -> String {
 }
 
 fn render_index(t: &TableSpec, idx: &IndexSpec) -> String {
-    let table_name = t.alt_name.as_deref().unwrap_or(&t.name);
+    let table_name = t.table_name.as_deref().unwrap_or(&t.name);
     let schema = t.schema.as_deref().unwrap_or("public");
     let cols = idx.columns.iter().map(|c| ident(c)).collect::<Vec<_>>().join(", ");
     let unique = if idx.unique { "UNIQUE " } else { "" };
@@ -264,7 +264,7 @@ fn render_index(t: &TableSpec, idx: &IndexSpec) -> String {
 }
 
 fn render_trigger(t: &TriggerSpec) -> String {
-    let name = t.alt_name.as_deref().unwrap_or(&t.name);
+    let name = t.name.clone();
     let schema = t.schema.as_deref().unwrap_or("public");
     let fn_schema = t.function_schema.as_deref().unwrap_or(schema);
     let timing = t.timing.to_uppercase();
@@ -283,10 +283,10 @@ fn render_trigger(t: &TriggerSpec) -> String {
 
     format!(
         "DO $$\nBEGIN\n  IF NOT EXISTS (\n    SELECT 1 FROM pg_trigger tg\n    JOIN pg_class c ON c.oid = tg.tgrelid\n    JOIN pg_namespace n ON n.oid = c.relnamespace\n    WHERE tg.tgname = {tgname}\n      AND n.nspname = {schema_lit}\n      AND c.relname = {table_lit}\n  ) THEN\n    CREATE TRIGGER {tg}\n    {timing} {events} ON {schema_ident}.{table_ident}\n    FOR EACH {for_each}{when}\n    EXECUTE FUNCTION {fn_schema_ident}.{fn_name}();\n  END IF;\nEND$$;",
-        tgname = literal(name),
+        tgname = literal(&name),
         schema_lit = literal(schema),
         table_lit = literal(&t.table),
-        tg = ident(name),
+        tg = ident(&name),
         timing = timing,
         events = events,
         for_each = for_each,

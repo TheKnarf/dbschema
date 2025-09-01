@@ -27,9 +27,8 @@ impl Backend for PrismaBackend {
 }
 
 fn render_model(t: &TableSpec, enums: &[EnumSpec]) -> String {
-    let name = t.alt_name.as_deref().unwrap_or(&t.name);
     let mut s = String::new();
-    let model_name = to_model_name(name);
+    let model_name = to_model_name(&t.name);
     s.push_str(&format!("model {} {{\n", model_name));
 
     // columns → fields
@@ -37,6 +36,11 @@ fn render_model(t: &TableSpec, enums: &[EnumSpec]) -> String {
         s.push_str("  ");
         s.push_str(&render_field(c, t, enums));
         s.push_str("\n");
+    }
+
+    // back-references
+    for br in &t.back_references {
+        s.push_str(&format!("  {} {}[]\n", br.name, br.table));
     }
 
     // primary key
@@ -63,8 +67,8 @@ fn render_model(t: &TableSpec, enums: &[EnumSpec]) -> String {
     }
 
     // Map model to table name if model name differs
-    if model_name != name {
-        s.push_str(&format!("  @@map(\"{}\")\n", name));
+    if let Some(table_name) = &t.table_name {
+        s.push_str(&format!("  @@map(\"{}\")\n", table_name));
     }
 
     s.push_str("}\n");
@@ -72,7 +76,7 @@ fn render_model(t: &TableSpec, enums: &[EnumSpec]) -> String {
 }
 
 fn render_field(c: &ColumnSpec, t: &TableSpec, enums: &[EnumSpec]) -> String {
-    let _table_name = t.alt_name.as_deref().unwrap_or(&t.name);
+    let _table_name = t.table_name.as_deref().unwrap_or(&t.name);
     let mut parts: Vec<String> = Vec::new();
     // name
     parts.push(c.name.clone());
@@ -128,7 +132,8 @@ fn render_field(c: &ColumnSpec, t: &TableSpec, enums: &[EnumSpec]) -> String {
     if let Some(fk) = t.foreign_keys.iter().find(|fk| fk.columns.len() == 1 && fk.columns[0] == c.name) {
         let ref_model = to_model_name(&fk.ref_table);
         let rel_field_name = fk.ref_table.clone();
-        let mut rel = format!("\n  {} {}? @relation(fields: [{}], references: [{}]", rel_field_name, ref_model, c.name, fk.ref_columns.join(", "));
+        let nullable_char = if c.nullable { "?" } else { "" };
+        let mut rel = format!("\n  {} {}{} @relation(fields: [{}], references: [{}]", rel_field_name, ref_model, nullable_char, c.name, fk.ref_columns.join(", "));
         if let Some(od) = &fk.on_delete { rel.push_str(&format!(", onDelete: {}", map_fk_action(od))); }
         if let Some(ou) = &fk.on_update { rel.push_str(&format!(", onUpdate: {}", map_fk_action(ou))); }
         rel.push(')');

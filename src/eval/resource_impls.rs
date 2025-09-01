@@ -26,7 +26,7 @@ impl ForEachSupport for crate::model::TableSpec {
     type Item = Self;
 
     fn parse_one(name: &str, body: &Body, env: &EnvVars) -> Result<Self::Item> {
-        let alt_name = get_attr_string(body, "name", env)?;
+        let table_name = get_attr_string(body, "table_name", env)?;
         let schema = get_attr_string(body, "schema", env)?;
         let if_not_exists = get_attr_bool(body, "if_not_exists", env)?.unwrap_or(true);
 
@@ -106,12 +106,13 @@ impl ForEachSupport for crate::model::TableSpec {
             let name = get_attr_string(fb, "name", env)?;
             let on_delete = get_attr_string(fb, "on_delete", env)?;
             let on_update = get_attr_string(fb, "on_update", env)?;
+            let back_reference_name = get_attr_string(fb, "back_reference_name", env)?;
             let ref_table = ref_table.context("foreign_key.ref requires table")?;
             let ref_columns = ref_columns.context("foreign_key.ref requires columns = [..]")?;
-            fks.push(ForeignKeySpec { name, columns, ref_schema, ref_table, ref_columns, on_delete, on_update });
+            fks.push(ForeignKeySpec { name, columns, ref_schema, ref_table, ref_columns, on_delete, on_update, back_reference_name });
         }
 
-        Ok(TableSpec { name: name.to_string(), alt_name, schema, if_not_exists, columns, primary_key, indexes, foreign_keys: fks })
+        Ok(TableSpec { name: name.to_string(), table_name, schema, if_not_exists, columns, primary_key, indexes, foreign_keys: fks, back_references: Vec::new() })
     }
 
     fn add_to_config(item: Self::Item, config: &mut Config) {

@@ -222,7 +222,29 @@ pub fn load_root_with_loader(path: &Path, loader: &dyn Loader, root_env: EnvVars
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| PathBuf::from("."));
     let mut visited = Vec::new();
-    load_file(loader, &path, &base, &root_env, &mut visited)
+    let mut cfg = load_file(loader, &path, &base, &root_env, &mut visited)?;
+    populate_back_references(&mut cfg)?;
+    Ok(cfg)
+}
+
+fn populate_back_references(cfg: &mut Config) -> Result<()> {
+    let tables = cfg.tables.clone();
+    for table in &mut cfg.tables {
+        for other_table in &tables {
+            for fk in &other_table.foreign_keys {
+                if fk.ref_table == table.name {
+                    let name = fk.back_reference_name.clone().unwrap_or_else(|| {
+                        other_table.name.clone().to_lowercase() + "s"
+                    });
+                    table.back_references.push(crate::model::BackReferenceSpec {
+                        name,
+                        table: other_table.name.clone(),
+                    });
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 fn load_file(loader: &dyn Loader, path: &Path, base: &Path, parent_env: &EnvVars, visited: &mut Vec<PathBuf>) -> Result<Config> {

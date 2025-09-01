@@ -100,13 +100,20 @@ pub struct PolicySpec {
 #[derive(Debug, Clone, Serialize)]
 pub struct TableSpec {
     pub name: String,
-    pub alt_name: Option<String>,
+    pub table_name: Option<String>,
     pub schema: Option<String>,
     pub if_not_exists: bool,
     pub columns: Vec<ColumnSpec>,
     pub primary_key: Option<PrimaryKeySpec>,
     pub indexes: Vec<IndexSpec>,
     pub foreign_keys: Vec<ForeignKeySpec>,
+    pub back_references: Vec<BackReferenceSpec>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct BackReferenceSpec {
+    pub name: String,
+    pub table: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -140,6 +147,7 @@ pub struct ForeignKeySpec {
     pub ref_columns: Vec<String>,
     pub on_delete: Option<String>,
     pub on_update: Option<String>,
+    pub back_reference_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
