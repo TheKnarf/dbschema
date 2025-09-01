@@ -12,7 +12,7 @@ impl Backend for PrismaBackend {
     fn file_extension(&self) -> &'static str {
         "prisma"
     }
-    fn generate(&self, cfg: &Config, _env: &crate::model::EnvVars) -> Result<String> {
+    fn generate(&self, cfg: &Config, _env: &crate::model::EnvVars, assume_enums_exist: bool) -> Result<String> {
         let mut out = String::new();
         // Output only enums and models; generator/datasource are managed externally.
 
@@ -23,14 +23,14 @@ impl Backend for PrismaBackend {
         }
 
         for t in &cfg.tables {
-            out.push_str(&render_model(t, &cfg.enums));
+            out.push_str(&render_model(t, &cfg.enums, assume_enums_exist));
             out.push_str("\n\n");
         }
         Ok(out)
     }
 }
 
-fn render_model(t: &TableSpec, enums: &[EnumSpec]) -> String {
+fn render_model(t: &TableSpec, enums: &[EnumSpec], assume_enums_exist: bool) -> String {
     let mut s = String::new();
     let model_name = to_model_name(&t.name);
     s.push_str(&format!("model {} {{\n", model_name));
@@ -38,7 +38,7 @@ fn render_model(t: &TableSpec, enums: &[EnumSpec]) -> String {
     // columns → fields
     for c in &t.columns {
         s.push_str("  ");
-        s.push_str(&render_field(c, t, enums));
+        s.push_str(&render_field(c, t, enums, assume_enums_exist));
         s.push_str("\n");
     }
 
@@ -79,15 +79,24 @@ fn render_model(t: &TableSpec, enums: &[EnumSpec]) -> String {
     s
 }
 
-fn render_field(c: &ColumnSpec, t: &TableSpec, enums: &[EnumSpec]) -> String {
+fn render_field(c: &ColumnSpec, t: &TableSpec, enums: &[EnumSpec], assume_enums_exist: bool) -> String {
     let _table_name = t.table_name.as_deref().unwrap_or(&t.name);
     let mut parts: Vec<String> = Vec::new();
     // name
     parts.push(c.name.clone());
     // type + nullability
-    let (ptype, db_attr) = match find_enum_for_type(enums, &c.r#type, t.schema.as_deref()) {
-        Some(e) => (e.alt_name.as_deref().unwrap_or(&e.name).to_string(), None),
-        None => prisma_type(&c.r#type, c.db_type.as_deref()),
+    let (ptype, db_attr) = {
+        let found_enum = find_enum_for_type(enums, &c.r#type, t.schema.as_deref());
+        if let Some(e) = found_enum {
+            // Enum is defined in HCL
+            (e.alt_name.as_deref().unwrap_or(&e.name).to_string(), None)
+        } else if assume_enums_exist && is_likely_enum(&c.r#type) {
+            // Assume enum exists externally, use its raw name
+            (c.r#type.clone(), None)
+        } else {
+            // Not an enum, or enum not assumed to exist externally
+            prisma_type(&c.r#type, c.db_type.as_deref())
+        }
     };
     let type_with_null = if c.nullable {
         format!("{}?", ptype)
@@ -340,4 +349,10 @@ fn find_enum_for_type<'a>(
             }
         }
     })
+}
+
+fn is_likely_enum(s: &str) -> bool {
+    // Simple heuristic: starts with uppercase letter and contains only alphanumeric characters
+    // This is a basic check and might need refinement based on actual enum naming conventions
+    s.chars().next().map_or(false, |c| c.is_ascii_uppercase()) && s.chars().all(|c| c.is_ascii_alphanumeric())
 }

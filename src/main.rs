@@ -46,6 +46,10 @@ struct Cli {
     #[arg(long)]
     target: Option<String>,
 
+    /// Assume enum types exist externally (don't generate Unsupported for them)
+    #[arg(long)]
+    assume_enums_exist: bool,
+
     #[command(subcommand)]
     command: Option<Commands>,
 }
@@ -154,7 +158,7 @@ fn main() -> Result<()> {
             }
             Commands::CreateMigration { out_dir, name } => {
                 validate(&filtered)?;
-                let artifact = dbschema::generate_with_backend(&cli.backend, &filtered, &env)?;
+                let artifact = dbschema::generate_with_backend(&cli.backend, &filtered, &env, cli.assume_enums_exist)?;
                 if let Some(dir) = out_dir {
                     let name = name.unwrap_or_else(|| "triggers".to_string());
                     let ext = dbschema::backends::get_backend(&cli.backend)
@@ -239,7 +243,7 @@ fn run_target(dbschema_config: &DbschemaConfig, target: &TargetConfig) -> Result
     let filtered = apply_filters(&config, &include_set, &exclude_set);
 
     validate(&filtered)?;
-    let artifact = dbschema::generate_with_backend(&target.backend, &filtered, &env)?;
+    let artifact = dbschema::generate_with_backend(&target.backend, &filtered, &env, false)?;
 
     if let Some(output_path) = &target.output {
         let path = Path::new(output_path);

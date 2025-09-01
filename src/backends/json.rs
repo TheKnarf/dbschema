@@ -13,7 +13,7 @@ impl Backend for JsonBackend {
     fn file_extension(&self) -> &'static str {
         "json"
     }
-    fn generate(&self, cfg: &Config, env: &EnvVars) -> Result<String> {
+    fn generate(&self, cfg: &Config, env: &EnvVars, _assume_enums_exist: bool) -> Result<String> {
         let mut vars_json = serde_json::Map::new();
         for (k, v) in &env.vars {
             vars_json.insert(k.clone(), hcl_to_json(v)?);

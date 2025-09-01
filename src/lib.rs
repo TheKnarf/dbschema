@@ -205,10 +205,10 @@ pub fn generate_sql(cfg: &Config) -> Result<String> {
     backends::postgres::to_sql(cfg)
 }
 
-pub fn generate_with_backend(backend: &str, cfg: &Config, env: &EnvVars) -> Result<String> {
+pub fn generate_with_backend(backend: &str, cfg: &Config, env: &EnvVars, assume_enums_exist: bool) -> Result<String> {
     let be = backends::get_backend(backend)
         .ok_or_else(|| anyhow::anyhow!(format!("unknown backend '{backend}'")))?;
-    be.generate(cfg, env)
+    be.generate(cfg, env, assume_enums_exist)
 }
 
 #[cfg(test)]
