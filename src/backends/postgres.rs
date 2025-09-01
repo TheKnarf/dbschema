@@ -1,7 +1,10 @@
 use anyhow::Result;
 
-use crate::model::{Config, ExtensionSpec, FunctionSpec, TriggerSpec, TableSpec, IndexSpec, ForeignKeySpec, ViewSpec, MaterializedViewSpec, EnumSpec, SchemaSpec, PolicySpec};
 use super::Backend;
+use crate::model::{
+    Config, EnumSpec, ExtensionSpec, ForeignKeySpec, FunctionSpec, IndexSpec, MaterializedViewSpec,
+    PolicySpec, SchemaSpec, TableSpec, TriggerSpec, ViewSpec,
+};
 
 fn ident(s: &str) -> String {
     let escaped = s.replace('"', "\"");
@@ -16,8 +19,12 @@ fn literal(s: &str) -> String {
 pub struct PostgresBackend;
 
 impl Backend for PostgresBackend {
-    fn name(&self) -> &'static str { "postgres" }
-    fn file_extension(&self) -> &'static str { "sql" }
+    fn name(&self) -> &'static str {
+        "postgres"
+    }
+    fn file_extension(&self) -> &'static str {
+        "sql"
+    }
     fn generate(&self, cfg: &Config, _env: &crate::model::EnvVars) -> Result<String> {
         to_sql(cfg)
     }
@@ -112,7 +119,11 @@ fn render_extension(e: &ExtensionSpec) -> String {
 fn render_schema(s: &SchemaSpec) -> String {
     let name = s.alt_name.as_deref().unwrap_or(&s.name);
     let mut stmt = String::from("CREATE ");
-    if s.if_not_exists { stmt.push_str("SCHEMA IF NOT EXISTS "); } else { stmt.push_str("SCHEMA "); }
+    if s.if_not_exists {
+        stmt.push_str("SCHEMA IF NOT EXISTS ");
+    } else {
+        stmt.push_str("SCHEMA ");
+    }
     stmt.push_str(&ident(name));
     if let Some(auth) = &s.authorization {
         stmt.push_str(" AUTHORIZATION ");
@@ -144,7 +155,11 @@ fn render_enum(e: &EnumSpec) -> String {
 fn render_function(f: &FunctionSpec) -> String {
     let name = f.alt_name.as_deref().unwrap_or(&f.name);
     let schema = f.schema.as_deref().unwrap_or("public");
-    let definer = if f.security_definer { " SECURITY DEFINER" } else { "" };
+    let definer = if f.security_definer {
+        " SECURITY DEFINER"
+    } else {
+        ""
+    };
     let or_replace = if f.replace { "OR REPLACE " } else { "" };
     let lang = f.language.to_lowercase();
     format!(
@@ -174,7 +189,11 @@ fn render_view(v: &ViewSpec) -> String {
 fn render_materialized(mv: &MaterializedViewSpec) -> String {
     let name = mv.alt_name.as_deref().unwrap_or(&mv.name);
     let schema = mv.schema.as_deref().unwrap_or("public");
-    let with = if mv.with_data { "WITH DATA" } else { "WITH NO DATA" };
+    let with = if mv.with_data {
+        "WITH DATA"
+    } else {
+        "WITH NO DATA"
+    };
     format!(
         "DO $$\nBEGIN\n  IF NOT EXISTS (\n    SELECT 1 FROM pg_matviews WHERE schemaname = {schema_lit} AND matviewname = {name_lit}\n  ) THEN\n    CREATE MATERIALIZED VIEW {schema_ident}.{name_ident} AS\\n{body}\\n    {with};\n  END IF;\nEND$$;",
         schema_lit = literal(schema),
@@ -192,12 +211,21 @@ fn render_table(t: &TableSpec) -> String {
     let mut lines: Vec<String> = Vec::new();
     for c in &t.columns {
         let mut l = format!("{} {}", ident(&c.name), c.r#type);
-        if !c.nullable { l.push_str(" NOT NULL"); }
-        if let Some(d) = &c.default { l.push_str(&format!(" DEFAULT {}", d)); }
+        if !c.nullable {
+            l.push_str(" NOT NULL");
+        }
+        if let Some(d) = &c.default {
+            l.push_str(&format!(" DEFAULT {}", d));
+        }
         lines.push(l);
     }
     if let Some(pk) = &t.primary_key {
-        let cols = pk.columns.iter().map(|c| ident(c)).collect::<Vec<_>>().join(", ");
+        let cols = pk
+            .columns
+            .iter()
+            .map(|c| ident(c))
+            .collect::<Vec<_>>()
+            .join(", ");
         match &pk.name {
             Some(n) => lines.push(format!("CONSTRAINT {} PRIMARY KEY ({})", ident(n), cols)),
             None => lines.push(format!("PRIMARY KEY ({})", cols)),
@@ -211,7 +239,11 @@ fn render_table(t: &TableSpec) -> String {
         .map(|l| format!("  {}", l))
         .collect::<Vec<_>>()
         .join(",\n");
-    let ine = if t.if_not_exists { " IF NOT EXISTS" } else { "" };
+    let ine = if t.if_not_exists {
+        " IF NOT EXISTS"
+    } else {
+        ""
+    };
     format!(
         "CREATE TABLE{ine} {schema}.{name} (\\n{body}\\n);",
         ine = ine,
@@ -222,11 +254,23 @@ fn render_table(t: &TableSpec) -> String {
 }
 
 fn render_fk_inline(fk: &ForeignKeySpec) -> String {
-    let cols = fk.columns.iter().map(|c| ident(c)).collect::<Vec<_>>().join(", ");
+    let cols = fk
+        .columns
+        .iter()
+        .map(|c| ident(c))
+        .collect::<Vec<_>>()
+        .join(", ");
     let ref_schema = fk.ref_schema.as_deref().unwrap_or("public");
-    let ref_cols = fk.ref_columns.iter().map(|c| ident(c)).collect::<Vec<_>>().join(", ");
+    let ref_cols = fk
+        .ref_columns
+        .iter()
+        .map(|c| ident(c))
+        .collect::<Vec<_>>()
+        .join(", ");
     let mut s = String::new();
-    if let Some(n) = &fk.name { s.push_str(&format!("CONSTRAINT {} ", ident(n))); }
+    if let Some(n) = &fk.name {
+        s.push_str(&format!("CONSTRAINT {} ", ident(n)));
+    }
     s.push_str(&format!(
         "FOREIGN KEY ({cols}) REFERENCES {rschema}.{rtable} ({rcols})",
         cols = cols,
@@ -234,21 +278,35 @@ fn render_fk_inline(fk: &ForeignKeySpec) -> String {
         rtable = ident(&fk.ref_table),
         rcols = ref_cols,
     ));
-    if let Some(od) = &fk.on_delete { s.push_str(&format!(" ON DELETE {}", od)); }
-    if let Some(ou) = &fk.on_update { s.push_str(&format!(" ON UPDATE {}", ou)); }
+    if let Some(od) = &fk.on_delete {
+        s.push_str(&format!(" ON DELETE {}", od));
+    }
+    if let Some(ou) = &fk.on_update {
+        s.push_str(&format!(" ON UPDATE {}", ou));
+    }
     s
 }
 
 fn render_index(t: &TableSpec, idx: &IndexSpec) -> String {
     let table_name = t.table_name.as_deref().unwrap_or(&t.name);
     let schema = t.schema.as_deref().unwrap_or("public");
-    let cols = idx.columns.iter().map(|c| ident(c)).collect::<Vec<_>>().join(", ");
+    let cols = idx
+        .columns
+        .iter()
+        .map(|c| ident(c))
+        .collect::<Vec<_>>()
+        .join(", ");
     let unique = if idx.unique { "UNIQUE " } else { "" };
     let name = match &idx.name {
         Some(n) => ident(n),
         None => {
             // derive name: <table>_<col1>_<col2>_idx/uniq
-            let mut n = format!("{}_{}_{}", table_name, idx.columns.join("_"), if idx.unique { "uniq" } else { "idx" });
+            let mut n = format!(
+                "{}_{}_{}",
+                table_name,
+                idx.columns.join("_"),
+                if idx.unique { "uniq" } else { "idx" }
+            );
             n = n.replace('.', "_");
             ident(&n)
         }
@@ -306,11 +364,20 @@ fn render_policy(p: &PolicySpec) -> String {
         Some(ref k) if k == "PERMISSIVE" || k == "RESTRICTIVE" => format!(" AS {}", k),
         _ => String::new(),
     };
-    let for_clause = if cmd == "ALL" { String::new() } else { format!(" FOR {}", cmd) };
+    let for_clause = if cmd == "ALL" {
+        String::new()
+    } else {
+        format!(" FOR {}", cmd)
+    };
     let to_clause = if p.roles.is_empty() {
         String::new()
     } else {
-        let roles = p.roles.iter().map(|r| ident(r)).collect::<Vec<_>>().join(", ");
+        let roles = p
+            .roles
+            .iter()
+            .map(|r| ident(r))
+            .collect::<Vec<_>>()
+            .join(", ");
         format!(" TO {}", roles)
     };
     let using_clause = match &p.using {

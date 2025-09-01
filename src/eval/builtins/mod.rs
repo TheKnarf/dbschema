@@ -1,13 +1,13 @@
 // Built-in HCL functions organized by category
 
-pub mod string;
-pub mod numeric;
-pub mod utility;
-pub mod crypto;
 pub mod base64;
-pub mod datetime;
 pub mod collection;
 pub mod conversion;
+pub mod crypto;
+pub mod datetime;
+pub mod numeric;
+pub mod string;
+pub mod utility;
 
 use hcl::eval::Context;
 
@@ -59,18 +59,37 @@ mod tests {
 
         // Test that all functions are properly registered
         let functions = [
-            "upper", "lower", "length", "substr", "contains", "startswith", "endswith", "trim", "replace",
-            "min", "max", "abs",
-            "coalesce", "join", "split",
-            "md5", "sha256", "sha512",
-            "base64encode", "base64decode"
+            "upper",
+            "lower",
+            "length",
+            "substr",
+            "contains",
+            "startswith",
+            "endswith",
+            "trim",
+            "replace",
+            "min",
+            "max",
+            "abs",
+            "coalesce",
+            "join",
+            "split",
+            "md5",
+            "sha256",
+            "sha512",
+            "base64encode",
+            "base64decode",
         ];
 
         for func_name in functions {
             // Try to evaluate a simple call to each function to ensure it's registered
             let expr_str = format!("{}(\"test\")", func_name);
             let body: hcl::Body = hcl::from_str(&format!("test = {}", expr_str)).unwrap();
-            let expr = body.attributes().find(|a| a.key() == "test").unwrap().expr();
+            let expr = body
+                .attributes()
+                .find(|a| a.key() == "test")
+                .unwrap()
+                .expr();
 
             // This will fail if the function is not registered, but that's expected for some functions
             // The important thing is that it doesn't panic due to unknown function

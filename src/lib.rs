@@ -1,8 +1,8 @@
-pub mod parser;
+pub mod backends;
+pub mod config;
 pub mod eval;
 pub mod model;
-pub mod config;
-pub mod backends;
+pub mod parser;
 pub mod test_runner;
 
 use anyhow::{bail, Result};
@@ -10,7 +10,10 @@ use anyhow::{bail, Result};
 use std::path::Path;
 
 // Public re-exports
-pub use model::{Config, EnvVars, ExtensionSpec, FunctionSpec, TriggerSpec, TableSpec, ViewSpec, MaterializedViewSpec, EnumSpec, SchemaSpec, PolicySpec};
+pub use model::{
+    Config, EnumSpec, EnvVars, ExtensionSpec, FunctionSpec, MaterializedViewSpec, PolicySpec,
+    SchemaSpec, TableSpec, TriggerSpec, ViewSpec,
+};
 
 /// Resource kinds that can be filtered
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -144,16 +147,56 @@ pub fn apply_resource_filters(cfg: &Config, include: &[String], exclude: &[Strin
     };
 
     Config {
-        functions: if should_include("functions") { cfg.functions.clone() } else { Vec::new() },
-        triggers: if should_include("triggers") { cfg.triggers.clone() } else { Vec::new() },
-        extensions: if should_include("extensions") { cfg.extensions.clone() } else { Vec::new() },
-        schemas: if should_include("schemas") { cfg.schemas.clone() } else { Vec::new() },
-        enums: if should_include("enums") { cfg.enums.clone() } else { Vec::new() },
-        tables: if should_include("tables") { cfg.tables.clone() } else { Vec::new() },
-        views: if should_include("views") { cfg.views.clone() } else { Vec::new() },
-        materialized: if should_include("materialized") { cfg.materialized.clone() } else { Vec::new() },
-        policies: if should_include("policies") { cfg.policies.clone() } else { Vec::new() },
-        tests: if should_include("tests") { cfg.tests.clone() } else { Vec::new() },
+        functions: if should_include("functions") {
+            cfg.functions.clone()
+        } else {
+            Vec::new()
+        },
+        triggers: if should_include("triggers") {
+            cfg.triggers.clone()
+        } else {
+            Vec::new()
+        },
+        extensions: if should_include("extensions") {
+            cfg.extensions.clone()
+        } else {
+            Vec::new()
+        },
+        schemas: if should_include("schemas") {
+            cfg.schemas.clone()
+        } else {
+            Vec::new()
+        },
+        enums: if should_include("enums") {
+            cfg.enums.clone()
+        } else {
+            Vec::new()
+        },
+        tables: if should_include("tables") {
+            cfg.tables.clone()
+        } else {
+            Vec::new()
+        },
+        views: if should_include("views") {
+            cfg.views.clone()
+        } else {
+            Vec::new()
+        },
+        materialized: if should_include("materialized") {
+            cfg.materialized.clone()
+        } else {
+            Vec::new()
+        },
+        policies: if should_include("policies") {
+            cfg.policies.clone()
+        } else {
+            Vec::new()
+        },
+        tests: if should_include("tests") {
+            cfg.tests.clone()
+        } else {
+            Vec::new()
+        },
     }
 }
 
@@ -186,7 +229,9 @@ mod tests {
         }
     }
 
-    fn p(s: &str) -> PathBuf { PathBuf::from(s) }
+    fn p(s: &str) -> PathBuf {
+        PathBuf::from(s)
+    }
 
     #[test]
     fn parse_simple_function_and_trigger() {
@@ -367,7 +412,8 @@ mod tests {
               replace = true
               sql = "SELECT 1 as x"
             }
-            "#.to_string(),
+            "#
+            .to_string(),
         );
         let loader = MapLoader { files };
         let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
@@ -390,7 +436,8 @@ mod tests {
               with_data = false
               sql = "SELECT 42 as x"
             }
-            "#.to_string(),
+            "#
+            .to_string(),
         );
         let loader = MapLoader { files };
         let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
@@ -421,7 +468,8 @@ mod tests {
               }
               primary_key { columns = ["id"] }
             }
-            "#.to_string(),
+            "#
+            .to_string(),
         );
         let loader = MapLoader { files };
         let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
@@ -489,7 +537,8 @@ mod tests {
               roles = ["app_user"]
               using = "true"
             }
-            "#.to_string(),
+            "#
+            .to_string(),
         );
         let loader = MapLoader { files };
         let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();

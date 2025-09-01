@@ -68,7 +68,11 @@ mod tests {
         let ctx = create_test_context();
         let expr_str = "coalesce(null, \"default\")";
         let body: hcl::Body = hcl::from_str(&format!("test = {}", expr_str)).unwrap();
-        let expr = body.attributes().find(|a| a.key() == "test").unwrap().expr();
+        let expr = body
+            .attributes()
+            .find(|a| a.key() == "test")
+            .unwrap()
+            .expr();
         assert_eq!(expr.evaluate(&ctx).unwrap(), Value::from("default"));
     }
 
@@ -77,7 +81,11 @@ mod tests {
         let ctx = create_test_context();
         let expr_str = "coalesce(null, null, \"first\")";
         let body: hcl::Body = hcl::from_str(&format!("test = {}", expr_str)).unwrap();
-        let expr = body.attributes().find(|a| a.key() == "test").unwrap().expr();
+        let expr = body
+            .attributes()
+            .find(|a| a.key() == "test")
+            .unwrap()
+            .expr();
         assert_eq!(expr.evaluate(&ctx).unwrap(), Value::from("first"));
     }
 
@@ -86,7 +94,11 @@ mod tests {
         let ctx = create_test_context();
         let expr_str = "join(\", \", [\"a\", \"b\", \"c\"])";
         let body: hcl::Body = hcl::from_str(&format!("test = {}", expr_str)).unwrap();
-        let expr = body.attributes().find(|a| a.key() == "test").unwrap().expr();
+        let expr = body
+            .attributes()
+            .find(|a| a.key() == "test")
+            .unwrap()
+            .expr();
         assert_eq!(expr.evaluate(&ctx).unwrap(), Value::from("a, b, c"));
     }
 
@@ -95,13 +107,13 @@ mod tests {
         let ctx = create_test_context();
         let expr_str = "split(\",\", \"a,b,c\")";
         let body: hcl::Body = hcl::from_str(&format!("test = {}", expr_str)).unwrap();
-        let expr = body.attributes().find(|a| a.key() == "test").unwrap().expr();
+        let expr = body
+            .attributes()
+            .find(|a| a.key() == "test")
+            .unwrap()
+            .expr();
         let result = expr.evaluate(&ctx).unwrap();
-        let expected = Value::from(vec![
-            Value::from("a"),
-            Value::from("b"),
-            Value::from("c"),
-        ]);
+        let expected = Value::from(vec![Value::from("a"), Value::from("b"), Value::from("c")]);
         assert_eq!(result, expected);
     }
 
@@ -110,13 +122,13 @@ mod tests {
         let ctx = create_test_context();
         let expr_str = "split(\", \", \"a, b, c\")";
         let body: hcl::Body = hcl::from_str(&format!("test = {}", expr_str)).unwrap();
-        let expr = body.attributes().find(|a| a.key() == "test").unwrap().expr();
+        let expr = body
+            .attributes()
+            .find(|a| a.key() == "test")
+            .unwrap()
+            .expr();
         let result = expr.evaluate(&ctx).unwrap();
-        let expected = Value::from(vec![
-            Value::from("a"),
-            Value::from("b"),
-            Value::from("c"),
-        ]);
+        let expected = Value::from(vec![Value::from("a"), Value::from("b"), Value::from("c")]);
         assert_eq!(result, expected);
     }
 }

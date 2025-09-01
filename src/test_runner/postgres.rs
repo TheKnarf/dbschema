@@ -35,8 +35,14 @@ impl TestBackend for PostgresTestBackend {
                     Ok(rows) => {
                         match assert_rows_true(&rows) {
                             Ok(true) => { /* ok */ }
-                            Ok(false) => { ok = false; failed_msg = "assert returned false".into(); }
-                            Err(e) => { ok = false; failed_msg = format!("assert error: {}", e); }
+                            Ok(false) => {
+                                ok = false;
+                                failed_msg = "assert returned false".into();
+                            }
+                            Err(e) => {
+                                ok = false;
+                                failed_msg = format!("assert error: {}", e);
+                            }
                         }
                     }
                     Err(e) => {
@@ -47,28 +53,55 @@ impl TestBackend for PostgresTestBackend {
             }
             // Always rollback to keep DB clean
             let _ = tx.rollback();
-            if ok { passed += 1; }
-            results.push(TestResult { name, passed: ok, message: if ok { "ok".into() } else { failed_msg } });
+            if ok {
+                passed += 1;
+            }
+            results.push(TestResult {
+                name,
+                passed: ok,
+                message: if ok { "ok".into() } else { failed_msg },
+            });
         }
         let total = results.len();
         let failed = total - passed;
-        Ok(TestSummary { total, passed, failed, results })
+        Ok(TestSummary {
+            total,
+            passed,
+            failed,
+            results,
+        })
     }
 }
 
 fn assert_rows_true(rows: &[Row]) -> Result<bool> {
-    if rows.is_empty() { return Ok(false); }
+    if rows.is_empty() {
+        return Ok(false);
+    }
     let cols = rows[0].columns();
-    if cols.is_empty() { return Ok(false); }
+    if cols.is_empty() {
+        return Ok(false);
+    }
     // Try bool
-    if let Ok(v) = rows[0].try_get::<usize, bool>(0) { return Ok(v); }
+    if let Ok(v) = rows[0].try_get::<usize, bool>(0) {
+        return Ok(v);
+    }
     // Try integer non-zero
-    if let Ok(v) = rows[0].try_get::<usize, i64>(0) { return Ok(v != 0); }
-    if let Ok(v) = rows[0].try_get::<usize, i32>(0) { return Ok(v != 0); }
-    if let Ok(v) = rows[0].try_get::<usize, i16>(0) { return Ok(v != 0); }
-    if let Ok(v) = rows[0].try_get::<usize, i8>(0) { return Ok(v != 0); }
+    if let Ok(v) = rows[0].try_get::<usize, i64>(0) {
+        return Ok(v != 0);
+    }
+    if let Ok(v) = rows[0].try_get::<usize, i32>(0) {
+        return Ok(v != 0);
+    }
+    if let Ok(v) = rows[0].try_get::<usize, i16>(0) {
+        return Ok(v != 0);
+    }
+    if let Ok(v) = rows[0].try_get::<usize, i8>(0) {
+        return Ok(v != 0);
+    }
     // Try text equals 't' or 'true'
-    if let Ok(v) = rows[0].try_get::<usize, String>(0) { return Ok(v == "t" || v.eq_ignore_ascii_case("true")); }
+    if let Ok(v) = rows[0].try_get::<usize, String>(0) {
+        return Ok(v == "t" || v.eq_ignore_ascii_case("true"));
+    }
     Err(anyhow!("unsupported assert result type"))
 }
 
@@ -83,4 +116,3 @@ fn redacted(dsn: &str) -> String {
     }
     dsn.to_string()
 }
-

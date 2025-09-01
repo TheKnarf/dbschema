@@ -1,6 +1,6 @@
 use hcl::eval::{FuncArgs, FuncDef, ParamType};
 use hcl::Value;
-use sha2::{Sha256, Sha512, Digest};
+use sha2::{Digest, Sha256, Sha512};
 
 /// Cryptographic functions
 pub fn create_md5_func() -> FuncDef {
@@ -55,7 +55,11 @@ mod tests {
         let ctx = create_test_context();
         let expr_str = "md5(\"hello world\")";
         let body: hcl::Body = hcl::from_str(&format!("test = {}", expr_str)).unwrap();
-        let expr = body.attributes().find(|a| a.key() == "test").unwrap().expr();
+        let expr = body
+            .attributes()
+            .find(|a| a.key() == "test")
+            .unwrap()
+            .expr();
         let result = expr.evaluate(&ctx).unwrap();
         // MD5 of "hello world" is "5eb63bbbe01eeed093cb22bb8f5acdc3"
         assert_eq!(result, Value::from("5eb63bbbe01eeed093cb22bb8f5acdc3"));
@@ -66,10 +70,17 @@ mod tests {
         let ctx = create_test_context();
         let expr_str = "sha256(\"hello world\")";
         let body: hcl::Body = hcl::from_str(&format!("test = {}", expr_str)).unwrap();
-        let expr = body.attributes().find(|a| a.key() == "test").unwrap().expr();
+        let expr = body
+            .attributes()
+            .find(|a| a.key() == "test")
+            .unwrap()
+            .expr();
         let result = expr.evaluate(&ctx).unwrap();
         // SHA256 of "hello world" is "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"
-        assert_eq!(result, Value::from("b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"));
+        assert_eq!(
+            result,
+            Value::from("b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9")
+        );
     }
 
     #[test]
@@ -77,7 +88,11 @@ mod tests {
         let ctx = create_test_context();
         let expr_str = "sha512(\"hello world\")";
         let body: hcl::Body = hcl::from_str(&format!("test = {}", expr_str)).unwrap();
-        let expr = body.attributes().find(|a| a.key() == "test").unwrap().expr();
+        let expr = body
+            .attributes()
+            .find(|a| a.key() == "test")
+            .unwrap()
+            .expr();
         let result = expr.evaluate(&ctx).unwrap();
         // SHA512 of "hello world" is "309ecc489c12d6eb4cc40f50c902f2b4d0ed77ee511a7c7a9bcd3ca86d4cd86f989dd35bc5ff499670da34255b45b0cfd830e81f605dcf7dc5542e93ae9cd76f"
         assert_eq!(result, Value::from("309ecc489c12d6eb4cc40f50c902f2b4d0ed77ee511a7c7a9bcd3ca86d4cd86f989dd35bc5ff499670da34255b45b0cfd830e81f605dcf7dc5542e93ae9cd76f"));
@@ -90,7 +105,11 @@ mod tests {
         // Test MD5 with empty string
         let expr_str = "md5(\"\")";
         let body: hcl::Body = hcl::from_str(&format!("test = {}", expr_str)).unwrap();
-        let expr = body.attributes().find(|a| a.key() == "test").unwrap().expr();
+        let expr = body
+            .attributes()
+            .find(|a| a.key() == "test")
+            .unwrap()
+            .expr();
         let result = expr.evaluate(&ctx).unwrap();
         // MD5 of empty string is "d41d8cd98f00b204e9800998ecf8427e"
         assert_eq!(result, Value::from("d41d8cd98f00b204e9800998ecf8427e"));
@@ -98,9 +117,16 @@ mod tests {
         // Test SHA256 with empty string
         let expr_str = "sha256(\"\")";
         let body: hcl::Body = hcl::from_str(&format!("test = {}", expr_str)).unwrap();
-        let expr = body.attributes().find(|a| a.key() == "test").unwrap().expr();
+        let expr = body
+            .attributes()
+            .find(|a| a.key() == "test")
+            .unwrap()
+            .expr();
         let result = expr.evaluate(&ctx).unwrap();
         // SHA256 of empty string is "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-        assert_eq!(result, Value::from("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"));
+        assert_eq!(
+            result,
+            Value::from("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+        );
     }
 }

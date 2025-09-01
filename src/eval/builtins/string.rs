@@ -5,25 +5,19 @@ use hcl::Value;
 pub fn create_upper_func() -> FuncDef {
     FuncDef::builder()
         .param(ParamType::String)
-        .build(|args: FuncArgs| {
-            Ok(Value::from(args[0].as_str().unwrap().to_uppercase()))
-        })
+        .build(|args: FuncArgs| Ok(Value::from(args[0].as_str().unwrap().to_uppercase())))
 }
 
 pub fn create_lower_func() -> FuncDef {
     FuncDef::builder()
         .param(ParamType::String)
-        .build(|args: FuncArgs| {
-            Ok(Value::from(args[0].as_str().unwrap().to_lowercase()))
-        })
+        .build(|args: FuncArgs| Ok(Value::from(args[0].as_str().unwrap().to_lowercase())))
 }
 
 pub fn create_length_func() -> FuncDef {
     FuncDef::builder()
         .param(ParamType::String)
-        .build(|args: FuncArgs| {
-            Ok(Value::from(args[0].as_str().unwrap().len() as i64))
-        })
+        .build(|args: FuncArgs| Ok(Value::from(args[0].as_str().unwrap().len() as i64)))
 }
 
 pub fn create_substr_func() -> FuncDef {
@@ -81,9 +75,7 @@ pub fn create_endswith_func() -> FuncDef {
 pub fn create_trim_func() -> FuncDef {
     FuncDef::builder()
         .param(ParamType::String)
-        .build(|args: FuncArgs| {
-            Ok(Value::from(args[0].as_str().unwrap().trim()))
-        })
+        .build(|args: FuncArgs| Ok(Value::from(args[0].as_str().unwrap().trim())))
 }
 
 pub fn create_replace_func() -> FuncDef {
@@ -123,7 +115,11 @@ mod tests {
         let ctx = create_test_context();
         let expr_str = "upper(\"hello\")";
         let body: hcl::Body = hcl::from_str(&format!("test = {}", expr_str)).unwrap();
-        let expr = body.attributes().find(|a| a.key() == "test").unwrap().expr();
+        let expr = body
+            .attributes()
+            .find(|a| a.key() == "test")
+            .unwrap()
+            .expr();
         assert_eq!(expr.evaluate(&ctx).unwrap(), Value::from("HELLO"));
     }
 
@@ -132,7 +128,11 @@ mod tests {
         let ctx = create_test_context();
         let expr_str = "lower(\"HELLO\")";
         let body: hcl::Body = hcl::from_str(&format!("test = {}", expr_str)).unwrap();
-        let expr = body.attributes().find(|a| a.key() == "test").unwrap().expr();
+        let expr = body
+            .attributes()
+            .find(|a| a.key() == "test")
+            .unwrap()
+            .expr();
         assert_eq!(expr.evaluate(&ctx).unwrap(), Value::from("hello"));
     }
 
@@ -141,7 +141,11 @@ mod tests {
         let ctx = create_test_context();
         let expr_str = "length(\"hello\")";
         let body: hcl::Body = hcl::from_str(&format!("test = {}", expr_str)).unwrap();
-        let expr = body.attributes().find(|a| a.key() == "test").unwrap().expr();
+        let expr = body
+            .attributes()
+            .find(|a| a.key() == "test")
+            .unwrap()
+            .expr();
         assert_eq!(expr.evaluate(&ctx).unwrap(), Value::from(5));
     }
 
@@ -150,7 +154,11 @@ mod tests {
         let ctx = create_test_context();
         let expr_str = "substr(\"hello world\", 6, 5)";
         let body: hcl::Body = hcl::from_str(&format!("test = {}", expr_str)).unwrap();
-        let expr = body.attributes().find(|a| a.key() == "test").unwrap().expr();
+        let expr = body
+            .attributes()
+            .find(|a| a.key() == "test")
+            .unwrap()
+            .expr();
         assert_eq!(expr.evaluate(&ctx).unwrap(), Value::from("world"));
     }
 
@@ -159,7 +167,11 @@ mod tests {
         let ctx = create_test_context();
         let expr_str = "contains(\"hello world\", \"world\")";
         let body: hcl::Body = hcl::from_str(&format!("test = {}", expr_str)).unwrap();
-        let expr = body.attributes().find(|a| a.key() == "test").unwrap().expr();
+        let expr = body
+            .attributes()
+            .find(|a| a.key() == "test")
+            .unwrap()
+            .expr();
         assert_eq!(expr.evaluate(&ctx).unwrap(), Value::from(true));
     }
 
@@ -168,7 +180,11 @@ mod tests {
         let ctx = create_test_context();
         let expr_str = "startswith(\"hello world\", \"hello\")";
         let body: hcl::Body = hcl::from_str(&format!("test = {}", expr_str)).unwrap();
-        let expr = body.attributes().find(|a| a.key() == "test").unwrap().expr();
+        let expr = body
+            .attributes()
+            .find(|a| a.key() == "test")
+            .unwrap()
+            .expr();
         assert_eq!(expr.evaluate(&ctx).unwrap(), Value::from(true));
     }
 
@@ -177,7 +193,11 @@ mod tests {
         let ctx = create_test_context();
         let expr_str = "endswith(\"hello world\", \"world\")";
         let body: hcl::Body = hcl::from_str(&format!("test = {}", expr_str)).unwrap();
-        let expr = body.attributes().find(|a| a.key() == "test").unwrap().expr();
+        let expr = body
+            .attributes()
+            .find(|a| a.key() == "test")
+            .unwrap()
+            .expr();
         assert_eq!(expr.evaluate(&ctx).unwrap(), Value::from(true));
     }
 
@@ -186,7 +206,11 @@ mod tests {
         let ctx = create_test_context();
         let expr_str = "trim(\"  hello  \")";
         let body: hcl::Body = hcl::from_str(&format!("test = {}", expr_str)).unwrap();
-        let expr = body.attributes().find(|a| a.key() == "test").unwrap().expr();
+        let expr = body
+            .attributes()
+            .find(|a| a.key() == "test")
+            .unwrap()
+            .expr();
         assert_eq!(expr.evaluate(&ctx).unwrap(), Value::from("hello"));
     }
 
@@ -195,7 +219,11 @@ mod tests {
         let ctx = create_test_context();
         let expr_str = "replace(\"hello world\", \"world\", \"universe\")";
         let body: hcl::Body = hcl::from_str(&format!("test = {}", expr_str)).unwrap();
-        let expr = body.attributes().find(|a| a.key() == "test").unwrap().expr();
+        let expr = body
+            .attributes()
+            .find(|a| a.key() == "test")
+            .unwrap()
+            .expr();
         assert_eq!(expr.evaluate(&ctx).unwrap(), Value::from("hello universe"));
     }
 }

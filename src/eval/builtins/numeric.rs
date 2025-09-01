@@ -51,7 +51,11 @@ mod tests {
         let ctx = create_test_context();
         let expr_str = "min(10, 5)";
         let body: hcl::Body = hcl::from_str(&format!("test = {}", expr_str)).unwrap();
-        let expr = body.attributes().find(|a| a.key() == "test").unwrap().expr();
+        let expr = body
+            .attributes()
+            .find(|a| a.key() == "test")
+            .unwrap()
+            .expr();
         assert_eq!(expr.evaluate(&ctx).unwrap(), Value::from(5));
     }
 
@@ -60,7 +64,11 @@ mod tests {
         let ctx = create_test_context();
         let expr_str = "max(10, 5)";
         let body: hcl::Body = hcl::from_str(&format!("test = {}", expr_str)).unwrap();
-        let expr = body.attributes().find(|a| a.key() == "test").unwrap().expr();
+        let expr = body
+            .attributes()
+            .find(|a| a.key() == "test")
+            .unwrap()
+            .expr();
         assert_eq!(expr.evaluate(&ctx).unwrap(), Value::from(10));
     }
 
@@ -69,7 +77,11 @@ mod tests {
         let ctx = create_test_context();
         let expr_str = "abs(-5)";
         let body: hcl::Body = hcl::from_str(&format!("test = {}", expr_str)).unwrap();
-        let expr = body.attributes().find(|a| a.key() == "test").unwrap().expr();
+        let expr = body
+            .attributes()
+            .find(|a| a.key() == "test")
+            .unwrap()
+            .expr();
         assert_eq!(expr.evaluate(&ctx).unwrap(), Value::from(5));
     }
 
@@ -78,7 +90,11 @@ mod tests {
         let ctx = create_test_context();
         let expr_str = "abs(5)";
         let body: hcl::Body = hcl::from_str(&format!("test = {}", expr_str)).unwrap();
-        let expr = body.attributes().find(|a| a.key() == "test").unwrap().expr();
+        let expr = body
+            .attributes()
+            .find(|a| a.key() == "test")
+            .unwrap()
+            .expr();
         assert_eq!(expr.evaluate(&ctx).unwrap(), Value::from(5));
     }
 }

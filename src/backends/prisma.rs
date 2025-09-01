@@ -1,13 +1,17 @@
 use anyhow::Result;
 
 use super::Backend;
-use crate::model::{Config, TableSpec, ColumnSpec, EnumSpec};
+use crate::model::{ColumnSpec, Config, EnumSpec, TableSpec};
 
 pub struct PrismaBackend;
 
 impl Backend for PrismaBackend {
-    fn name(&self) -> &'static str { "prisma" }
-    fn file_extension(&self) -> &'static str { "prisma" }
+    fn name(&self) -> &'static str {
+        "prisma"
+    }
+    fn file_extension(&self) -> &'static str {
+        "prisma"
+    }
     fn generate(&self, cfg: &Config, _env: &crate::model::EnvVars) -> Result<String> {
         let mut out = String::new();
         // Output only enums and models; generator/datasource are managed externally.
@@ -85,19 +89,30 @@ fn render_field(c: &ColumnSpec, t: &TableSpec, enums: &[EnumSpec]) -> String {
         Some(e) => (e.alt_name.as_deref().unwrap_or(&e.name).to_string(), None),
         None => prisma_type(&c.r#type, c.db_type.as_deref()),
     };
-    let type_with_null = if c.nullable { format!("{}?", ptype) } else { ptype };
+    let type_with_null = if c.nullable {
+        format!("{}?", ptype)
+    } else {
+        ptype
+    };
     parts.push(type_with_null);
 
     // default
     if let Some(def) = &c.default {
         if def.trim().eq_ignore_ascii_case("now()") {
             parts.push("@default(now())".into());
-        } else if def.trim().eq_ignore_ascii_case("uuid_generate_v4()") || def.trim().eq_ignore_ascii_case("gen_random_uuid()") {
+        } else if def.trim().eq_ignore_ascii_case("uuid_generate_v4()")
+            || def.trim().eq_ignore_ascii_case("gen_random_uuid()")
+        {
             parts.push("@default(uuid())".into());
-        } else if def.to_lowercase().contains("nextval(") || def.to_lowercase().contains("autoincrement") {
+        } else if def.to_lowercase().contains("nextval(")
+            || def.to_lowercase().contains("autoincrement")
+        {
             parts.push("@default(autoincrement())".into());
         } else {
-            parts.push(format!("@default(dbgenerated(\"{}\"))", def.replace('\\', "\\\\").replace('"', "\\\"")));
+            parts.push(format!(
+                "@default(dbgenerated(\"{}\"))",
+                def.replace('\\', "\\\\").replace('"', "\\\"")
+            ));
         }
     }
 
@@ -106,14 +121,21 @@ fn render_field(c: &ColumnSpec, t: &TableSpec, enums: &[EnumSpec]) -> String {
         if pk.columns.len() == 1 && pk.columns[0] == c.name {
             parts.push("@id".into());
             // If type suggests auto-increment, add it if not already
-            if is_serial(&c.r#type) && !parts.iter().any(|p| p.contains("@default(autoincrement())")) {
+            if is_serial(&c.r#type)
+                && !parts
+                    .iter()
+                    .any(|p| p.contains("@default(autoincrement())"))
+            {
                 parts.push("@default(autoincrement())".into());
             }
         }
     }
 
     // unique single-column indexes → @unique
-    if t.indexes.iter().any(|ix| ix.unique && ix.columns.len() == 1 && ix.columns[0] == c.name) {
+    if t.indexes
+        .iter()
+        .any(|ix| ix.unique && ix.columns.len() == 1 && ix.columns[0] == c.name)
+    {
         parts.push("@unique".into());
     }
 
@@ -129,13 +151,28 @@ fn render_field(c: &ColumnSpec, t: &TableSpec, enums: &[EnumSpec]) -> String {
 
     // After scalar field line, optionally add relation field lines for FKs on this column
     // Collect relation lines and append after (on separate lines) by returning combined string with \n  prefix in caller.
-    if let Some(fk) = t.foreign_keys.iter().find(|fk| fk.columns.len() == 1 && fk.columns[0] == c.name) {
+    if let Some(fk) = t
+        .foreign_keys
+        .iter()
+        .find(|fk| fk.columns.len() == 1 && fk.columns[0] == c.name)
+    {
         let ref_model = to_model_name(&fk.ref_table);
         let rel_field_name = fk.ref_table.clone();
         let nullable_char = if c.nullable { "?" } else { "" };
-        let mut rel = format!("\n  {} {}{} @relation(fields: [{}], references: [{}]", rel_field_name, ref_model, nullable_char, c.name, fk.ref_columns.join(", "));
-        if let Some(od) = &fk.on_delete { rel.push_str(&format!(", onDelete: {}", map_fk_action(od))); }
-        if let Some(ou) = &fk.on_update { rel.push_str(&format!(", onUpdate: {}", map_fk_action(ou))); }
+        let mut rel = format!(
+            "\n  {} {}{} @relation(fields: [{}], references: [{}]",
+            rel_field_name,
+            ref_model,
+            nullable_char,
+            c.name,
+            fk.ref_columns.join(", ")
+        );
+        if let Some(od) = &fk.on_delete {
+            rel.push_str(&format!(", onDelete: {}", map_fk_action(od)));
+        }
+        if let Some(ou) = &fk.on_update {
+            rel.push_str(&format!(", onUpdate: {}", map_fk_action(ou)));
+        }
         rel.push(')');
         line.push_str(&rel);
     }
@@ -160,7 +197,6 @@ fn render_enum(e: &EnumSpec) -> String {
     s
 }
 
-
 fn prisma_enum_variant(db_value: &str) -> (String, Option<String>) {
     // Prisma enum value must match [A-Za-z_][A-Za-z0-9_]*
     let mut out = String::new();
@@ -173,9 +209,17 @@ fn prisma_enum_variant(db_value: &str) -> (String, Option<String>) {
         }
     }
     for ch in chars {
-        if ch.is_ascii_alphanumeric() || ch == '_' { out.push(ch); } else { out.push('_'); }
+        if ch.is_ascii_alphanumeric() || ch == '_' {
+            out.push(ch);
+        } else {
+            out.push('_');
+        }
     }
-    if out == db_value { (out, None) } else { (out, Some(format!("@map(\"{}\")", db_value))) }
+    if out == db_value {
+        (out, None)
+    } else {
+        (out, Some(format!("@map(\"{}\")", db_value)))
+    }
 }
 
 fn prisma_type(pg: &str, db_specific: Option<&str>) -> (String, Option<String>) {
@@ -185,7 +229,10 @@ fn prisma_type(pg: &str, db_specific: Option<&str>) -> (String, Option<String>) 
         if dt.starts_with("CHAR(") {
             return ("String".into(), Some(format!("@db.Char{}", &db_type[4..])));
         } else if dt.starts_with("VARCHAR(") {
-            return ("String".into(), Some(format!("@db.VarChar{}", &db_type[7..])));
+            return (
+                "String".into(),
+                Some(format!("@db.VarChar{}", &db_type[7..])),
+            );
         } else if dt == "TEXT" {
             return ("String".into(), Some("@db.Text".into()));
         } else if dt == "UUID" {
@@ -238,13 +285,21 @@ fn to_model_name(table: &str) -> String {
     let mut upper = true;
     for ch in table.chars() {
         if ch.is_ascii_alphanumeric() {
-            if upper { out.push(ch.to_ascii_uppercase()); } else { out.push(ch); }
+            if upper {
+                out.push(ch.to_ascii_uppercase());
+            } else {
+                out.push(ch);
+            }
             upper = false;
         } else {
             upper = true;
         }
     }
-    if out.is_empty() { "Model".into() } else { out }
+    if out.is_empty() {
+        "Model".into()
+    } else {
+        out
+    }
 }
 
 fn map_fk_action(s: &str) -> &str {
@@ -257,7 +312,11 @@ fn map_fk_action(s: &str) -> &str {
     }
 }
 
-fn find_enum_for_type<'a>(enums: &'a [EnumSpec], coltype: &str, table_schema: Option<&str>) -> Option<&'a EnumSpec> {
+fn find_enum_for_type<'a>(
+    enums: &'a [EnumSpec],
+    coltype: &str,
+    table_schema: Option<&str>,
+) -> Option<&'a EnumSpec> {
     let t = coltype.to_lowercase();
     let (maybe_schema, name_only) = match t.split_once('.') {
         Some((s, n)) => (Some(s), n),
@@ -271,8 +330,14 @@ fn find_enum_for_type<'a>(enums: &'a [EnumSpec], coltype: &str, table_schema: Op
         } else {
             // No schema in column type: match by name, and if table has a schema, prefer same-schema enums
             if en == name_only {
-                if let Some(ts) = table_schema { es == ts.to_lowercase() } else { true }
-            } else { false }
+                if let Some(ts) = table_schema {
+                    es == ts.to_lowercase()
+                } else {
+                    true
+                }
+            } else {
+                false
+            }
         }
     })
 }

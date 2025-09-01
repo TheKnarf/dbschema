@@ -2,8 +2,8 @@ use anyhow::Result;
 
 use crate::model::Config;
 
-pub mod postgres;
 pub mod json;
+pub mod postgres;
 pub mod prisma;
 
 pub trait Backend {

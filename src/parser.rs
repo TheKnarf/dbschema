@@ -1,8 +1,12 @@
+use crate::Loader;
 use anyhow::Result;
 use std::path::Path;
-use crate::Loader;
 
-pub fn load_root_with_loader(path: &Path, loader: &dyn Loader, root_env: crate::model::EnvVars) -> Result<crate::model::Config> {
+pub fn load_root_with_loader(
+    path: &Path,
+    loader: &dyn Loader,
+    root_env: crate::model::EnvVars,
+) -> Result<crate::model::Config> {
     crate::eval::load_root_with_loader(path, loader, root_env)
 }
 
@@ -10,14 +14,22 @@ pub fn find_attr<'a>(body: &'a hcl::Body, name: &str) -> Option<&'a hcl::Attribu
     body.attributes().find(|a| a.key() == name)
 }
 
-pub fn get_attr_string(body: &hcl::Body, name: &str, env: &crate::model::EnvVars) -> Result<Option<String>> {
+pub fn get_attr_string(
+    body: &hcl::Body,
+    name: &str,
+    env: &crate::model::EnvVars,
+) -> Result<Option<String>> {
     Ok(match find_attr(body, name) {
         Some(attr) => Some(crate::eval::expr_to_string(attr.expr(), env)?),
         None => None,
     })
 }
 
-pub fn get_attr_bool(body: &hcl::Body, name: &str, env: &crate::model::EnvVars) -> Result<Option<bool>> {
+pub fn get_attr_bool(
+    body: &hcl::Body,
+    name: &str,
+    env: &crate::model::EnvVars,
+) -> Result<Option<bool>> {
     Ok(match find_attr(body, name) {
         Some(attr) => match attr.expr() {
             hcl::Expression::Bool(b) => Some(*b),

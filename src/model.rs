@@ -33,12 +33,12 @@ pub struct TriggerSpec {
     pub alt_name: Option<String>,
     pub schema: Option<String>,
     pub table: String,
-    pub timing: String,         // BEFORE | AFTER
-    pub events: Vec<String>,    // INSERT | UPDATE | DELETE
-    pub level: String,          // ROW | STATEMENT
-    pub function: String,       // function name (unqualified)
+    pub timing: String,      // BEFORE | AFTER
+    pub events: Vec<String>, // INSERT | UPDATE | DELETE
+    pub level: String,       // ROW | STATEMENT
+    pub function: String,    // function name (unqualified)
     pub function_schema: Option<String>,
-    pub when: Option<String>,   // optional condition, raw SQL
+    pub when: Option<String>, // optional condition, raw SQL
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -90,11 +90,11 @@ pub struct PolicySpec {
     pub alt_name: Option<String>,
     pub schema: Option<String>,
     pub table: String,
-    pub command: String,           // ALL | SELECT | INSERT | UPDATE | DELETE
-    pub r#as: Option<String>,      // PERMISSIVE | RESTRICTIVE
-    pub roles: Vec<String>,        // empty => PUBLIC (omit TO clause)
-    pub using: Option<String>,     // USING (expr)
-    pub check: Option<String>,     // WITH CHECK (expr)
+    pub command: String,       // ALL | SELECT | INSERT | UPDATE | DELETE
+    pub r#as: Option<String>,  // PERMISSIVE | RESTRICTIVE
+    pub roles: Vec<String>,    // empty => PUBLIC (omit TO clause)
+    pub using: Option<String>, // USING (expr)
+    pub check: Option<String>, // WITH CHECK (expr)
 }
 
 #[derive(Debug, Clone, Serialize)]

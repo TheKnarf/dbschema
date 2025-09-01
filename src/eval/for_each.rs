@@ -1,5 +1,5 @@
-use anyhow::{bail, Result};
 use crate::eval::core;
+use anyhow::{bail, Result};
 
 /// Trait for types that support for_each iteration
 pub trait ForEachSupport {
@@ -68,7 +68,11 @@ mod tests {
     impl ForEachSupport for MockResource {
         type Item = String;
 
-        fn parse_one(name: &str, _body: &hcl::Body, env: &crate::model::EnvVars) -> Result<Self::Item> {
+        fn parse_one(
+            name: &str,
+            _body: &hcl::Body,
+            env: &crate::model::EnvVars,
+        ) -> Result<Self::Item> {
             // Simple mock that returns the name with each.value if available
             if let Some((_key, value)) = &env.each {
                 Ok(format!("{}-{}", name, value))
@@ -94,7 +98,8 @@ mod tests {
         for_each_iter(&collection, &mut |k, v| {
             results.push((k, v));
             Ok(())
-        }).unwrap();
+        })
+        .unwrap();
 
         assert_eq!(results.len(), 3);
         assert_eq!(results[0].0, hcl::Value::Number(hcl::Number::from(0)));
@@ -116,7 +121,8 @@ mod tests {
         for_each_iter(&collection, &mut |k, v| {
             results.push((k, v));
             Ok(())
-        }).unwrap();
+        })
+        .unwrap();
 
         assert_eq!(results.len(), 2);
         // Results may be in any order due to HashMap iteration
@@ -127,9 +133,15 @@ mod tests {
         });
 
         assert_eq!(sorted_results[0].0, hcl::Value::String("key1".to_string()));
-        assert_eq!(sorted_results[0].1, hcl::Value::String("value1".to_string()));
+        assert_eq!(
+            sorted_results[0].1,
+            hcl::Value::String("value1".to_string())
+        );
         assert_eq!(sorted_results[1].0, hcl::Value::String("key2".to_string()));
-        assert_eq!(sorted_results[1].1, hcl::Value::String("value2".to_string()));
+        assert_eq!(
+            sorted_results[1].1,
+            hcl::Value::String("value2".to_string())
+        );
     }
 
     #[test]
@@ -138,6 +150,9 @@ mod tests {
 
         let result = for_each_iter(&collection, &mut |_, _| Ok(()));
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("for_each expects array or object"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("for_each expects array or object"));
     }
 }

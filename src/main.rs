@@ -1,11 +1,11 @@
 use anyhow::{anyhow, Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
-use dbschema::{
-    apply_filters, load_config,
-    config::{self, Config as DbschemaConfig, TargetConfig},
-    validate, EnvVars, Loader,
-};
 use dbschema::test_runner::TestBackend;
+use dbschema::{
+    apply_filters,
+    config::{self, Config as DbschemaConfig, TargetConfig},
+    load_config, validate, EnvVars, Loader,
+};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -114,8 +114,8 @@ fn main() -> Result<()> {
     } else if let Some(command) = cli.command {
         let mut vars: HashMap<String, hcl::Value> = HashMap::new();
         for vf in &cli.var_file {
-            let loaded = load_var_file(vf)
-                .with_context(|| format!("loading var file {}", vf.display()))?;
+            let loaded =
+                load_var_file(vf).with_context(|| format!("loading var file {}", vf.display()))?;
             vars.extend(loaded);
         }
         for (k, v) in cli.var.iter() {
@@ -128,12 +128,8 @@ fn main() -> Result<()> {
             locals: HashMap::new(),
             each: None,
         };
-        let config = load_config(
-            &cli.input,
-            &fs_loader,
-            env.clone(),
-        )
-        .with_context(|| format!("loading root HCL {}", cli.input.display()))?;
+        let config = load_config(&cli.input, &fs_loader, env.clone())
+            .with_context(|| format!("loading root HCL {}", cli.input.display()))?;
 
         let filtered = apply_cli_filters(
             &config,
@@ -230,13 +226,12 @@ fn run_target(dbschema_config: &DbschemaConfig, target: &TargetConfig) -> Result
     }
 
     let fs_loader = FsLoader;
-    let env = EnvVars { vars, ..EnvVars::default() };
-    let config = load_config(
-        &PathBuf::from(input_path),
-        &fs_loader,
-        env.clone(),
-    )
-    .with_context(|| format!("loading root HCL from {}", input_path))?;
+    let env = EnvVars {
+        vars,
+        ..EnvVars::default()
+    };
+    let config = load_config(&PathBuf::from(input_path), &fs_loader, env.clone())
+        .with_context(|| format!("loading root HCL from {}", input_path))?;
 
     let include_set = target.get_include_set();
     let exclude_set = target.get_exclude_set();
@@ -264,7 +259,9 @@ fn toml_to_hcl(value: &toml::Value) -> Result<hcl::Value> {
     match value {
         toml::Value::String(s) => Ok(hcl::Value::String(s.clone())),
         toml::Value::Integer(i) => Ok(hcl::Value::Number(hcl::Number::from(*i))),
-        toml::Value::Float(f) => Ok(hcl::Value::Number(hcl::Number::from_f64(*f).ok_or_else(|| anyhow!("invalid float"))?)),
+        toml::Value::Float(f) => Ok(hcl::Value::Number(
+            hcl::Number::from_f64(*f).ok_or_else(|| anyhow!("invalid float"))?,
+        )),
         toml::Value::Boolean(b) => Ok(hcl::Value::Bool(*b)),
         toml::Value::Array(arr) => {
             let mut values = Vec::new();
@@ -344,9 +341,7 @@ where
     <K as std::str::FromStr>::Err: std::fmt::Display,
     <V as std::str::FromStr>::Err: std::fmt::Display,
 {
-    let pos = s
-        .find('=')
-        .ok_or_else(|| anyhow!("expected key=value"))?;
+    let pos = s.find('=').ok_or_else(|| anyhow!("expected key=value"))?;
     let key = s[..pos]
         .parse()
         .map_err(|e| anyhow!("failed to parse key: {}", e))?;
@@ -537,41 +532,61 @@ table_name = "from_file"
 
         let dbschema_config = config::load_config_from_path(&dbschema_toml_path)
             .map_err(|e| anyhow::Error::msg(e.to_string()))
-            .with_context(|| "failed to load dbschema.toml")? 
+            .with_context(|| "failed to load dbschema.toml")?
             .ok_or_else(|| anyhow!("dbschema.toml not found"))?;
 
         std::env::set_current_dir(dir.path())?;
 
         // Test target "json_all"
-        let target_all = dbschema_config.targets.iter().find(|t| t.name == "json_all").unwrap();
+        let target_all = dbschema_config
+            .targets
+            .iter()
+            .find(|t| t.name == "json_all")
+            .unwrap();
         run_target(&dbschema_config, target_all)?;
         let output_all = fs::read_to_string("all.json")?;
         assert!(output_all.contains("users"));
         assert!(output_all.contains("my_func"));
 
         // Test target "json_tables"
-        let target_tables = dbschema_config.targets.iter().find(|t| t.name == "json_tables").unwrap();
+        let target_tables = dbschema_config
+            .targets
+            .iter()
+            .find(|t| t.name == "json_tables")
+            .unwrap();
         run_target(&dbschema_config, target_tables)?;
         let output_tables = fs::read_to_string("tables.json")?;
         assert!(output_tables.contains("users"));
         assert!(!output_tables.contains("my_func"));
 
         // Test target "another_input"
-        let target_another = dbschema_config.targets.iter().find(|t| t.name == "another_input").unwrap();
+        let target_another = dbschema_config
+            .targets
+            .iter()
+            .find(|t| t.name == "another_input")
+            .unwrap();
         run_target(&dbschema_config, target_another)?;
         let output_another = fs::read_to_string("another.json")?;
         assert!(output_another.contains("another_func"));
         assert!(!output_another.contains("my_func"));
 
         // Test target "with_vars"
-        let target_vars = dbschema_config.targets.iter().find(|t| t.name == "with_vars").unwrap();
+        let target_vars = dbschema_config
+            .targets
+            .iter()
+            .find(|t| t.name == "with_vars")
+            .unwrap();
         run_target(&dbschema_config, target_vars)?;
         let output_vars = fs::read_to_string("with_vars.json")?;
         // The variable from the target should be used
         assert!(output_vars.contains("my_users_table"));
 
         // Test target "with_alt_name"
-        let target_alt_name = dbschema_config.targets.iter().find(|t| t.name == "with_alt_name").unwrap();
+        let target_alt_name = dbschema_config
+            .targets
+            .iter()
+            .find(|t| t.name == "with_alt_name")
+            .unwrap();
         run_target(&dbschema_config, target_alt_name)?;
         let output_alt_name = fs::read_to_string("with_alt_name.json")?;
         assert!(output_alt_name.contains("from_file"));

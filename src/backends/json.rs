@@ -1,14 +1,18 @@
 use anyhow::Result;
 use serde_json::json;
 
-use crate::model::{Config, EnvVars};
 use super::Backend;
+use crate::model::{Config, EnvVars};
 
 pub struct JsonBackend;
 
 impl Backend for JsonBackend {
-    fn name(&self) -> &'static str { "json" }
-    fn file_extension(&self) -> &'static str { "json" }
+    fn name(&self) -> &'static str {
+        "json"
+    }
+    fn file_extension(&self) -> &'static str {
+        "json"
+    }
     fn generate(&self, cfg: &Config, env: &EnvVars) -> Result<String> {
         let mut vars_json = serde_json::Map::new();
         for (k, v) in &env.vars {
@@ -28,7 +32,9 @@ fn hcl_to_json(value: &hcl::Value) -> Result<serde_json::Value> {
     match value {
         hcl::Value::Null => Ok(serde_json::Value::Null),
         hcl::Value::Bool(b) => Ok(serde_json::Value::Bool(*b)),
-        hcl::Value::Number(n) => Ok(serde_json::Value::Number(serde_json::Number::from_f64(n.as_f64().unwrap()).unwrap())),
+        hcl::Value::Number(n) => Ok(serde_json::Value::Number(
+            serde_json::Number::from_f64(n.as_f64().unwrap()).unwrap(),
+        )),
         hcl::Value::String(s) => Ok(serde_json::Value::String(s.clone())),
         hcl::Value::Array(arr) => {
             let mut values = Vec::new();
