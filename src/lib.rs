@@ -240,7 +240,7 @@ mod tests {
         let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
         assert_eq!(cfg.functions.len(), 1);
         assert_eq!(cfg.triggers.len(), 1);
-        validate(&cfg).unwrap();
+        validate(&cfg, false).unwrap();
         let sql = generate_sql(&cfg).unwrap();
         assert!(sql.contains("CREATE OR REPLACE FUNCTION \"public\".\"set_updated_at\""));
         assert!(sql.contains("CREATE TRIGGER \"users_upd\""));
@@ -288,7 +288,7 @@ mod tests {
         let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
         assert!(cfg.functions.len() >= 1);
         assert_eq!(cfg.triggers.len(), 2);
-        validate(&cfg).unwrap();
+        validate(&cfg, false).unwrap();
     }
 
     #[test]
@@ -320,7 +320,7 @@ mod tests {
         let loader = MapLoader { files };
         let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
         assert_eq!(cfg.triggers.len(), 2);
-        validate(&cfg).unwrap();
+        validate(&cfg, false).unwrap();
         let sql = generate_sql(&cfg).unwrap();
         assert!(sql.contains("\"users\""));
         assert!(sql.contains("\"orders\""));
@@ -370,7 +370,7 @@ mod tests {
         let loader = MapLoader { files };
         let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
         let env = EnvVars::default();
-        let json = crate::generate_with_backend("json", &cfg, &env).unwrap();
+        let json = crate::generate_with_backend("json", &cfg, &env, false).unwrap();
         assert!(json.contains("\"backend\": \"json\""));
         assert!(json.contains("\"functions\""));
         assert!(json.contains("\"triggers\""));
@@ -397,7 +397,7 @@ mod tests {
         let sql = generate_sql(&cfg).unwrap();
         assert!(sql.contains("CREATE OR REPLACE VIEW \"public\".\"v_users\" AS"));
         let env = EnvVars::default();
-        let json = crate::generate_with_backend("json", &cfg, &env).unwrap();
+        let json = crate::generate_with_backend("json", &cfg, &env, false).unwrap();
         assert!(json.contains("\"views\""));
     }
 
@@ -422,7 +422,7 @@ mod tests {
         assert!(sql.contains("CREATE MATERIALIZED VIEW \"public\".\"mv\" AS"));
         assert!(sql.contains("WITH NO DATA"));
         let env = EnvVars::default();
-        let json = crate::generate_with_backend("json", &cfg, &env).unwrap();
+        let json = crate::generate_with_backend("json", &cfg, &env, false).unwrap();
         assert!(json.contains("\"materialized\""));
     }
 
@@ -453,10 +453,10 @@ mod tests {
         let sql = generate_sql(&cfg).unwrap();
         assert!(sql.contains("CREATE TYPE \"public\".\"status\" AS ENUM"));
         let env = EnvVars::default();
-        let json = crate::generate_with_backend("json", &cfg, &env).unwrap();
+        let json = crate::generate_with_backend("json", &cfg, &env, false).unwrap();
         assert!(json.contains("\"enums\""));
         let env = EnvVars::default();
-        let prisma = crate::generate_with_backend("prisma", &cfg, &env).unwrap();
+        let prisma = crate::generate_with_backend("prisma", &cfg, &env, false).unwrap();
         assert!(prisma.contains("enum status"));
         assert!(prisma.contains("status status"));
     }
@@ -522,7 +522,7 @@ mod tests {
         let sql = generate_sql(&cfg).unwrap();
         assert!(sql.contains("CREATE POLICY \"p_users_select\" ON \"public\".\"users\""));
         let env = EnvVars::default();
-        let json = crate::generate_with_backend("json", &cfg, &env).unwrap();
+        let json = crate::generate_with_backend("json", &cfg, &env, false).unwrap();
         assert!(json.contains("\"policies\""));
         assert!(json.contains("\"p_users_select\""));
     }

@@ -548,7 +548,7 @@ table_name = "from_file"
             .iter()
             .find(|t| t.name == "json_all")
             .unwrap();
-        run_target(&dbschema_config, target_all)?;
+        run_target(&dbschema_config, target_all, false)?;
         let output_all = fs::read_to_string("all.json")?;
         assert!(output_all.contains("users"));
         assert!(output_all.contains("my_func"));
@@ -559,7 +559,7 @@ table_name = "from_file"
             .iter()
             .find(|t| t.name == "json_tables")
             .unwrap();
-        run_target(&dbschema_config, target_tables)?;
+        run_target(&dbschema_config, target_tables, false)?;
         let output_tables = fs::read_to_string("tables.json")?;
         assert!(output_tables.contains("users"));
         assert!(!output_tables.contains("my_func"));
@@ -570,7 +570,7 @@ table_name = "from_file"
             .iter()
             .find(|t| t.name == "another_input")
             .unwrap();
-        run_target(&dbschema_config, target_another)?;
+        run_target(&dbschema_config, target_another, false)?;
         let output_another = fs::read_to_string("another.json")?;
         assert!(output_another.contains("another_func"));
         assert!(!output_another.contains("my_func"));
@@ -581,7 +581,7 @@ table_name = "from_file"
             .iter()
             .find(|t| t.name == "with_vars")
             .unwrap();
-        run_target(&dbschema_config, target_vars)?;
+        run_target(&dbschema_config, target_vars, false)?;
         let output_vars = fs::read_to_string("with_vars.json")?;
         // The variable from the target should be used
         assert!(output_vars.contains("my_users_table"));
@@ -592,7 +592,7 @@ table_name = "from_file"
             .iter()
             .find(|t| t.name == "with_alt_name")
             .unwrap();
-        run_target(&dbschema_config, target_alt_name)?;
+        run_target(&dbschema_config, target_alt_name, false)?;
         let output_alt_name = fs::read_to_string("with_alt_name.json")?;
         assert!(output_alt_name.contains("from_file"));
 
