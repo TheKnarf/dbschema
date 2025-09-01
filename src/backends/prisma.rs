@@ -1,7 +1,7 @@
-use anyhow::{Result, bail};
-
 use super::Backend;
 use crate::model::{ColumnSpec, Config, EnumSpec, TableSpec};
+
+use anyhow::{bail, Result};
 
 pub struct PrismaBackend;
 
@@ -82,14 +82,17 @@ fn render_model(t: &TableSpec, enums: &[EnumSpec], strict: bool) -> Result<Strin
 fn render_field(c: &ColumnSpec, t: &TableSpec, enums: &[EnumSpec], strict: bool) -> Result<String> {
     let _table_name = t.table_name.as_deref().unwrap_or(&t.name);
     let (ptype, db_attr) = {
-        let found_enum = find_enum_for_type(enums, &c.r#type, t.schema.as_deref());
+        let found_enum = crate::validate::find_enum_for_type(enums, &c.r#type, t.schema.as_deref());
         if let Some(e) = found_enum {
             // Enum is defined in HCL
             (e.alt_name.as_deref().unwrap_or(&e.name).to_string(), None)
         } else if strict {
             // Strict mode: error if enum not found
-            bail!("Enum type '{}' not found in HCL and strict mode is enabled", c.r#type);
-        } else if is_likely_enum(&c.r#type) {
+            bail!(
+                "Enum type '{}' not found in HCL and strict mode is enabled",
+                c.r#type
+            );
+        } else if crate::validate::is_likely_enum(&c.r#type) {
             // Non-strict mode: assume enum exists externally, use its raw name
             (c.r#type.clone(), None)
         } else {
@@ -181,10 +184,10 @@ fn render_field(c: &ColumnSpec, t: &TableSpec, enums: &[EnumSpec], strict: bool)
             fk.ref_columns.join(", ")
         );
         if let Some(od) = &fk.on_delete {
-            rel.push_str(&format!( ", onDelete: {}", map_fk_action(od)));
+            rel.push_str(&format!(", onDelete: {}", map_fk_action(od)));
         }
         if let Some(ou) = &fk.on_update {
-            rel.push_str(&format!( ", onUpdate: {}", map_fk_action(ou)));
+            rel.push_str(&format!(", onUpdate: {}", map_fk_action(ou)));
         }
         rel.push(')');
         line.push_str(&rel);
@@ -325,38 +328,4 @@ fn map_fk_action(s: &str) -> &str {
     }
 }
 
-pub fn find_enum_for_type<'a>(
-    enums: &'a [EnumSpec],
-    coltype: &str,
-    table_schema: Option<&str>,
-) -> Option<&'a EnumSpec> {
-    let t = coltype.to_lowercase();
-    let (maybe_schema, name_only) = match t.split_once('.') {
-        Some((s, n)) => (Some(s), n),
-        None => (None, t.as_str()),
-    };
-    enums.iter().find(|e| {
-        let en = e.name.to_lowercase();
-        let es = e.schema.as_deref().unwrap_or("public").to_lowercase();
-        if let Some(s) = maybe_schema {
-            en == name_only && es == s
-        } else {
-            // No schema in column type: match by name, and if table has a schema, prefer same-schema enums
-            if en == name_only {
-                if let Some(ts) = table_schema {
-                    es == ts.to_lowercase()
-                } else {
-                    true
-                }
-            } else {
-                false
-            }
-        }
-    })
-}
 
-pub fn is_likely_enum(s: &str) -> bool {
-    // Simple heuristic: starts with uppercase letter and contains only alphanumeric characters
-    // This is a basic check and might need refinement based on actual enum naming conventions
-    s.chars().next().map_or(false, |c| c.is_ascii_uppercase()) && s.chars().all(|c| c.is_ascii_alphanumeric())
-}

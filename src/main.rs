@@ -144,7 +144,7 @@ fn main() -> Result<()> {
 
         match command {
             Commands::Validate {} => {
-                validate(&filtered, cli.strict)?;
+                dbschema::validate::validate(&filtered, cli.strict)?;
                 println!(
                     "Valid: {} schema(s), {} enum(s), {} table(s), {} view(s), {} materialized view(s), {} function(s), {} trigger(s)",
                     filtered.schemas.len(),
@@ -157,8 +157,9 @@ fn main() -> Result<()> {
                 );
             }
             Commands::CreateMigration { out_dir, name } => {
-                validate(&filtered, cli.strict)?;
-                let artifact = dbschema::generate_with_backend(&cli.backend, &filtered, &env, cli.strict)?;
+                dbschema::validate::validate(&filtered, cli.strict)?;
+                let artifact =
+                    dbschema::generate_with_backend(&cli.backend, &filtered, &env, cli.strict)?;
                 if let Some(dir) = out_dir {
                     let name = name.unwrap_or_else(|| "triggers".to_string());
                     let ext = dbschema::backends::get_backend(&cli.backend)

@@ -4,8 +4,9 @@ pub mod eval;
 pub mod model;
 pub mod parser;
 pub mod test_runner;
+pub mod validate;
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 // Keep types public via re-exports
 use std::path::Path;
 
@@ -15,20 +16,7 @@ pub use model::{
     SchemaSpec, TableSpec, TriggerSpec, ViewSpec,
 };
 
-/// Resource kinds that can be filtered
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ResourceKind {
-    Schemas,
-    Enums,
-    Tables,
-    Views,
-    Materialized,
-    Functions,
-    Triggers,
-    Extensions,
-    Policies,
-    Tests,
-}
+
 
 // Loader abstraction: lets callers control how files are read.
 pub trait Loader {
@@ -42,39 +30,7 @@ pub fn load_config(root_path: &Path, loader: &dyn Loader, env: EnvVars) -> Resul
 
 // Pure validation: check references etc.
 pub fn validate(cfg: &Config, strict: bool) -> Result<()> {
-    for t in &cfg.triggers {
-        let fqn = format!(
-            "{}.{}",
-            t.function_schema.as_deref().unwrap_or("public"),
-            t.function
-        );
-        let found = cfg.functions.iter().any(|f| {
-            let fs = f.schema.as_deref().unwrap_or("public");
-            f.name == t.function && (t.function_schema.as_deref().unwrap_or(fs) == fs)
-        });
-        if !found {
-            bail!(
-                "trigger '{}' references missing function '{}': ensure function exists or set function_schema",
-                t.name, fqn
-            );
-        }
-    }
-
-    if strict {
-        for table in &cfg.tables {
-            for column in &table.columns {
-                // Check if column type is an enum and if it's defined in HCL
-                if backends::prisma::is_likely_enum(&column.r#type) {
-                    let found_enum = backends::prisma::find_enum_for_type(&cfg.enums, &column.r#type, table.schema.as_deref());
-                    if found_enum.is_none() {
-                        bail!("Strict mode: Enum type '{}' referenced in table '{}' column '{}' is not defined in HCL", column.r#type, table.name, column.name);
-                    }
-                }
-            }
-        }
-    }
-
-    Ok(())
+    validate::validate(cfg, strict)
 }
 
 /// Apply filters to a configuration based on target settings
@@ -220,7 +176,12 @@ pub fn generate_sql(cfg: &Config) -> Result<String> {
     backends::postgres::to_sql(cfg)
 }
 
-pub fn generate_with_backend(backend: &str, cfg: &Config, env: &EnvVars, strict: bool) -> Result<String> {
+pub fn generate_with_backend(
+    backend: &str,
+    cfg: &Config,
+    env: &EnvVars,
+    strict: bool,
+) -> Result<String> {
     let be = backends::get_backend(backend)
         .ok_or_else(|| anyhow::anyhow!(format!("unknown backend '{backend}'")))?;
     be.generate(cfg, env, strict)

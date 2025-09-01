@@ -25,7 +25,12 @@ impl Backend for PostgresBackend {
     fn file_extension(&self) -> &'static str {
         "sql"
     }
-    fn generate(&self, cfg: &Config, _env: &crate::model::EnvVars, _strict: bool) -> Result<String> {
+    fn generate(
+        &self,
+        cfg: &Config,
+        _env: &crate::model::EnvVars,
+        _strict: bool,
+    ) -> Result<String> {
         to_sql(cfg)
     }
 }
