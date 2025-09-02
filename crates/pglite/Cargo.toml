@@ -8,5 +8,5 @@ anyhow = "1"
 bytes = "1"
 fallible-iterator = "0.2"
 postgres-protocol = "0.6"
-wasmtime = "36"
-wasmtime-wasi = { version = "36", features=["preview1"] }
+wasmer = "4"
+wasmer-emscripten = "4"
