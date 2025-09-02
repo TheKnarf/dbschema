@@ -1,18 +1,20 @@
 use crate::frontend::ast;
 use crate::ir;
 
-pub fn lower_config(ast: ast::Config) -> ir::Config {
-    ir::Config {
-        functions: ast.functions.into_iter().map(Into::into).collect(),
-        triggers: ast.triggers.into_iter().map(Into::into).collect(),
-        extensions: ast.extensions.into_iter().map(Into::into).collect(),
-        schemas: ast.schemas.into_iter().map(Into::into).collect(),
-        enums: ast.enums.into_iter().map(Into::into).collect(),
-        tables: ast.tables.into_iter().map(Into::into).collect(),
-        views: ast.views.into_iter().map(Into::into).collect(),
-        materialized: ast.materialized.into_iter().map(Into::into).collect(),
-        policies: ast.policies.into_iter().map(Into::into).collect(),
-        tests: ast.tests.into_iter().map(Into::into).collect(),
+impl From<ast::Config> for ir::Config {
+    fn from(ast: ast::Config) -> Self {
+        Self {
+            functions: ast.functions.into_iter().map(Into::into).collect(),
+            triggers: ast.triggers.into_iter().map(Into::into).collect(),
+            extensions: ast.extensions.into_iter().map(Into::into).collect(),
+            schemas: ast.schemas.into_iter().map(Into::into).collect(),
+            enums: ast.enums.into_iter().map(Into::into).collect(),
+            tables: ast.tables.into_iter().map(Into::into).collect(),
+            views: ast.views.into_iter().map(Into::into).collect(),
+            materialized: ast.materialized.into_iter().map(Into::into).collect(),
+            policies: ast.policies.into_iter().map(Into::into).collect(),
+            tests: ast.tests.into_iter().map(Into::into).collect(),
+        }
     }
 }
 

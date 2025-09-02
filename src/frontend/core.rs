@@ -12,7 +12,6 @@ use crate::frontend::ast;
 use crate::frontend::builtins;
 use crate::frontend::env::EnvVars;
 use crate::frontend::for_each::execute_for_each;
-use crate::frontend::lower;
 use crate::ir;
 use crate::Loader;
 
@@ -350,7 +349,7 @@ pub fn load_root_with_loader(
         .unwrap_or_else(|| PathBuf::from("."));
     let mut visited = Vec::new();
     let ast_cfg = load_file(loader, &path, &base, &root_env, &mut visited)?;
-    let mut cfg = lower::lower_config(ast_cfg);
+    let mut cfg: ir::Config = ast_cfg.into();
     populate_back_references(&mut cfg)?;
     Ok(cfg)
 }
