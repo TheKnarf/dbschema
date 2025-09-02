@@ -22,7 +22,6 @@ impl Loader for FsLoader {
 
 #[cfg(feature = "pglite")]
 #[test]
-#[ignore]
 fn pglite_backend_runs_test() -> Result<()> {
     use std::fs::File;
     use std::io::Write;

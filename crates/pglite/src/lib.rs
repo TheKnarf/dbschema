@@ -186,6 +186,11 @@ impl PGliteRuntime {
         let table_cell: Arc<Mutex<Option<Table>>> = Arc::new(Mutex::new(None));
         bind_invoke_funcs(&mut linker, table_cell.clone())?;
         add_to_linker_sync(&mut linker, |ctx: &mut WasiP1Ctx| ctx)?;
+        // PGlite expects an `env::exit` import; implement it via a host panic
+        // to signal termination back to the caller.
+        linker.func_wrap("env", "exit", |_: Caller<'_, WasiP1Ctx>, code: i32| {
+            panic!("env::exit({code})")
+        })?;
 
         // Preopen the directory containing pglite.data as /tmp/pglite
         let mut builder = WasiCtxBuilder::new();
