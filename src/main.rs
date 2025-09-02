@@ -1,9 +1,9 @@
 use anyhow::{anyhow, Context, Result};
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{Parser, Subcommand};
 use dbschema::test_runner::TestBackend;
 use dbschema::{
     apply_filters,
-    config::{self, Config as DbschemaConfig, TargetConfig},
+    config::{self, Config as DbschemaConfig, ResourceKind, TargetConfig},
     load_config, validate, EnvVars, Loader,
 };
 use std::collections::HashMap;
@@ -76,20 +76,6 @@ enum Commands {
         #[arg(long = "name")]
         names: Vec<String>,
     },
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, ValueEnum)]
-enum ResourceKind {
-    Schemas,
-    Enums,
-    Tables,
-    Views,
-    Materialized,
-    Functions,
-    Triggers,
-    Extensions,
-    Policies,
-    Tests,
 }
 
 fn main() -> Result<()> {
