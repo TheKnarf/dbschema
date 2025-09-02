@@ -2,337 +2,133 @@ use anyhow::{anyhow, Result};
 use bytes::BytesMut;
 use fallible_iterator::FallibleIterator;
 use postgres_protocol::message::{backend, frontend};
-use std::{
-    path::PathBuf,
-    sync::{Arc, Mutex},
-};
-use wasmtime::FuncType;
-use wasmtime::{
-    Caller, Engine, ExternType, Global, GlobalType, Instance, Linker, Memory, Module, Ref, Store,
-    Table, TypedFunc, Val, ValType,
-};
-use wasmtime_wasi::{
-    preview1::{add_to_linker_sync, WasiP1Ctx},
-    DirPerms, FilePerms, WasiCtxBuilder,
+use std::collections::HashMap;
+use std::path::PathBuf;
+use wasmer::{FunctionEnv, Instance, Memory, Module, Store, Table, TypedFunction};
+use wasmer_emscripten::{
+    generate_emscripten_env, is_emscripten_module, run_emscripten_instance, EmEnv,
+    EmscriptenGlobals,
 };
 
 /// In-memory Postgres backend powered by the PGlite WASM build.
 ///
-/// This backend bootstraps a WASI environment, instantiates the
-/// pre-built `pglite.wasm` module and exposes a minimal wrapper
-/// around the exported functions required to initialise, run and
+/// This backend bootstraps an Emscripten environment using Wasmer,
+/// instantiates the pre-built `pglite.wasm` module and exposes a minimal
+/// wrapper around the exported functions required to initialise, run and
 /// shutdown the in-memory database. Query execution through the
 /// Postgres wire protocol is handled via an in-memory bridge.
 pub struct PGliteRuntime {
-    store: Store<WasiP1Ctx>,
+    store: Store,
     _instance: Instance,
     memory: Memory,
-    interactive_write: TypedFunc<i32, ()>,
-    interactive_read: TypedFunc<(), i32>,
-    get_channel: TypedFunc<(), i32>,
-    use_wire: TypedFunc<i32, ()>,
-    backend: TypedFunc<(), ()>,
-    shutdown_fn: TypedFunc<(), ()>,
+    interactive_write: TypedFunction<i32, ()>,
+    interactive_read: TypedFunction<(), i32>,
+    get_channel: TypedFunction<(), i32>,
+    use_wire: TypedFunction<i32, ()>,
+    backend: TypedFunction<(), ()>,
+    shutdown_fn: TypedFunction<(), ()>,
     _table: Table,
 }
 
-fn valtype_from_char(c: char) -> ValType {
-    match c {
-        'i' => ValType::I32,
-        'j' => ValType::I64,
-        'f' => ValType::F32,
-        'd' => ValType::F64,
-        _ => ValType::I32,
-    }
-}
-
-fn default_val(c: char) -> Val {
-    match c {
-        'i' => Val::I32(0),
-        'j' => Val::I64(0),
-        'f' => Val::F32(0.0f32.to_bits()),
-        'd' => Val::F64(0.0f64.to_bits()),
-        _ => Val::I32(0),
-    }
-}
-
-fn default_valtype(t: ValType) -> Val {
-    match t {
-        ValType::I32 => Val::I32(0),
-        ValType::I64 => Val::I64(0),
-        ValType::F32 => Val::F32(0.0f32.to_bits()),
-        ValType::F64 => Val::F64(0.0f64.to_bits()),
-        _ => Val::I32(0),
-    }
-}
-
-fn bind_module_imports(
-    linker: &mut Linker<WasiP1Ctx>,
-    store: &mut Store<WasiP1Ctx>,
-    module: &Module,
-    table_cell: Arc<Mutex<Option<Table>>>,
-) -> Result<(Memory, Table)> {
-    let mut memory: Option<Memory> = None;
-    let mut table: Option<Table> = None;
-
-    for import in module.imports() {
-        let module_name = import.module();
-        let name = import.name().unwrap_or("");
-        match import.ty() {
-            ExternType::Func(ty) if module_name == "env" => {
-                if name.starts_with("invoke_") || name == "exit" || name == "getaddrinfo" {
-                    continue;
-                }
-                let results: Vec<Val> = ty.results().map(default_valtype).collect();
-                linker.func_new(module_name, name, ty.clone(), move |_c, _a, r| {
-                    for (i, val) in results.iter().enumerate() {
-                        r[i] = val.clone();
-                    }
-                    Ok(())
-                })?;
-            }
-            ExternType::Memory(mt) if module_name == "env" && name == "memory" => {
-                let mem = Memory::new(store, mt)?;
-                linker.define(module_name, name, mem.clone())?;
-                memory = Some(mem);
-            }
-            ExternType::Table(tt)
-                if module_name == "env" && name == "__indirect_function_table" =>
-            {
-                let tbl = Table::new(store, tt)?;
-                linker.define(module_name, name, tbl.clone())?;
-                *table_cell.lock().unwrap() = Some(tbl.clone());
-                table = Some(tbl);
-            }
-            ExternType::Global(gt) if module_name == "env" => {
-                let g = Global::new(store, gt, default_valtype(gt.content()))?;
-                linker.define(module_name, name, g)?;
-            }
-            ExternType::Global(gt) if module_name == "GOT.mem" && name == "__heap_base" => {
-                let g = Global::new(store, gt, default_valtype(gt.content()))?;
-                linker.define(module_name, name, g)?;
-            }
-            _ => {}
-        }
-    }
-
-    let memory = memory.ok_or_else(|| anyhow!("missing memory import"))?;
-    let table = table.ok_or_else(|| anyhow!("missing table import"))?;
-    Ok((memory, table))
-}
-
-fn bind_invoke_funcs(
-    linker: &mut Linker<WasiP1Ctx>,
-    table: Arc<Mutex<Option<Table>>>,
-) -> Result<()> {
-    fn bind(
-        linker: &mut Linker<WasiP1Ctx>,
-        table: Arc<Mutex<Option<Table>>>,
-        sig: &str,
-    ) -> Result<()> {
-        let name = format!("invoke_{}", sig);
-        let mut chars = sig.chars();
-        let ret = chars.next().unwrap_or('v');
-        let mut params: Vec<ValType> = vec![ValType::I32];
-        for c in chars.clone() {
-            params.push(valtype_from_char(c));
-        }
-        let results: Vec<ValType> = if ret == 'v' {
-            vec![]
-        } else {
-            vec![valtype_from_char(ret)]
-        };
-        let ty = FuncType::new(linker.engine(), params.clone(), results.clone());
-        let table_clone = table.clone();
-        linker.func_new(
-            "env",
-            &name,
-            ty,
-            move |mut caller: Caller<'_, WasiP1Ctx>, args: &[Val], rets: &mut [Val]| {
-                let index = args[0]
-                    .i32()
-                    .ok_or_else(|| anyhow!("invalid function index"))?;
-                let func = {
-                    let tbl_opt = table_clone.lock().unwrap();
-                    let tbl = tbl_opt
-                        .as_ref()
-                        .ok_or_else(|| anyhow!("table not initialized"))?;
-                    let val = tbl
-                        .get(&mut caller, index as u64)
-                        .ok_or_else(|| anyhow!("table lookup failed"))?;
-                    match val {
-                        Ref::Func(Some(f)) => f,
-                        _ => return Err(anyhow!("expected funcref")),
-                    }
-                };
-                let wasm_args = &args[1..];
-                let mut wasm_rets = if rets.is_empty() {
-                    vec![]
-                } else {
-                    vec![default_val(ret)]
-                };
-                func.call(&mut caller, wasm_args, &mut wasm_rets)?;
-                if !rets.is_empty() {
-                    rets[0] = wasm_rets[0].clone();
-                }
-                Ok(())
-            },
-        )?;
-        Ok(())
-    }
-
-    for sig in [
-        "di",
-        "i",
-        "id",
-        "ii",
-        "iii",
-        "iiii",
-        "iiiii",
-        "iiiiii",
-        "iiiiiii",
-        "iiiiiiii",
-        "iiiiiiiii",
-        "iiiiiiiiii",
-        "iiiiiiiiiii",
-        "iiiiiiiiiiiiii",
-        "iiiiiiiiiiiiiiiiii",
-        "iiiiiji",
-        "iiiij",
-        "iiiijii",
-        "iiij",
-        "iiji",
-        "ij",
-        "ijiiiii",
-        "ijiiiiii",
-        "j",
-        "ji",
-        "jii",
-        "jiiii",
-        "jiiiiii",
-        "jiiiiiiiii",
-        "v",
-        "vi",
-        "vid",
-        "vii",
-        "viii",
-        "viiii",
-        "viiiii",
-        "viiiiii",
-        "viiiiiii",
-        "viiiiiiii",
-        "viiiiiiiii",
-        "viiiiiiiiiiii",
-        "viiiji",
-        "viij",
-        "viiji",
-        "viijii",
-        "viijiiii",
-        "vij",
-        "viji",
-        "vijiji",
-        "vj",
-        "vji",
-    ] {
-        bind(linker, table.clone(), sig)?;
-    }
-    Ok(())
-}
 impl PGliteRuntime {
-    /// Load the PGlite module and initialise the database files.
+    /// Initialise the PGlite runtime and underlying database.
     pub fn new() -> Result<Self> {
-        // Locate the bundled wasm and data files within node_modules
         let pkg_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("node_modules/@electric-sql/pglite/dist");
         let wasm_path = pkg_dir.join("pglite.wasm");
+        let wasm_bytes = std::fs::read(&wasm_path)?;
 
-        let engine = Engine::default();
-        let module = Module::from_file(&engine, &wasm_path)?;
-        let mut linker = Linker::new(&engine);
-        let table_cell: Arc<Mutex<Option<Table>>> = Arc::new(Mutex::new(None));
-        bind_invoke_funcs(&mut linker, table_cell.clone())?;
-        add_to_linker_sync(&mut linker, |ctx: &mut WasiP1Ctx| ctx)?;
-        // PGlite expects an `env::exit` import; implement it via a host panic
-        // to signal termination back to the caller.
-        linker.func_wrap::<_, ()>("env", "exit", |_: Caller<'_, WasiP1Ctx>, code: i32| {
-            panic!("env::exit({code})")
-        })?;
+        let mut store = Store::default();
+        let module = Module::new(&store, wasm_bytes)?;
+        anyhow::ensure!(is_emscripten_module(&module), "not an Emscripten module");
 
-        // PGlite may import `env::getaddrinfo` even though networking isn't
-        // supported in this runtime. Provide a stub that always fails to
-        // resolve addresses so module instantiation succeeds.
-        linker.func_wrap(
-            "env",
-            "getaddrinfo",
-            |_: Caller<'_, WasiP1Ctx>, _node: i32, _service: i32, _hints: i32, _res: i32| {
-                // Return a non-zero error code (e.g. EAI_NONAME)
-                1
-            },
-        )?;
+        let env = FunctionEnv::new(&mut store, EmEnv::new());
+        let mut globals =
+            EmscriptenGlobals::new(&mut store, &env, &module).map_err(|e| anyhow!(e))?;
+        let mut mapped_dirs = HashMap::new();
+        mapped_dirs.insert("/tmp/pglite".to_string(), pkg_dir.clone());
+        mapped_dirs.insert(".".to_string(), pkg_dir.clone());
+        env.as_ref(&store).set_data(&globals.data, mapped_dirs);
 
-        // Preopen the directory containing pglite.data as /tmp/pglite
-        let mut builder = WasiCtxBuilder::new();
-        builder.inherit_stdio().preopened_dir(
-            &pkg_dir,
-            "/tmp/pglite",
-            DirPerms::all(),
-            FilePerms::all(),
-        )?;
-        let wasi = builder.build_p1();
-        let mut store = Store::new(&engine, wasi);
+        let import_object = generate_emscripten_env(&mut store, &env, &mut globals);
+        let mut instance = Instance::new(&mut store, &module, &import_object)?;
 
-        // Provide memory, table, globals and any additional stub functions
-        let (memory, table) =
-            bind_module_imports(&mut linker, &mut store, &module, table_cell.clone())?;
+        // Set up memory, function pointers and run constructors. Ignore the
+        // error about missing main/entrypoint as the module exposes its own API.
+        let _ = run_emscripten_instance(
+            &mut instance,
+            env.clone().into_mut(&mut store),
+            &mut globals,
+            "",
+            vec![],
+            None,
+        );
 
-        let instance = linker.instantiate(&mut store, &module)?;
-
-        // Call _pgl_initdb to ensure the database files are set up
-        let init = instance.get_typed_func::<(), i32>(&mut store, "_pgl_initdb")?;
-        let rc = init.call(&mut store, ())?;
+        // Call _pgl_initdb to ensure the database files are set up.
+        let init = instance
+            .exports
+            .get_typed_function::<(), i32>(&mut store, "_pgl_initdb")?;
+        let rc = init.call(&mut store)?;
         if rc != 0 {
             return Err(anyhow!("pglite initdb failed with code {rc}"));
         }
 
-        let interactive_write =
-            instance.get_typed_func::<i32, ()>(&mut store, "_interactive_write")?;
-        let interactive_read =
-            instance.get_typed_func::<(), i32>(&mut store, "_interactive_read")?;
-        let get_channel = instance.get_typed_func::<(), i32>(&mut store, "_get_channel")?;
-        let use_wire = instance.get_typed_func::<i32, ()>(&mut store, "_use_wire")?;
-        let backend = instance.get_typed_func::<(), ()>(&mut store, "_pgl_backend")?;
-        let shutdown_fn = instance.get_typed_func::<(), ()>(&mut store, "_pgl_shutdown")?;
+        let interactive_write = instance
+            .exports
+            .get_typed_function::<i32, ()>(&mut store, "_interactive_write")?;
+        let interactive_read = instance
+            .exports
+            .get_typed_function::<(), i32>(&mut store, "_interactive_read")?;
+        let get_channel = instance
+            .exports
+            .get_typed_function::<(), i32>(&mut store, "_get_channel")?;
+        let use_wire = instance
+            .exports
+            .get_typed_function::<i32, ()>(&mut store, "_use_wire")?;
+        let backend = instance
+            .exports
+            .get_typed_function::<(), ()>(&mut store, "_pgl_backend")?;
+        let shutdown_fn = instance
+            .exports
+            .get_typed_function::<(), ()>(&mut store, "_pgl_shutdown")?;
 
         Ok(Self {
             store,
             _instance: instance,
-            memory,
+            memory: globals.memory.clone(),
             interactive_write,
             interactive_read,
             get_channel,
             use_wire,
             backend,
             shutdown_fn,
-            _table: table,
+            _table: globals.table.clone(),
         })
     }
+
     /// Execute a single protocol message and return the backend response bytes.
     fn exec_protocol(&mut self, message: &[u8]) -> Result<Vec<u8>> {
         self.use_wire.call(&mut self.store, 1)?;
         self.interactive_write
             .call(&mut self.store, message.len() as i32)?;
-        let mem = self.memory.data_mut(&mut self.store);
-        mem[1..1 + message.len()].copy_from_slice(message);
-        self.backend.call(&mut self.store, ())?;
-        let chan = self.get_channel.call(&mut self.store, ())?;
+        {
+            let view = self.memory.view(&self.store);
+            view.write(1, message).map_err(|e| anyhow!(e.to_string()))?;
+        }
+        self.backend.call(&mut self.store)?;
+        let chan = self.get_channel.call(&mut self.store)?;
         if chan <= 0 {
             return Err(anyhow!("unsupported channel"));
         }
-        let out_len = self.interactive_read.call(&mut self.store, ())? as usize;
+        let out_len = self.interactive_read.call(&mut self.store)? as usize;
         let start = message.len() + 2;
-        let end = start + out_len;
-        let mem = self.memory.data(&self.store);
-        Ok(mem[start..end].to_vec())
+        let mut out = vec![0u8; out_len];
+        {
+            let view = self.memory.view(&self.store);
+            view.read(start as u64, &mut out)
+                .map_err(|e| anyhow!(e.to_string()))?;
+        }
+        Ok(out)
     }
 
     /// Perform the initial startup handshake.
@@ -369,7 +165,7 @@ impl PGliteRuntime {
 
     /// Shutdown the backend and flush the filesystem.
     pub fn shutdown(&mut self) -> Result<()> {
-        self.shutdown_fn.call(&mut self.store, ())?;
+        self.shutdown_fn.call(&mut self.store)?;
         Ok(())
     }
 }
