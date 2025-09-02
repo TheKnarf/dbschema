@@ -2,6 +2,7 @@ use anyhow::Result;
 use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+use std::fmt;
 use std::path::Path;
 
 /// Global settings for dbschema
@@ -78,9 +79,9 @@ pub enum ResourceKind {
     Tests,
 }
 
-impl ResourceKind {
-    pub fn as_str(&self) -> &'static str {
-        match self {
+impl fmt::Display for ResourceKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
             ResourceKind::Schemas => "schemas",
             ResourceKind::Enums => "enums",
             ResourceKind::Tables => "tables",
@@ -91,22 +92,27 @@ impl ResourceKind {
             ResourceKind::Extensions => "extensions",
             ResourceKind::Policies => "policies",
             ResourceKind::Tests => "tests",
-        }
+        };
+        write!(f, "{}", s)
     }
+}
 
-    pub fn from_str(s: &str) -> Option<Self> {
+impl std::str::FromStr for ResourceKind {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            "schemas" => Some(ResourceKind::Schemas),
-            "enums" => Some(ResourceKind::Enums),
-            "tables" => Some(ResourceKind::Tables),
-            "views" => Some(ResourceKind::Views),
-            "materialized" => Some(ResourceKind::Materialized),
-            "functions" => Some(ResourceKind::Functions),
-            "triggers" => Some(ResourceKind::Triggers),
-            "extensions" => Some(ResourceKind::Extensions),
-            "policies" => Some(ResourceKind::Policies),
-            "tests" => Some(ResourceKind::Tests),
-            _ => None,
+            "schemas" => Ok(ResourceKind::Schemas),
+            "enums" => Ok(ResourceKind::Enums),
+            "tables" => Ok(ResourceKind::Tables),
+            "views" => Ok(ResourceKind::Views),
+            "materialized" => Ok(ResourceKind::Materialized),
+            "functions" => Ok(ResourceKind::Functions),
+            "triggers" => Ok(ResourceKind::Triggers),
+            "extensions" => Ok(ResourceKind::Extensions),
+            "policies" => Ok(ResourceKind::Policies),
+            "tests" => Ok(ResourceKind::Tests),
+            _ => Err(format!("invalid resource kind: {}", s)),
         }
     }
 }
@@ -133,7 +139,7 @@ impl TargetConfig {
         } else {
             self.include
                 .iter()
-                .filter_map(|s| ResourceKind::from_str(s))
+                .filter_map(|s| s.parse::<ResourceKind>().ok())
                 .collect()
         }
     }
@@ -142,7 +148,7 @@ impl TargetConfig {
     pub fn get_exclude_set(&self) -> HashSet<ResourceKind> {
         self.exclude
             .iter()
-            .filter_map(|s| ResourceKind::from_str(s))
+            .filter_map(|s| s.parse::<ResourceKind>().ok())
             .collect()
     }
 }
@@ -169,9 +175,9 @@ mod tests {
 
     #[test]
     fn test_resource_kind_from_str() {
-        assert_eq!(ResourceKind::from_str("tables"), Some(ResourceKind::Tables));
-        assert_eq!(ResourceKind::from_str("TABLES"), Some(ResourceKind::Tables));
-        assert_eq!(ResourceKind::from_str("invalid"), None);
+        assert_eq!("tables".parse::<ResourceKind>(), Ok(ResourceKind::Tables));
+        assert_eq!("TABLES".parse::<ResourceKind>(), Ok(ResourceKind::Tables));
+        assert!("invalid".parse::<ResourceKind>().is_err());
     }
 
     #[test]
