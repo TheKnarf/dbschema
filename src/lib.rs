@@ -1,3 +1,7 @@
+#[cfg(target_arch = "x86_64")]
+#[no_mangle]
+pub extern "C" fn __rust_probestack() {}
+
 pub mod backends;
 pub mod config;
 pub mod frontend;
