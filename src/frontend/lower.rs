@@ -17,6 +17,7 @@ pub fn lower_config(ast: ast::Config) -> ir::Config {
             .collect(),
         policies: ast.policies.into_iter().map(lower_policy).collect(),
         tests: ast.tests.into_iter().map(lower_test).collect(),
+        outputs: ast.outputs.into_iter().map(lower_output).collect(),
     }
 }
 
@@ -179,5 +180,12 @@ fn lower_test(t: ast::AstTest) -> ir::TestSpec {
         setup: t.setup,
         assert_sql: t.assert_sql,
         teardown: t.teardown,
+    }
+}
+
+fn lower_output(o: ast::AstOutput) -> ir::OutputSpec {
+    ir::OutputSpec {
+        name: o.name,
+        value: o.value,
     }
 }

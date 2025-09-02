@@ -1,3 +1,4 @@
+use hcl::Value;
 use serde::Serialize;
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -12,6 +13,7 @@ pub struct Config {
     pub materialized: Vec<MaterializedViewSpec>,
     pub policies: Vec<PolicySpec>,
     pub tests: Vec<TestSpec>,
+    pub outputs: Vec<OutputSpec>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -157,3 +159,8 @@ pub struct TestSpec {
     pub teardown: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct OutputSpec {
+    pub name: String,
+    pub value: Value,
+}

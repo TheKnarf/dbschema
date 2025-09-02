@@ -12,8 +12,8 @@ use std::path::Path;
 // Public re-exports
 use crate::frontend::env::EnvVars;
 pub use ir::{
-    Config, EnumSpec, ExtensionSpec, FunctionSpec, MaterializedViewSpec, PolicySpec, SchemaSpec,
-    TableSpec, TriggerSpec, ViewSpec,
+    Config, EnumSpec, ExtensionSpec, FunctionSpec, MaterializedViewSpec, OutputSpec, PolicySpec,
+    SchemaSpec, TableSpec, TriggerSpec, ViewSpec,
 };
 
 // Loader abstraction: lets callers control how files are read.
@@ -56,6 +56,7 @@ where
         materialized: maybe!(Materialized, materialized),
         policies: maybe!(Policies, policies),
         tests: maybe!(Tests, tests),
+        outputs: cfg.outputs.clone(),
         ..Default::default()
     }
 }
@@ -203,6 +204,35 @@ mod tests {
         assert!(cfg.functions.len() >= 1);
         assert_eq!(cfg.triggers.len(), 2);
         validate(&cfg, false).unwrap();
+    }
+
+    #[test]
+    fn module_outputs_resolved_and_printed() {
+        let mut files = HashMap::new();
+        files.insert(
+            p("/root/main.hcl"),
+            r#"
+            module "child" { source = "/root/mod" }
+            output "answer" { value = module.child.value }
+            "#
+            .to_string(),
+        );
+        files.insert(
+            p("/root/mod/main.hcl"),
+            r#"
+            output "value" { value = 42 }
+            "#
+            .to_string(),
+        );
+
+        let loader = MapLoader { files };
+        let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
+        assert_eq!(cfg.outputs.len(), 1);
+        assert_eq!(cfg.outputs[0].name, "answer");
+        assert_eq!(
+            cfg.outputs[0].value,
+            hcl::Value::Number(hcl::Number::from(42))
+        );
     }
 
     #[test]
