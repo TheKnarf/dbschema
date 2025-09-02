@@ -28,3 +28,32 @@ example-test dsn='postgres://postgres:postgres@localhost:5432/dbschema_dev':
   echo "Running tests via cargo..."
   cargo run -- --input examples/main.hcl test --dsn "{{dsn}}"
 
+# Run create-migration for all example HCL files
+examples-create-migration:
+  #!/usr/bin/env bash
+  set -euo pipefail
+  for example in examples/*.hcl; do
+    name=$(basename "$example" .hcl)
+    outdir="tmp_mig_${name}"
+    rm -rf "$outdir"
+    mkdir -p "$outdir"
+    cargo run --features pglite -- --input "$example" create-migration --out-dir "$outdir" --name "$name"
+    rm -rf "$outdir"
+  done
+
+# Run tests for all example HCL files using the PGlite backend
+examples-test:
+  #!/usr/bin/env bash
+  set -euo pipefail
+  for example in examples/*.hcl; do
+    cargo run --features pglite -- --input "$example" test --backend pglite
+  done
+
+# Validate all example HCL files
+examples-validate:
+  #!/usr/bin/env bash
+  set -euo pipefail
+  for example in examples/*.hcl; do
+    cargo run --features pglite -- --input "$example" validate
+  done
+
