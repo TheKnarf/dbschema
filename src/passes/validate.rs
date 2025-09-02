@@ -1,7 +1,7 @@
 use anyhow::{bail, Result};
 
 
-use crate::model::{Config, EnumSpec};
+use crate::ir::{Config, EnumSpec};
 
 pub fn validate(cfg: &Config, strict: bool) -> Result<()> {
     for t in &cfg.triggers {

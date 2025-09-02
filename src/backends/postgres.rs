@@ -1,7 +1,7 @@
 use anyhow::Result;
 
 use super::Backend;
-use crate::model::{
+use crate::ir::{
     Config, EnumSpec, ExtensionSpec, ForeignKeySpec, FunctionSpec, IndexSpec, MaterializedViewSpec,
     PolicySpec, SchemaSpec, TableSpec, TriggerSpec, ViewSpec,
 };
@@ -28,7 +28,7 @@ impl Backend for PostgresBackend {
     fn generate(
         &self,
         cfg: &Config,
-        _env: &crate::model::EnvVars,
+        _env: &crate::ir::EnvVars,
         _strict: bool,
     ) -> Result<String> {
         to_sql(cfg)

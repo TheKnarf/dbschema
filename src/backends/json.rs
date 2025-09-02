@@ -2,7 +2,7 @@ use anyhow::Result;
 use serde_json::json;
 
 use super::Backend;
-use crate::model::{Config, EnvVars};
+use crate::ir::{Config, EnvVars};
 
 pub struct JsonBackend;
 

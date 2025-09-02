@@ -1,7 +1,7 @@
 use anyhow::Result;
 use std::collections::HashSet;
 
-use crate::model::Config;
+use crate::ir::Config;
 
 pub mod postgres;
 

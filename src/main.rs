@@ -130,7 +130,7 @@ fn main() -> Result<()> {
 
         match command {
             Commands::Validate {} => {
-                dbschema::validate::validate(&filtered, cli.strict)?;
+                dbschema::validate(&filtered, cli.strict)?;
                 info!(
                     "Valid: {} schema(s), {} enum(s), {} table(s), {} view(s), {} materialized view(s), {} function(s), {} trigger(s)",
                     filtered.schemas.len(),
@@ -143,7 +143,7 @@ fn main() -> Result<()> {
                 );
             }
             Commands::CreateMigration { out_dir, name } => {
-                dbschema::validate::validate(&filtered, cli.strict)?;
+                dbschema::validate(&filtered, cli.strict)?;
                 let artifact =
                     dbschema::generate_with_backend(&cli.backend, &filtered, &env, cli.strict)?;
                 if let Some(dir) = out_dir {
@@ -323,7 +323,7 @@ fn load_var_file(path: &Path) -> Result<HashMap<String, hcl::Value>> {
     let mut out = HashMap::new();
     for attr in body.attributes() {
         let name = attr.key();
-        let v = dbschema::eval::expr_to_value(attr.expr(), &EnvVars::default())
+        let v = dbschema::frontend::expr_to_value(attr.expr(), &EnvVars::default())
             .with_context(|| format!("evaluating var '{}': unsupported expression", name))?;
         out.insert(name.to_string(), v);
     }

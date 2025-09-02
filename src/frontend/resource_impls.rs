@@ -1,12 +1,12 @@
 use anyhow::{bail, Context, Result};
 use hcl::Body;
 
-use crate::eval::core::{expr_to_string_vec, find_attr, get_attr_bool, get_attr_string};
-use crate::eval::for_each::ForEachSupport;
-use crate::model::*;
+use crate::frontend::core::{expr_to_string_vec, find_attr, get_attr_bool, get_attr_string};
+use crate::frontend::for_each::ForEachSupport;
+use crate::ir::*;
 
 // Schema implementation
-impl ForEachSupport for crate::model::SchemaSpec {
+impl ForEachSupport for crate::ir::SchemaSpec {
     type Item = Self;
 
     fn parse_one(name: &str, body: &Body, env: &EnvVars) -> Result<Self::Item> {
@@ -27,7 +27,7 @@ impl ForEachSupport for crate::model::SchemaSpec {
 }
 
 // Table implementation
-impl ForEachSupport for crate::model::TableSpec {
+impl ForEachSupport for crate::ir::TableSpec {
     type Item = Self;
 
     fn parse_one(name: &str, body: &Body, env: &EnvVars) -> Result<Self::Item> {
@@ -162,7 +162,7 @@ impl ForEachSupport for crate::model::TableSpec {
 }
 
 // View implementation
-impl ForEachSupport for crate::model::ViewSpec {
+impl ForEachSupport for crate::ir::ViewSpec {
     type Item = Self;
 
     fn parse_one(name: &str, body: &Body, env: &EnvVars) -> Result<Self::Item> {
@@ -185,7 +185,7 @@ impl ForEachSupport for crate::model::ViewSpec {
 }
 
 // MaterializedView implementation
-impl ForEachSupport for crate::model::MaterializedViewSpec {
+impl ForEachSupport for crate::ir::MaterializedViewSpec {
     type Item = Self;
 
     fn parse_one(name: &str, body: &Body, env: &EnvVars) -> Result<Self::Item> {
@@ -208,7 +208,7 @@ impl ForEachSupport for crate::model::MaterializedViewSpec {
 }
 
 // Policy implementation
-impl ForEachSupport for crate::model::PolicySpec {
+impl ForEachSupport for crate::ir::PolicySpec {
     type Item = Self;
 
     fn parse_one(name: &str, body: &Body, env: &EnvVars) -> Result<Self::Item> {
@@ -242,7 +242,7 @@ impl ForEachSupport for crate::model::PolicySpec {
 }
 
 // Function implementation
-impl ForEachSupport for crate::model::FunctionSpec {
+impl ForEachSupport for crate::ir::FunctionSpec {
     type Item = Self;
 
     fn parse_one(name: &str, body: &Body, env: &EnvVars) -> Result<Self::Item> {
@@ -274,7 +274,7 @@ impl ForEachSupport for crate::model::FunctionSpec {
 }
 
 // Trigger implementation
-impl ForEachSupport for crate::model::TriggerSpec {
+impl ForEachSupport for crate::ir::TriggerSpec {
     type Item = Self;
 
     fn parse_one(name: &str, body: &Body, env: &EnvVars) -> Result<Self::Item> {
@@ -311,7 +311,7 @@ impl ForEachSupport for crate::model::TriggerSpec {
 }
 
 // Extension implementation
-impl ForEachSupport for crate::model::ExtensionSpec {
+impl ForEachSupport for crate::ir::ExtensionSpec {
     type Item = Self;
 
     fn parse_one(name: &str, body: &Body, env: &EnvVars) -> Result<Self::Item> {
@@ -334,7 +334,7 @@ impl ForEachSupport for crate::model::ExtensionSpec {
 }
 
 // Enum implementation
-impl ForEachSupport for crate::model::EnumSpec {
+impl ForEachSupport for crate::ir::EnumSpec {
     type Item = Self;
 
     fn parse_one(name: &str, body: &Body, env: &EnvVars) -> Result<Self::Item> {

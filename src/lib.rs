@@ -1,16 +1,16 @@
 pub mod backends;
 pub mod config;
-pub mod eval;
-pub mod model;
+pub mod frontend;
+pub mod ir;
 pub mod test_runner;
-pub mod validate;
+pub mod passes;
 
 use anyhow::Result;
 // Keep types public via re-exports
 use std::path::Path;
 
 // Public re-exports
-pub use model::{
+pub use ir::{
     Config, EnumSpec, EnvVars, ExtensionSpec, FunctionSpec, MaterializedViewSpec, PolicySpec,
     SchemaSpec, TableSpec, TriggerSpec, ViewSpec,
 };
@@ -22,12 +22,12 @@ pub trait Loader {
 
 // Pure API: parse + evaluate HCL config starting at `root_path` using a Loader.
 pub fn load_config(root_path: &Path, loader: &dyn Loader, env: EnvVars) -> Result<Config> {
-    eval::load_root_with_loader(root_path, loader, env)
+    frontend::load_root_with_loader(root_path, loader, env)
 }
 
 // Pure validation: check references etc.
 pub fn validate(cfg: &Config, strict: bool) -> Result<()> {
-    validate::validate(cfg, strict)
+    passes::validate(cfg, strict)
 }
 
 fn filter_config_with<F>(cfg: &Config, predicate: F) -> Config

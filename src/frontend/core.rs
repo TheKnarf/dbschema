@@ -8,9 +8,9 @@ use path_absolutize::Absolutize;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use crate::eval::builtins;
-use crate::eval::for_each::execute_for_each;
-use crate::model::{Config, EnvVars};
+use crate::frontend::builtins;
+use crate::frontend::for_each::execute_for_each;
+use crate::ir::{Config, EnvVars};
 use crate::Loader;
 
 pub fn expr_to_string(expr: &hcl::Expression, env: &EnvVars) -> Result<String> {
@@ -207,7 +207,7 @@ fn expand_dynamic_blocks(body: &Body, env: &EnvVars) -> Result<Body> {
                         .context("dynamic block missing content")?;
 
                     let mut new_blocks = Vec::new();
-                    crate::eval::for_each::for_each_iter(&coll, &mut |k, v| {
+                    crate::frontend::for_each::for_each_iter(&coll, &mut |k, v| {
                         let mut iter_env = env.clone();
                         iter_env.each = Some((k.clone(), v.clone()));
 
@@ -361,7 +361,7 @@ fn populate_back_references(cfg: &mut Config) -> Result<()> {
                         .back_reference_name
                         .clone()
                         .unwrap_or_else(|| other_table.name.clone().to_lowercase() + "s");
-                    table.back_references.push(crate::model::BackReferenceSpec {
+                    table.back_references.push(crate::ir::BackReferenceSpec {
                         name,
                         table: other_table.name.clone(),
                     });
@@ -440,7 +440,7 @@ fn load_file(
             .as_str()
             .to_string();
         let for_each_expr = find_attr(blk.body(), "for_each");
-        execute_for_each::<crate::model::SchemaSpec>(
+        execute_for_each::<crate::ir::SchemaSpec>(
             &name,
             blk.body(),
             &env,
@@ -457,7 +457,7 @@ fn load_file(
             .as_str()
             .to_string();
         let for_each_expr = find_attr(blk.body(), "for_each");
-        execute_for_each::<crate::model::TableSpec>(
+        execute_for_each::<crate::ir::TableSpec>(
             &name,
             blk.body(),
             &env,
@@ -474,7 +474,7 @@ fn load_file(
             .as_str()
             .to_string();
         let for_each_expr = find_attr(blk.body(), "for_each");
-        execute_for_each::<crate::model::ViewSpec>(
+        execute_for_each::<crate::ir::ViewSpec>(
             &name,
             blk.body(),
             &env,
@@ -491,7 +491,7 @@ fn load_file(
             .as_str()
             .to_string();
         let for_each_expr = find_attr(blk.body(), "for_each");
-        execute_for_each::<crate::model::MaterializedViewSpec>(
+        execute_for_each::<crate::ir::MaterializedViewSpec>(
             &name,
             blk.body(),
             &env,
@@ -508,7 +508,7 @@ fn load_file(
             .as_str()
             .to_string();
         let for_each_expr = find_attr(blk.body(), "for_each");
-        execute_for_each::<crate::model::PolicySpec>(
+        execute_for_each::<crate::ir::PolicySpec>(
             &name,
             blk.body(),
             &env,
@@ -525,7 +525,7 @@ fn load_file(
             .as_str()
             .to_string();
         let for_each_expr = find_attr(blk.body(), "for_each");
-        execute_for_each::<crate::model::FunctionSpec>(
+        execute_for_each::<crate::ir::FunctionSpec>(
             &name,
             blk.body(),
             &env,
@@ -542,7 +542,7 @@ fn load_file(
             .as_str()
             .to_string();
         let for_each_expr = find_attr(blk.body(), "for_each");
-        execute_for_each::<crate::model::TriggerSpec>(
+        execute_for_each::<crate::ir::TriggerSpec>(
             &name,
             blk.body(),
             &env,
@@ -559,7 +559,7 @@ fn load_file(
             .as_str()
             .to_string();
         let for_each_expr = find_attr(blk.body(), "for_each");
-        execute_for_each::<crate::model::ExtensionSpec>(
+        execute_for_each::<crate::ir::ExtensionSpec>(
             &name,
             blk.body(),
             &env,
@@ -576,7 +576,7 @@ fn load_file(
             .as_str()
             .to_string();
         let for_each_expr = find_attr(blk.body(), "for_each");
-        execute_for_each::<crate::model::EnumSpec>(
+        execute_for_each::<crate::ir::EnumSpec>(
             &name,
             blk.body(),
             &env,
@@ -604,7 +604,7 @@ fn load_file(
             Some(attr) => expr_to_string_vec(attr.expr(), &env)?,
             None => Vec::new(),
         };
-        cfg.tests.push(crate::model::TestSpec {
+        cfg.tests.push(crate::ir::TestSpec {
             name,
             setup,
             assert_sql,
@@ -624,7 +624,7 @@ fn load_file(
         let module_path = resolve_module_path(base, &source)?;
         if let Some(fe) = find_attr(b, "for_each") {
             let coll = expr_to_value(fe.expr(), &env)?;
-            crate::eval::for_each::for_each_iter(&coll, &mut |k, v| {
+            crate::frontend::for_each::for_each_iter(&coll, &mut |k, v| {
                 let mut iter_env = env.clone();
                 iter_env.each = Some((k.clone(), v.clone()));
                 let mut mod_vars: HashMap<String, hcl::Value> = HashMap::new();
