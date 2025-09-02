@@ -350,10 +350,3 @@ table "users" {
   }
 }
 ```
-
-## Roadmap
-
-### Non-goals (for now)
-
-- Migration “down” scripts.
-- Lints: existence of referenced tables/columns by inspecting a live DB (opt-in).
