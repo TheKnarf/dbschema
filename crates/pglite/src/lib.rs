@@ -8,7 +8,8 @@ use std::{
 };
 use wasmtime::FuncType;
 use wasmtime::{
-    Caller, Engine, Instance, Linker, Memory, Module, Ref, Store, Table, TypedFunc, Val, ValType,
+    Caller, Engine, ExternType, Global, GlobalType, Instance, Linker, Memory, Module, Ref, Store,
+    Table, TypedFunc, Val, ValType,
 };
 use wasmtime_wasi::{
     preview1::{add_to_linker_sync, WasiP1Ctx},
@@ -53,6 +54,71 @@ fn default_val(c: char) -> Val {
         'd' => Val::F64(0.0f64.to_bits()),
         _ => Val::I32(0),
     }
+}
+
+fn default_valtype(t: ValType) -> Val {
+    match t {
+        ValType::I32 => Val::I32(0),
+        ValType::I64 => Val::I64(0),
+        ValType::F32 => Val::F32(0.0f32.to_bits()),
+        ValType::F64 => Val::F64(0.0f64.to_bits()),
+        _ => Val::I32(0),
+    }
+}
+
+fn bind_module_imports(
+    linker: &mut Linker<WasiP1Ctx>,
+    store: &mut Store<WasiP1Ctx>,
+    module: &Module,
+    table_cell: Arc<Mutex<Option<Table>>>,
+) -> Result<(Memory, Table)> {
+    let mut memory: Option<Memory> = None;
+    let mut table: Option<Table> = None;
+
+    for import in module.imports() {
+        let module_name = import.module();
+        let name = import.name().unwrap_or("");
+        match import.ty() {
+            ExternType::Func(ty) if module_name == "env" => {
+                if name.starts_with("invoke_") || name == "exit" || name == "getaddrinfo" {
+                    continue;
+                }
+                let results: Vec<Val> = ty.results().map(default_valtype).collect();
+                linker.func_new(module_name, name, ty.clone(), move |_c, _a, r| {
+                    for (i, val) in results.iter().enumerate() {
+                        r[i] = val.clone();
+                    }
+                    Ok(())
+                })?;
+            }
+            ExternType::Memory(mt) if module_name == "env" && name == "memory" => {
+                let mem = Memory::new(store, mt)?;
+                linker.define(module_name, name, mem.clone())?;
+                memory = Some(mem);
+            }
+            ExternType::Table(tt)
+                if module_name == "env" && name == "__indirect_function_table" =>
+            {
+                let tbl = Table::new(store, tt)?;
+                linker.define(module_name, name, tbl.clone())?;
+                *table_cell.lock().unwrap() = Some(tbl.clone());
+                table = Some(tbl);
+            }
+            ExternType::Global(gt) if module_name == "env" => {
+                let g = Global::new(store, gt, default_valtype(gt.content()))?;
+                linker.define(module_name, name, g)?;
+            }
+            ExternType::Global(gt) if module_name == "GOT.mem" && name == "__heap_base" => {
+                let g = Global::new(store, gt, default_valtype(gt.content()))?;
+                linker.define(module_name, name, g)?;
+            }
+            _ => {}
+        }
+    }
+
+    let memory = memory.ok_or_else(|| anyhow!("missing memory import"))?;
+    let table = table.ok_or_else(|| anyhow!("missing table import"))?;
+    Ok((memory, table))
 }
 
 fn bind_invoke_funcs(
@@ -214,11 +280,12 @@ impl PGliteRuntime {
         )?;
         let wasi = builder.build_p1();
         let mut store = Store::new(&engine, wasi);
+
+        // Provide memory, table, globals and any additional stub functions
+        let (memory, table) =
+            bind_module_imports(&mut linker, &mut store, &module, table_cell.clone())?;
+
         let instance = linker.instantiate(&mut store, &module)?;
-        let table = instance
-            .get_table(&mut store, "__indirect_function_table")
-            .ok_or_else(|| anyhow!("missing table export"))?;
-        *table_cell.lock().unwrap() = Some(table.clone());
 
         // Call _pgl_initdb to ensure the database files are set up
         let init = instance.get_typed_func::<(), i32>(&mut store, "_pgl_initdb")?;
@@ -227,9 +294,6 @@ impl PGliteRuntime {
             return Err(anyhow!("pglite initdb failed with code {rc}"));
         }
 
-        let memory = instance
-            .get_memory(&mut store, "memory")
-            .ok_or_else(|| anyhow!("missing memory export"))?;
         let interactive_write =
             instance.get_typed_func::<i32, ()>(&mut store, "_interactive_write")?;
         let interactive_read =
