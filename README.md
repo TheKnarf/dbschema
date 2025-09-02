@@ -76,6 +76,7 @@ test_backend = "pglite"
 
 ## Usage
 
+- Format HCL files: `./target/release/dbschema fmt [path]`
 - Validate: `./target/release/dbschema --input examples/main.hcl validate`
 - Create migration (Postgres SQL): `./target/release/dbschema --input examples/main.hcl create-migration --out-dir migrations --name triggers`
 - Create Prisma models/enums only (no generator/datasource): `./target/release/dbschema --backend prisma --input examples/main.hcl create-migration --out-dir prisma --name schema`

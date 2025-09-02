@@ -1,20 +1,21 @@
 use anyhow::{anyhow, Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
 use dbschema::frontend::env::EnvVars;
-#[cfg(feature = "pglite")]
-use postgres_protocol::message::backend;
-#[cfg(feature = "pglite")]
-use fallible_iterator::FallibleIterator;
 use dbschema::test_runner::TestBackend;
 use dbschema::{
     apply_filters,
     config::{self, Config as DbschemaConfig, ResourceKind, TargetConfig},
     load_config, validate, Loader, OutputSpec,
 };
+#[cfg(feature = "pglite")]
+use fallible_iterator::FallibleIterator;
 use log::{error, info};
+#[cfg(feature = "pglite")]
+use postgres_protocol::message::backend;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
+use walkdir::WalkDir;
 
 #[derive(Parser)]
 #[command(name = "dbschema")]
@@ -71,6 +72,12 @@ enum TestBackendKind {
 enum Commands {
     /// Validate HCL and print a summary
     Validate {},
+    /// Format HCL files in place
+    Fmt {
+        /// Files or directories to format (defaults to current directory)
+        #[arg(value_name = "PATH", default_value = ".")]
+        paths: Vec<PathBuf>,
+    },
     /// Create a SQL migration file from the HCL
     CreateMigration {
         /// Output directory for migration files; if omitted, prints to stdout
@@ -161,6 +168,11 @@ fn main() -> Result<()> {
                 );
                 print_outputs(&filtered.outputs);
             }
+            Commands::Fmt { paths } => {
+                for p in paths {
+                    format_path(&p)?;
+                }
+            }
             Commands::CreateMigration { out_dir, name } => {
                 let mut vars: HashMap<String, hcl::Value> = HashMap::new();
                 for vf in &cli.var_file {
@@ -202,7 +214,11 @@ fn main() -> Result<()> {
                 }
                 print_outputs(&filtered.outputs);
             }
-            Commands::Test { dsn, names, backend } => {
+            Commands::Test {
+                dsn,
+                names,
+                backend,
+            } => {
                 let (dsn, backend, config) = if cli.config {
                     let dbschema_config = config::load_config()
                         .with_context(|| "failed to load dbschema.toml")?
@@ -359,6 +375,36 @@ fn main() -> Result<()> {
         }
     }
 
+    Ok(())
+}
+
+fn format_path(path: &Path) -> Result<()> {
+    if path.is_file() {
+        format_file(path)?;
+    } else if path.is_dir() {
+        for entry in WalkDir::new(path) {
+            let entry = entry?;
+            if entry.file_type().is_file()
+                && entry
+                    .path()
+                    .extension()
+                    .and_then(|s| s.to_str())
+                    .map(|s| s.eq_ignore_ascii_case("hcl"))
+                    .unwrap_or(false)
+            {
+                format_file(entry.path())?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn format_file(path: &Path) -> Result<()> {
+    let content =
+        fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+    let body = hcl::parse(&content).with_context(|| format!("parsing {}", path.display()))?;
+    let formatted = hcl::format::to_string(&body)?;
+    fs::write(path, formatted).with_context(|| format!("writing {}", path.display()))?;
     Ok(())
 }
 
