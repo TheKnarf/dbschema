@@ -30,7 +30,7 @@ Prisma ORM support custom migrations, so you can use this tool to generate an SQ
    - `output`
    - `test`
 
-- Variables via `--var key=value` and `--var-file`, with optional type and validation.
+- Variables via `--var key=value` and `--var-file`, with optional type and validation blocks (`validation { condition = ... error_message = ... }`).
 - Block repetition with `for_each` (arrays/objects) or numeric `count`.
 - Dynamic blocks: replicate nested blocks with `dynamic "name" { for_each = ... content { ... } }`.
 - Modules: `module "name" { source = "./path" ... }`.
@@ -362,17 +362,20 @@ module "<name>" {
 - Variables can be strings, numbers, booleans, arrays, or objects.
 - Use `variable "name" { default = [...] }` or provide via `--var-file`.
 - Optional `type` ("string", "number", "bool", "array", "object") and
-  `validation` expression:
+  nested `validation` blocks:
 
 ```hcl
 variable "count" {
   type = "number"
-  validation = var.count > 0
+  validation {
+    condition     = var.count > 0
+    error_message = "count must be positive"
+  }
 }
 ```
 
-- dbschema enforces the declared type and runs the `validation` expression,
-  returning friendly errors when they fail.
+- dbschema enforces the declared type and runs the `validation` condition,
+  returning the custom `error_message` when it fails.
 - Replicate blocks with `for_each` on the block (arrays or objects):
   - Arrays: `each.key` is the index (number), `each.value` is the element.
   - Objects: `each.key` is the object key (string), `each.value` is the value.

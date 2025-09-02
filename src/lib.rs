@@ -253,7 +253,10 @@ mod tests {
             r#"
             variable "count" {
               type = "number"
-              validation = var.count > 0
+              validation {
+                condition = var.count > 0
+                error_message = "count must be > 0"
+              }
             }
             "#
             .to_string(),
@@ -274,9 +277,7 @@ mod tests {
             ..EnvVars::default()
         };
         let err = load_config(&p("/root/main.hcl"), &loader, env).unwrap_err();
-        assert!(err
-            .to_string()
-            .contains("validation for variable 'count' failed"));
+        assert!(err.to_string().contains("count must be > 0"));
 
         // Passes
         let env = EnvVars {

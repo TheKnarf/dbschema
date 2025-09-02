@@ -1,4 +1,4 @@
-use hcl::Value;
+use hcl::{Expression, Value};
 
 #[derive(Debug, Clone, Default)]
 pub struct Config {
@@ -242,4 +242,10 @@ pub struct AstTest {
 pub struct AstOutput {
     pub name: String,
     pub value: Value,
+}
+
+#[derive(Debug, Clone)]
+pub struct VarValidation {
+    pub condition: Expression,
+    pub error_message: Expression,
 }
