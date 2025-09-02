@@ -47,6 +47,7 @@ fn pglite_backend_runs_test() -> Result<()> {
             locals: HashMap::new(),
             modules: HashMap::new(),
             each: None,
+            count: None,
         },
     )?;
 

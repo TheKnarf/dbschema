@@ -318,6 +318,35 @@ mod tests {
     }
 
     #[test]
+    fn count_creates_multiple_triggers() {
+        let mut files = HashMap::new();
+        files.insert(
+            p("/root/main.hcl"),
+            r#"
+            function "f" {
+              schema = "public"
+              language = "plpgsql"
+              returns  = "trigger"
+              body = "BEGIN RETURN NEW; END;"
+            }
+
+            trigger "t" {
+              count = 2
+              schema = "public"
+              table = "users"
+              function = "f"
+              events = ["INSERT"]
+              name = "t_${count.index}"
+            }
+            "#
+            .to_string(),
+        );
+        let loader = MapLoader { files };
+        let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
+        assert_eq!(cfg.triggers.len(), 2);
+    }
+
+    #[test]
     fn dynamic_block_expands_columns() {
         let mut files = HashMap::new();
         files.insert(

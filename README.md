@@ -29,6 +29,7 @@ Prisma ORM support custom migrations, so you can use this tool to generate an SQ
    - `test`
 
 - Variables via `--var key=value` and `--var-file`, with optional type and validation.
+- Block repetition with `for_each` (arrays/objects) or numeric `count`.
 - Dynamic blocks: replicate nested blocks with `dynamic "name" { for_each = ... content { ... } }`.
 - Modules: `module "name" { source = "./path" ... }`.
 - Full HCL expression support: numbers, booleans, arrays, objects, traversals (`var.*`, `local.*`), function calls, and `${...}` templates.
@@ -334,6 +335,7 @@ variable "count" {
 - Replicate blocks with `for_each` on the block (arrays or objects):
   - Arrays: `each.key` is the index (number), `each.value` is the element.
   - Objects: `each.key` is the object key (string), `each.value` is the value.
+- Repeat blocks with a numeric `count` on the block; reference the index via `count.index`.
 - Generate nested blocks with Terraform-style `dynamic` blocks:
   - Set `labels` to populate block labels when needed.
 - Example:
@@ -345,6 +347,21 @@ trigger "upd" {
   schema   = "public"
   for_each = var.tables       # will create two triggers
   table    = each.value       # "users" then "orders"
+  timing   = "BEFORE"
+  events   = ["UPDATE"]
+  level    = "ROW"
+  function = "set_updated_at"
+}
+```
+
+Using `count` to repeat a block a fixed number of times:
+
+```hcl
+trigger "upd" {
+  count    = 2
+  name     = "set_updated_at_${count.index}"
+  schema   = "public"
+  table    = "users"
   timing   = "BEFORE"
   events   = ["UPDATE"]
   level    = "ROW"

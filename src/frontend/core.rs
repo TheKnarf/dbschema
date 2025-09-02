@@ -253,8 +253,25 @@ fn resolve_traversal_value(tr: &Traversal, env: &EnvVars) -> Result<Value> {
             }
             Ok(current)
         }
+        "count" => {
+            let Some(TraversalOperator::GetAttr(name)) = it.next() else {
+                bail!("expected count.index");
+            };
+            let idx = env
+                .count
+                .ok_or_else(|| anyhow::anyhow!("'count' is only available inside count iterations"))?;
+            match name.as_str() {
+                "index" => {
+                    if it.next().is_some() {
+                        bail!("count.index does not support further traversal");
+                    }
+                    Ok(Value::Number(Number::from(idx as u64)))
+                }
+                other => bail!("unsupported count attribute '{}': expected index", other),
+            }
+        }
         _ => bail!(
-            "unsupported traversal root '{}': expected var.*, local.*, module.*, or each.*",
+            "unsupported traversal root '{}': expected var.*, local.*, module.*, each.*, or count.*",
             root
         ),
     }
@@ -392,6 +409,10 @@ pub fn create_eval_context(env: &EnvVars) -> HclContext<'_> {
     if let Some((key, value)) = &env.each {
         ctx.declare_var("each_key", key.clone());
         ctx.declare_var("each_value", value.clone());
+    }
+
+    if let Some(index) = env.count {
+        ctx.declare_var("count_index", Value::Number(Number::from(index as u64)));
     }
 
     ctx
@@ -619,7 +640,15 @@ fn load_file(
         let source = get_attr_string(b, "source", &env)?
             .with_context(|| format!("module '{}' missing 'source'", label.as_str()))?;
         let module_path = resolve_module_path(base, &source)?;
-        if let Some(fe) = find_attr(b, "for_each") {
+        let for_each_attr = find_attr(b, "for_each");
+        let count_attr = find_attr(b, "count");
+        if for_each_attr.is_some() && count_attr.is_some() {
+            bail!(
+                "module '{}' cannot have both for_each and count",
+                label.as_str()
+            );
+        }
+        if let Some(fe) = for_each_attr {
             let coll = expr_to_value(fe.expr(), &env)?;
             crate::frontend::for_each::for_each_iter(&coll, &mut |k, v| {
                 let mut iter_env = env.clone();
@@ -627,7 +656,7 @@ fn load_file(
                 let mut mod_vars: HashMap<String, hcl::Value> = HashMap::new();
                 for attr in b.attributes() {
                     let k = attr.key();
-                    if k == "source" || k == "for_each" {
+                    if k == "source" || k == "for_each" || k == "count" {
                         continue;
                     }
                     let v = expr_to_value(attr.expr(), &iter_env).with_context(|| {
@@ -640,6 +669,7 @@ fn load_file(
                     locals: HashMap::new(),
                     modules: HashMap::new(),
                     each: None,
+                    count: None,
                 };
                 let sub = load_file(
                     loader,
@@ -668,12 +698,66 @@ fn load_file(
                 // Outputs from for_each modules aren't accessible via module.*
                 Ok(())
             })?;
+        } else if let Some(ce) = count_attr {
+            let val = expr_to_value(ce.expr(), &env)?;
+            let times = match val {
+                hcl::Value::Number(n) => n
+                    .as_u64()
+                    .ok_or_else(|| anyhow::anyhow!("count must be a non-negative integer"))?
+                    as usize,
+                other => bail!("count expects number, got {other:?}"),
+            };
+            for i in 0..times {
+                let mut iter_env = env.clone();
+                iter_env.count = Some(i);
+                let mut mod_vars: HashMap<String, hcl::Value> = HashMap::new();
+                for attr in b.attributes() {
+                    let k = attr.key();
+                    if k == "source" || k == "for_each" || k == "count" {
+                        continue;
+                    }
+                    let v = expr_to_value(attr.expr(), &iter_env).with_context(|| {
+                        format!("evaluating module var '{}.{}'", label.as_str(), k)
+                    })?;
+                    mod_vars.insert(k.to_string(), v);
+                }
+                let mod_env = EnvVars {
+                    vars: mod_vars,
+                    locals: HashMap::new(),
+                    modules: HashMap::new(),
+                    each: None,
+                    count: None,
+                };
+                let sub = load_file(
+                    loader,
+                    &module_path.join("main.hcl"),
+                    &module_path,
+                    &mod_env,
+                    visited,
+                )
+                .with_context(|| {
+                    format!(
+                        "loading module '{}' from {}",
+                        label.as_str(),
+                        module_path.display()
+                    )
+                })?;
+                cfg.schemas.extend(sub.schemas);
+                cfg.enums.extend(sub.enums);
+                cfg.functions.extend(sub.functions);
+                cfg.triggers.extend(sub.triggers);
+                cfg.extensions.extend(sub.extensions);
+                cfg.tables.extend(sub.tables);
+                cfg.views.extend(sub.views);
+                cfg.materialized.extend(sub.materialized);
+                cfg.policies.extend(sub.policies);
+            }
         } else {
-            // Prepare vars for module: start empty, collect its own defaults while loading; pass overrides from attrs (excluding 'source'/'for_each')
+            // Prepare vars for module: start empty, collect its own defaults while loading; pass overrides from attrs (excluding 'source'/'for_each'/'count')
             let mut mod_vars: HashMap<String, hcl::Value> = HashMap::new();
             for attr in b.attributes() {
                 let k = attr.key();
-                if k == "source" || k == "for_each" {
+                if k == "source" || k == "for_each" || k == "count" {
                     continue;
                 }
                 let v = expr_to_value(attr.expr(), &env)
@@ -685,6 +769,7 @@ fn load_file(
                 locals: HashMap::new(),
                 modules: HashMap::new(),
                 each: None,
+                count: None,
             };
             let sub = load_file(
                 loader,
@@ -731,7 +816,15 @@ fn load_file(
             .as_str()
             .to_string();
         let for_each_expr = find_attr(blk.body(), "for_each");
-        execute_for_each::<ast::AstSchema>(&name, blk.body(), &env, &mut cfg, for_each_expr)?;
+        let count_expr = find_attr(blk.body(), "count");
+        execute_for_each::<ast::AstSchema>(
+            &name,
+            blk.body(),
+            &env,
+            &mut cfg,
+            for_each_expr,
+            count_expr,
+        )?;
     }
 
     for blk in body.blocks().filter(|b| b.identifier() == "sequence") {
@@ -753,7 +846,15 @@ fn load_file(
             .as_str()
             .to_string();
         let for_each_expr = find_attr(blk.body(), "for_each");
-        execute_for_each::<ast::AstTable>(&name, blk.body(), &env, &mut cfg, for_each_expr)?;
+        let count_expr = find_attr(blk.body(), "count");
+        execute_for_each::<ast::AstTable>(
+            &name,
+            blk.body(),
+            &env,
+            &mut cfg,
+            for_each_expr,
+            count_expr,
+        )?;
     }
 
     for blk in body.blocks().filter(|b| b.identifier() == "view") {
@@ -764,7 +865,15 @@ fn load_file(
             .as_str()
             .to_string();
         let for_each_expr = find_attr(blk.body(), "for_each");
-        execute_for_each::<ast::AstView>(&name, blk.body(), &env, &mut cfg, for_each_expr)?;
+        let count_expr = find_attr(blk.body(), "count");
+        execute_for_each::<ast::AstView>(
+            &name,
+            blk.body(),
+            &env,
+            &mut cfg,
+            for_each_expr,
+            count_expr,
+        )?;
     }
 
     for blk in body.blocks().filter(|b| b.identifier() == "materialized") {
@@ -775,12 +884,14 @@ fn load_file(
             .as_str()
             .to_string();
         let for_each_expr = find_attr(blk.body(), "for_each");
+        let count_expr = find_attr(blk.body(), "count");
         execute_for_each::<ast::AstMaterializedView>(
             &name,
             blk.body(),
             &env,
             &mut cfg,
             for_each_expr,
+            count_expr,
         )?;
     }
 
@@ -792,7 +903,15 @@ fn load_file(
             .as_str()
             .to_string();
         let for_each_expr = find_attr(blk.body(), "for_each");
-        execute_for_each::<ast::AstPolicy>(&name, blk.body(), &env, &mut cfg, for_each_expr)?;
+        let count_expr = find_attr(blk.body(), "count");
+        execute_for_each::<ast::AstPolicy>(
+            &name,
+            blk.body(),
+            &env,
+            &mut cfg,
+            for_each_expr,
+            count_expr,
+        )?;
     }
 
     for blk in body.blocks().filter(|b| b.identifier() == "function") {
@@ -803,7 +922,15 @@ fn load_file(
             .as_str()
             .to_string();
         let for_each_expr = find_attr(blk.body(), "for_each");
-        execute_for_each::<ast::AstFunction>(&name, blk.body(), &env, &mut cfg, for_each_expr)?;
+        let count_expr = find_attr(blk.body(), "count");
+        execute_for_each::<ast::AstFunction>(
+            &name,
+            blk.body(),
+            &env,
+            &mut cfg,
+            for_each_expr,
+            count_expr,
+        )?;
     }
 
     for blk in body.blocks().filter(|b| b.identifier() == "trigger") {
@@ -814,7 +941,15 @@ fn load_file(
             .as_str()
             .to_string();
         let for_each_expr = find_attr(blk.body(), "for_each");
-        execute_for_each::<ast::AstTrigger>(&name, blk.body(), &env, &mut cfg, for_each_expr)?;
+        let count_expr = find_attr(blk.body(), "count");
+        execute_for_each::<ast::AstTrigger>(
+            &name,
+            blk.body(),
+            &env,
+            &mut cfg,
+            for_each_expr,
+            count_expr,
+        )?;
     }
 
     for blk in body.blocks().filter(|b| b.identifier() == "extension") {
@@ -825,7 +960,15 @@ fn load_file(
             .as_str()
             .to_string();
         let for_each_expr = find_attr(blk.body(), "for_each");
-        execute_for_each::<ast::AstExtension>(&name, blk.body(), &env, &mut cfg, for_each_expr)?;
+        let count_expr = find_attr(blk.body(), "count");
+        execute_for_each::<ast::AstExtension>(
+            &name,
+            blk.body(),
+            &env,
+            &mut cfg,
+            for_each_expr,
+            count_expr,
+        )?;
     }
 
     for blk in body.blocks().filter(|b| b.identifier() == "enum") {
@@ -836,7 +979,15 @@ fn load_file(
             .as_str()
             .to_string();
         let for_each_expr = find_attr(blk.body(), "for_each");
-        execute_for_each::<ast::AstEnum>(&name, blk.body(), &env, &mut cfg, for_each_expr)?;
+        let count_expr = find_attr(blk.body(), "count");
+        execute_for_each::<ast::AstEnum>(
+            &name,
+            blk.body(),
+            &env,
+            &mut cfg,
+            for_each_expr,
+            count_expr,
+        )?;
     }
 
     for blk in body.blocks().filter(|b| b.identifier() == "role") {
@@ -847,7 +998,15 @@ fn load_file(
             .as_str()
             .to_string();
         let for_each_expr = find_attr(blk.body(), "for_each");
-        execute_for_each::<ast::AstRole>(&name, blk.body(), &env, &mut cfg, for_each_expr)?;
+        let count_expr = find_attr(blk.body(), "count");
+        execute_for_each::<ast::AstRole>(
+            &name,
+            blk.body(),
+            &env,
+            &mut cfg,
+            for_each_expr,
+            count_expr,
+        )?;
     }
 
     for blk in body.blocks().filter(|b| b.identifier() == "grant") {
@@ -858,7 +1017,15 @@ fn load_file(
             .as_str()
             .to_string();
         let for_each_expr = find_attr(blk.body(), "for_each");
-        execute_for_each::<ast::AstGrant>(&name, blk.body(), &env, &mut cfg, for_each_expr)?;
+        let count_expr = find_attr(blk.body(), "count");
+        execute_for_each::<ast::AstGrant>(
+            &name,
+            blk.body(),
+            &env,
+            &mut cfg,
+            for_each_expr,
+            count_expr,
+        )?;
     }
 
     for blk in body.blocks().filter(|b| b.identifier() == "test") {
