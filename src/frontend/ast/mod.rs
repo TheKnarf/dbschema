@@ -5,6 +5,7 @@ pub struct Config {
     pub functions: Vec<AstFunction>,
     pub triggers: Vec<AstTrigger>,
     pub extensions: Vec<AstExtension>,
+    pub sequences: Vec<AstSequence>,
     pub schemas: Vec<AstSchema>,
     pub enums: Vec<AstEnum>,
     pub tables: Vec<AstTable>,
@@ -50,6 +51,22 @@ pub struct AstExtension {
     pub if_not_exists: bool,
     pub schema: Option<String>,
     pub version: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AstSequence {
+    pub name: String,
+    pub alt_name: Option<String>,
+    pub schema: Option<String>,
+    pub if_not_exists: bool,
+    pub r#as: Option<String>,
+    pub increment: Option<i64>,
+    pub min_value: Option<i64>,
+    pub max_value: Option<i64>,
+    pub start: Option<i64>,
+    pub cache: Option<i64>,
+    pub cycle: bool,
+    pub owned_by: Option<String>,
 }
 
 #[derive(Debug, Clone)]

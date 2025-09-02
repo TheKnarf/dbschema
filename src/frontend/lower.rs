@@ -6,6 +6,7 @@ pub fn lower_config(ast: ast::Config) -> ir::Config {
         functions: ast.functions.into_iter().map(Into::into).collect(),
         triggers: ast.triggers.into_iter().map(Into::into).collect(),
         extensions: ast.extensions.into_iter().map(Into::into).collect(),
+        sequences: ast.sequences.into_iter().map(Into::into).collect(),
         schemas: ast.schemas.into_iter().map(Into::into).collect(),
         enums: ast.enums.into_iter().map(Into::into).collect(),
         tables: ast.tables.into_iter().map(Into::into).collect(),
@@ -59,6 +60,25 @@ impl From<ast::AstExtension> for ir::ExtensionSpec {
             if_not_exists: e.if_not_exists,
             schema: e.schema,
             version: e.version,
+        }
+    }
+}
+
+impl From<ast::AstSequence> for ir::SequenceSpec {
+    fn from(s: ast::AstSequence) -> Self {
+        Self {
+            name: s.name,
+            alt_name: s.alt_name,
+            schema: s.schema,
+            if_not_exists: s.if_not_exists,
+            r#as: s.r#as,
+            increment: s.increment,
+            min_value: s.min_value,
+            max_value: s.max_value,
+            start: s.start,
+            cache: s.cache,
+            cycle: s.cycle,
+            owned_by: s.owned_by,
         }
     }
 }

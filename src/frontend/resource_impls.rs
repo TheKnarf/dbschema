@@ -27,6 +27,52 @@ impl ForEachSupport for AstSchema {
     }
 }
 
+// Sequence implementation
+impl ForEachSupport for AstSequence {
+    type Item = Self;
+
+    fn parse_one(name: &str, body: &Body, env: &EnvVars) -> Result<Self::Item> {
+        let alt_name = get_attr_string(body, "name", env)?;
+        let schema = get_attr_string(body, "schema", env)?;
+        let if_not_exists = get_attr_bool(body, "if_not_exists", env)?.unwrap_or(true);
+        let r#as = get_attr_string(body, "as", env)?;
+        let parse_i64 = |attr: &str| -> Result<Option<i64>> {
+            match get_attr_string(body, attr, env)? {
+                Some(s) => Ok(Some(
+                    s.parse::<i64>()
+                        .with_context(|| format!("{} must be an integer", attr))?,
+                )),
+                None => Ok(None),
+            }
+        };
+        let increment = parse_i64("increment")?;
+        let min_value = parse_i64("min_value")?;
+        let max_value = parse_i64("max_value")?;
+        let start = parse_i64("start")?;
+        let cache = parse_i64("cache")?;
+        let cycle = get_attr_bool(body, "cycle", env)?.unwrap_or(false);
+        let owned_by = get_attr_string(body, "owned_by", env)?;
+        Ok(AstSequence {
+            name: name.to_string(),
+            alt_name,
+            schema,
+            if_not_exists,
+            r#as,
+            increment,
+            min_value,
+            max_value,
+            start,
+            cache,
+            cycle,
+            owned_by,
+        })
+    }
+
+    fn add_to_config(item: Self::Item, config: &mut Config) {
+        config.sequences.push(item);
+    }
+}
+
 // Table implementation
 impl ForEachSupport for AstTable {
     type Item = Self;

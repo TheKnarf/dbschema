@@ -81,6 +81,7 @@ pub enum ResourceKind {
     Functions,
     Triggers,
     Extensions,
+    Sequences,
     Policies,
     Roles,
     Grants,
@@ -98,6 +99,7 @@ impl fmt::Display for ResourceKind {
             ResourceKind::Functions => "functions",
             ResourceKind::Triggers => "triggers",
             ResourceKind::Extensions => "extensions",
+            ResourceKind::Sequences => "sequences",
             ResourceKind::Policies => "policies",
             ResourceKind::Roles => "roles",
             ResourceKind::Grants => "grants",
@@ -120,6 +122,7 @@ impl std::str::FromStr for ResourceKind {
             "functions" => Ok(ResourceKind::Functions),
             "triggers" => Ok(ResourceKind::Triggers),
             "extensions" => Ok(ResourceKind::Extensions),
+            "sequences" => Ok(ResourceKind::Sequences),
             "policies" => Ok(ResourceKind::Policies),
             "roles" => Ok(ResourceKind::Roles),
             "grants" => Ok(ResourceKind::Grants),
@@ -143,6 +146,7 @@ impl TargetConfig {
                 ResourceKind::Functions,
                 ResourceKind::Triggers,
                 ResourceKind::Extensions,
+                ResourceKind::Sequences,
                 ResourceKind::Policies,
                 ResourceKind::Roles,
                 ResourceKind::Grants,
@@ -211,7 +215,7 @@ mod tests {
         let include_set = target.get_include_set();
         assert!(include_set.contains(&ResourceKind::Tables));
         assert!(include_set.contains(&ResourceKind::Enums));
-        assert_eq!(include_set.len(), 12); // All resource types
+        assert_eq!(include_set.len(), 13); // All resource types
     }
 
     #[test]

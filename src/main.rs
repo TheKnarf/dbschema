@@ -596,6 +596,7 @@ fn cli_filter_sets(
             R::Functions,
             R::Triggers,
             R::Extensions,
+            R::Sequences,
             R::Policies,
             R::Tests,
         ]
