@@ -267,26 +267,6 @@ module "<name>" {
 }
 ```
 
-## Examples
-
-Each feature is shown in a small file under `examples/`, each including a `test` block:
-
-- `variable.hcl`, `locals.hcl`, `schema.hcl`
-- `enum.hcl`, `table.hcl`, `view.hcl`, `materialized.hcl`
-- `function.hcl`, `trigger.hcl`, `extension.hcl`, `policy.hcl`
-- `module.hcl` (uses `examples/modules/timestamps`)
-- `output.hcl`, `dynamic.hcl`, `for_each.hcl`
-
-These examples can be mixed and matched as starting points for your own schema.
-
-## Notes
-
-- Identifiers are always quoted. Strings embedded into `when` or function `body` are passed through as-is.
-- Extension creation uses `CREATE EXTENSION [IF NOT EXISTS]` and is emitted before functions/triggers.
-- Trigger creation is idempotent with a `DO $$` guard; function creation uses `CREATE OR REPLACE`.
-- Table creation uses `CREATE TABLE IF NOT EXISTS` with inline primary keys and foreign keys. Indexes (including uniques) are emitted as `CREATE [UNIQUE] INDEX IF NOT EXISTS` after the table.
-- Prisma backend: outputs only enums (`enum`) and models (`table`) — no generator/datasource blocks; ignores functions/triggers/extensions/views/materialized.
-
 ## Resource Filters
 
 - Control which resources are included per run:
