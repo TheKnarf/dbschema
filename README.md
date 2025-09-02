@@ -46,6 +46,17 @@ cargo build --release
 - Variables: `--var schema=public` or `--var-file .env.hcl`
 - Using config file: `dbschema --config` or `dbschema --config --target <target_name>`
 
+## Logging
+
+This project uses [`env_logger`](https://docs.rs/env_logger) with `info` output enabled by default.
+Set the `RUST_LOG` environment variable to control verbosity:
+
+```bash
+RUST_LOG=debug dbschema --input examples/main.hcl validate
+```
+
+Use `warn` or `error` to reduce output, e.g. `RUST_LOG=warn`.
+
 ## Configuration File
 
 dbschema can be configured using a `dbschema.toml` file in the root of your project. This file allows you to define multiple generation targets, each with its own settings.
