@@ -14,11 +14,13 @@ impl ForEachSupport for AstSchema {
         let alt_name = get_attr_string(body, "name", env)?;
         let if_not_exists = get_attr_bool(body, "if_not_exists", env)?.unwrap_or(true);
         let authorization = get_attr_string(body, "authorization", env)?;
+        let comment = get_attr_string(body, "comment", env)?;
         Ok(AstSchema {
             name: name.to_string(),
             alt_name,
             if_not_exists,
             authorization,
+            comment,
         })
     }
 
@@ -36,6 +38,7 @@ impl ForEachSupport for AstSequence {
         let schema = get_attr_string(body, "schema", env)?;
         let if_not_exists = get_attr_bool(body, "if_not_exists", env)?.unwrap_or(true);
         let r#as = get_attr_string(body, "as", env)?;
+        let comment = get_attr_string(body, "comment", env)?;
         let parse_i64 = |attr: &str| -> Result<Option<i64>> {
             match get_attr_string(body, attr, env)? {
                 Some(s) => Ok(Some(
@@ -65,6 +68,7 @@ impl ForEachSupport for AstSequence {
             cache,
             cycle,
             owned_by,
+            comment,
         })
     }
 
@@ -81,6 +85,7 @@ impl ForEachSupport for AstTable {
         let table_name = get_attr_string(body, "table_name", env)?;
         let schema = get_attr_string(body, "schema", env)?;
         let if_not_exists = get_attr_bool(body, "if_not_exists", env)?.unwrap_or(true);
+        let comment = get_attr_string(body, "comment", env)?;
 
         // columns
         let mut columns = Vec::new();
@@ -97,6 +102,7 @@ impl ForEachSupport for AstTable {
             let nullable = get_attr_bool(cb, "nullable", env)?.unwrap_or(true);
             let default = get_attr_string(cb, "default", env)?;
             let db_type = get_attr_string(cb, "db_type", env)?;
+            let comment = get_attr_string(cb, "comment", env)?;
             let lint_ignore = match find_attr(cb, "lint_ignore") {
                 Some(attr) => expr_to_string_vec(attr.expr(), env)?,
                 None => Vec::new(),
@@ -108,6 +114,7 @@ impl ForEachSupport for AstTable {
                 default,
                 db_type,
                 lint_ignore,
+                comment,
             });
         }
 
@@ -211,6 +218,7 @@ impl ForEachSupport for AstTable {
             foreign_keys: fks,
             back_references: Vec::new(),
             lint_ignore,
+            comment,
         })
     }
 
@@ -228,12 +236,14 @@ impl ForEachSupport for AstView {
         let schema = get_attr_string(body, "schema", env)?;
         let replace = get_attr_bool(body, "replace", env)?.unwrap_or(true);
         let sql = get_attr_string(body, "sql", env)?.context("view 'sql' is required")?;
+        let comment = get_attr_string(body, "comment", env)?;
         Ok(AstView {
             name: name.to_string(),
             alt_name,
             schema,
             replace,
             sql,
+            comment,
         })
     }
 
@@ -251,12 +261,14 @@ impl ForEachSupport for AstMaterializedView {
         let schema = get_attr_string(body, "schema", env)?;
         let with_data = get_attr_bool(body, "with_data", env)?.unwrap_or(true);
         let sql = get_attr_string(body, "sql", env)?.context("materialized 'sql' is required")?;
+        let comment = get_attr_string(body, "comment", env)?;
         Ok(AstMaterializedView {
             name: name.to_string(),
             alt_name,
             schema,
             with_data,
             sql,
+            comment,
         })
     }
 
@@ -281,6 +293,7 @@ impl ForEachSupport for AstPolicy {
         };
         let using = get_attr_string(body, "using", env)?;
         let check = get_attr_string(body, "check", env)?;
+        let comment = get_attr_string(body, "comment", env)?;
         Ok(AstPolicy {
             name: name.to_string(),
             alt_name,
@@ -291,6 +304,7 @@ impl ForEachSupport for AstPolicy {
             roles,
             using,
             check,
+            comment,
         })
     }
 
@@ -314,6 +328,7 @@ impl ForEachSupport for AstFunction {
         let schema = get_attr_string(body, "schema", env)?;
         let replace = get_attr_bool(body, "replace", env)?.unwrap_or(true);
         let security_definer = get_attr_bool(body, "security_definer", env)?.unwrap_or(false);
+        let comment = get_attr_string(body, "comment", env)?;
         Ok(AstFunction {
             name: name.to_string(),
             alt_name,
@@ -323,6 +338,7 @@ impl ForEachSupport for AstFunction {
             replace,
             security_definer,
             body: body_sql,
+            comment,
         })
     }
 
@@ -349,6 +365,7 @@ impl ForEachSupport for AstTrigger {
             get_attr_string(body, "function", env)?.context("trigger 'function' is required")?;
         let function_schema = get_attr_string(body, "function_schema", env)?;
         let when = get_attr_string(body, "when", env)?;
+        let comment = get_attr_string(body, "comment", env)?;
         Ok(AstTrigger {
             name: name.to_string(),
             alt_name,
@@ -360,6 +377,7 @@ impl ForEachSupport for AstTrigger {
             function,
             function_schema,
             when,
+            comment,
         })
     }
 
@@ -377,12 +395,14 @@ impl ForEachSupport for AstExtension {
         let if_not_exists = get_attr_bool(body, "if_not_exists", env)?.unwrap_or(true);
         let schema = get_attr_string(body, "schema", env)?;
         let version = get_attr_string(body, "version", env)?;
+        let comment = get_attr_string(body, "comment", env)?;
         Ok(AstExtension {
             name: name.to_string(),
             alt_name,
             if_not_exists,
             schema,
             version,
+            comment,
         })
     }
 
@@ -402,11 +422,13 @@ impl ForEachSupport for AstEnum {
             Some(attr) => expr_to_string_vec(attr.expr(), env)?,
             None => bail!("enum '{}' requires values = [..]", name),
         };
+        let comment = get_attr_string(body, "comment", env)?;
         Ok(AstEnum {
             name: name.to_string(),
             alt_name,
             schema,
             values,
+            comment,
         })
     }
 
@@ -428,6 +450,7 @@ impl ForEachSupport for AstDomain {
         let default = get_attr_string(body, "default", env)?;
         let constraint = get_attr_string(body, "constraint", env)?;
         let check = get_attr_string(body, "check", env)?;
+        let comment = get_attr_string(body, "comment", env)?;
         Ok(AstDomain {
             name: name.to_string(),
             alt_name,
@@ -437,6 +460,7 @@ impl ForEachSupport for AstDomain {
             default,
             constraint,
             check,
+            comment,
         })
     }
 
@@ -452,6 +476,7 @@ impl ForEachSupport for AstCompositeType {
     fn parse_one(name: &str, body: &Body, env: &EnvVars) -> Result<Self::Item> {
         let alt_name = get_attr_string(body, "name", env)?;
         let schema = get_attr_string(body, "schema", env)?;
+        let comment = get_attr_string(body, "comment", env)?;
         let mut fields = Vec::new();
         for fblk in body.blocks().filter(|bb| bb.identifier() == "field") {
             let fname = fblk
@@ -473,6 +498,7 @@ impl ForEachSupport for AstCompositeType {
             alt_name,
             schema,
             fields,
+            comment,
         })
     }
 
@@ -488,10 +514,12 @@ impl ForEachSupport for AstRole {
     fn parse_one(name: &str, body: &Body, env: &EnvVars) -> Result<Self::Item> {
         let alt_name = get_attr_string(body, "name", env)?;
         let login = get_attr_bool(body, "login", env)?.unwrap_or(false);
+        let comment = get_attr_string(body, "comment", env)?;
         Ok(AstRole {
             name: name.to_string(),
             alt_name,
             login,
+            comment,
         })
     }
 

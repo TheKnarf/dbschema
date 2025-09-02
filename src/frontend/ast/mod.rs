@@ -30,6 +30,7 @@ pub struct AstFunction {
     pub replace: bool,
     pub security_definer: bool,
     pub body: String,
+    pub comment: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -44,6 +45,7 @@ pub struct AstTrigger {
     pub function: String,
     pub function_schema: Option<String>,
     pub when: Option<String>,
+    pub comment: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -53,6 +55,7 @@ pub struct AstExtension {
     pub if_not_exists: bool,
     pub schema: Option<String>,
     pub version: Option<String>,
+    pub comment: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -69,6 +72,7 @@ pub struct AstSequence {
     pub cache: Option<i64>,
     pub cycle: bool,
     pub owned_by: Option<String>,
+    pub comment: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -77,6 +81,7 @@ pub struct AstSchema {
     pub alt_name: Option<String>,
     pub if_not_exists: bool,
     pub authorization: Option<String>,
+    pub comment: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -85,6 +90,7 @@ pub struct AstEnum {
     pub alt_name: Option<String>,
     pub schema: Option<String>,
     pub values: Vec<String>,
+    pub comment: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -97,6 +103,7 @@ pub struct AstDomain {
     pub default: Option<String>,
     pub constraint: Option<String>,
     pub check: Option<String>,
+    pub comment: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -105,6 +112,7 @@ pub struct AstCompositeType {
     pub alt_name: Option<String>,
     pub schema: Option<String>,
     pub fields: Vec<AstCompositeTypeField>,
+    pub comment: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -120,6 +128,7 @@ pub struct AstView {
     pub schema: Option<String>,
     pub replace: bool,
     pub sql: String,
+    pub comment: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -129,6 +138,7 @@ pub struct AstMaterializedView {
     pub schema: Option<String>,
     pub with_data: bool,
     pub sql: String,
+    pub comment: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -142,6 +152,7 @@ pub struct AstPolicy {
     pub roles: Vec<String>,
     pub using: Option<String>,
     pub check: Option<String>,
+    pub comment: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -149,6 +160,7 @@ pub struct AstRole {
     pub name: String,
     pub alt_name: Option<String>,
     pub login: bool,
+    pub comment: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -173,6 +185,7 @@ pub struct AstTable {
     pub foreign_keys: Vec<AstForeignKey>,
     pub back_references: Vec<AstBackReference>,
     pub lint_ignore: Vec<String>,
+    pub comment: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -189,6 +202,7 @@ pub struct AstColumn {
     pub default: Option<String>,
     pub db_type: Option<String>,
     pub lint_ignore: Vec<String>,
+    pub comment: Option<String>,
 }
 
 #[derive(Debug, Clone)]

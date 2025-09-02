@@ -33,6 +33,7 @@ impl From<ast::AstFunction> for ir::FunctionSpec {
             replace: f.replace,
             security_definer: f.security_definer,
             body: f.body,
+            comment: f.comment,
         }
     }
 }
@@ -50,6 +51,7 @@ impl From<ast::AstTrigger> for ir::TriggerSpec {
             function: t.function,
             function_schema: t.function_schema,
             when: t.when,
+            comment: t.comment,
         }
     }
 }
@@ -62,6 +64,7 @@ impl From<ast::AstExtension> for ir::ExtensionSpec {
             if_not_exists: e.if_not_exists,
             schema: e.schema,
             version: e.version,
+            comment: e.comment,
         }
     }
 }
@@ -81,6 +84,7 @@ impl From<ast::AstSequence> for ir::SequenceSpec {
             cache: s.cache,
             cycle: s.cycle,
             owned_by: s.owned_by,
+            comment: s.comment,
         }
     }
 }
@@ -92,6 +96,7 @@ impl From<ast::AstSchema> for ir::SchemaSpec {
             alt_name: s.alt_name,
             if_not_exists: s.if_not_exists,
             authorization: s.authorization,
+            comment: s.comment,
         }
     }
 }
@@ -103,6 +108,7 @@ impl From<ast::AstEnum> for ir::EnumSpec {
             alt_name: e.alt_name,
             schema: e.schema,
             values: e.values,
+            comment: e.comment,
         }
     }
 }
@@ -118,6 +124,7 @@ impl From<ast::AstDomain> for ir::DomainSpec {
             default: d.default,
             constraint: d.constraint,
             check: d.check,
+            comment: d.comment,
         }
     }
 }
@@ -129,6 +136,7 @@ impl From<ast::AstCompositeType> for ir::CompositeTypeSpec {
             alt_name: t.alt_name,
             schema: t.schema,
             fields: t.fields.into_iter().map(Into::into).collect(),
+            comment: t.comment,
         }
     }
 }
@@ -150,6 +158,7 @@ impl From<ast::AstView> for ir::ViewSpec {
             schema: v.schema,
             replace: v.replace,
             sql: v.sql,
+            comment: v.comment,
         }
     }
 }
@@ -162,6 +171,7 @@ impl From<ast::AstMaterializedView> for ir::MaterializedViewSpec {
             schema: m.schema,
             with_data: m.with_data,
             sql: m.sql,
+            comment: m.comment,
         }
     }
 }
@@ -178,6 +188,7 @@ impl From<ast::AstPolicy> for ir::PolicySpec {
             roles: p.roles,
             using: p.using,
             check: p.check,
+            comment: p.comment,
         }
     }
 }
@@ -188,6 +199,7 @@ impl From<ast::AstRole> for ir::RoleSpec {
             name: r.name,
             alt_name: r.alt_name,
             login: r.login,
+            comment: r.comment,
         }
     }
 }
@@ -218,6 +230,7 @@ impl From<ast::AstTable> for ir::TableSpec {
             foreign_keys: t.foreign_keys.into_iter().map(Into::into).collect(),
             back_references: t.back_references.into_iter().map(Into::into).collect(),
             lint_ignore: t.lint_ignore,
+            comment: t.comment,
         }
     }
 }
@@ -231,6 +244,7 @@ impl From<ast::AstColumn> for ir::ColumnSpec {
             default: c.default,
             db_type: c.db_type,
             lint_ignore: c.lint_ignore,
+            comment: c.comment,
         }
     }
 }

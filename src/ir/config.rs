@@ -31,6 +31,7 @@ pub struct FunctionSpec {
     pub replace: bool,
     pub security_definer: bool,
     pub body: String,
+    pub comment: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -45,6 +46,7 @@ pub struct TriggerSpec {
     pub function: String,    // function name (unqualified)
     pub function_schema: Option<String>,
     pub when: Option<String>, // optional condition, raw SQL
+    pub comment: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -54,6 +56,7 @@ pub struct ExtensionSpec {
     pub if_not_exists: bool,
     pub schema: Option<String>,
     pub version: Option<String>,
+    pub comment: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -70,6 +73,7 @@ pub struct SequenceSpec {
     pub cache: Option<i64>,
     pub cycle: bool,
     pub owned_by: Option<String>,
+    pub comment: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -78,6 +82,7 @@ pub struct SchemaSpec {
     pub alt_name: Option<String>,
     pub if_not_exists: bool,
     pub authorization: Option<String>,
+    pub comment: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -86,6 +91,7 @@ pub struct EnumSpec {
     pub alt_name: Option<String>,
     pub schema: Option<String>,
     pub values: Vec<String>,
+    pub comment: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -98,6 +104,7 @@ pub struct DomainSpec {
     pub default: Option<String>,
     pub constraint: Option<String>,
     pub check: Option<String>,
+    pub comment: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -106,6 +113,7 @@ pub struct CompositeTypeSpec {
     pub alt_name: Option<String>,
     pub schema: Option<String>,
     pub fields: Vec<CompositeTypeFieldSpec>,
+    pub comment: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -121,6 +129,7 @@ pub struct ViewSpec {
     pub schema: Option<String>,
     pub replace: bool, // OR REPLACE
     pub sql: String,   // SELECT ... body
+    pub comment: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -130,6 +139,7 @@ pub struct MaterializedViewSpec {
     pub schema: Option<String>,
     pub with_data: bool, // WITH [NO] DATA
     pub sql: String,     // SELECT ... body
+    pub comment: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -143,6 +153,7 @@ pub struct PolicySpec {
     pub roles: Vec<String>,    // empty => PUBLIC (omit TO clause)
     pub using: Option<String>, // USING (expr)
     pub check: Option<String>, // WITH CHECK (expr)
+    pub comment: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -150,6 +161,7 @@ pub struct RoleSpec {
     pub name: String,
     pub alt_name: Option<String>,
     pub login: bool,
+    pub comment: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -174,6 +186,7 @@ pub struct TableSpec {
     pub foreign_keys: Vec<ForeignKeySpec>,
     pub back_references: Vec<BackReferenceSpec>,
     pub lint_ignore: Vec<String>,
+    pub comment: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -190,6 +203,7 @@ pub struct ColumnSpec {
     pub default: Option<String>,
     pub db_type: Option<String>, // NEW: Database-specific type like "CHAR(32)", "VARCHAR(255)"
     pub lint_ignore: Vec<String>,
+    pub comment: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
