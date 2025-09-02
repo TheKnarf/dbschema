@@ -65,6 +65,18 @@ pub fn expr_to_value(expr: &hcl::Expression, env: &EnvVars) -> Result<Value> {
         hcl::Expression::Bool(b) => Ok(Value::Bool(*b)),
         hcl::Expression::FuncCall(_) => evaluate_expr(expr, env),
         hcl::Expression::Traversal(t) => resolve_traversal_value(t, env),
+        hcl::Expression::Variable(v) => {
+            if let Some(val) = env.vars.get(v.as_str()) {
+                Ok(val.clone())
+            } else if let Some(val) = env.locals.get(v.as_str()) {
+                Ok(val.clone())
+            } else {
+                bail!(
+                    "undefined variable '{}': use var.<name> or define in for expression",
+                    v.as_str()
+                );
+            }
+        }
         hcl::Expression::TemplateExpr(t) => {
             let s = expr_to_string(&hcl::Expression::TemplateExpr(t.clone()), env)?;
             Ok(Value::String(s))
@@ -83,6 +95,93 @@ pub fn expr_to_value(expr: &hcl::Expression, env: &EnvVars) -> Result<Value> {
                 map.insert(key, expr_to_value(v, env)?);
             }
             Ok(Value::Object(map))
+        }
+        hcl::Expression::Conditional(c) => {
+            let cond = expr_to_value(&c.cond_expr, env)?;
+            match cond {
+                Value::Bool(true) => expr_to_value(&c.true_expr, env),
+                Value::Bool(false) => expr_to_value(&c.false_expr, env),
+                other => bail!(
+                    "conditional expression must evaluate to bool, got {}",
+                    value_kind(&other)
+                ),
+            }
+        }
+        hcl::Expression::ForExpr(fe) => {
+            let coll = expr_to_value(&fe.collection_expr, env)?;
+            let mut arr_out = Vec::new();
+            let mut map_out: hcl::value::Map<String, Value> = hcl::value::Map::new();
+
+            let iter: Vec<(Value, Value)> = match coll {
+                Value::Array(a) => a
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, v)| (Value::Number(Number::from(i as i64)), v))
+                    .collect(),
+                Value::Object(o) => o.into_iter().map(|(k, v)| (Value::from(k), v)).collect(),
+                other => bail!(
+                    "for expression collection must be array or object, got {}",
+                    value_kind(&other)
+                ),
+            };
+
+            for (key, val) in iter {
+                let mut iter_env = env.clone();
+                iter_env
+                    .vars
+                    .insert(fe.value_var.as_str().to_string(), val.clone());
+                if let Some(kv) = &fe.key_var {
+                    iter_env.vars.insert(kv.as_str().to_string(), key.clone());
+                }
+
+                if let Some(cond_expr) = &fe.cond_expr {
+                    let cond = expr_to_value(cond_expr, &iter_env)?;
+                    match cond {
+                        Value::Bool(true) => {}
+                        Value::Bool(false) => continue,
+                        other => bail!(
+                            "for expression condition must evaluate to bool, got {}",
+                            value_kind(&other)
+                        ),
+                    }
+                }
+
+                if let Some(key_expr) = &fe.key_expr {
+                    let key_val = expr_to_value(key_expr, &iter_env)?;
+                    let key_str = match key_val {
+                        Value::String(s) => s,
+                        Value::Number(n) => n.to_string(),
+                        other => bail!(
+                            "for expression key must be string or number, got {}",
+                            value_kind(&other)
+                        ),
+                    };
+                    let val_expr = expr_to_value(&fe.value_expr, &iter_env)?;
+                    if fe.grouping {
+                        map_out
+                            .entry(key_str)
+                            .and_modify(|v| {
+                                if let Value::Array(arr) = v {
+                                    arr.push(val_expr.clone());
+                                } else {
+                                    *v = Value::from(vec![v.clone(), val_expr.clone()]);
+                                }
+                            })
+                            .or_insert_with(|| Value::from(vec![val_expr]));
+                    } else {
+                        map_out.insert(key_str, val_expr);
+                    }
+                } else {
+                    let val_expr = expr_to_value(&fe.value_expr, &iter_env)?;
+                    arr_out.push(val_expr);
+                }
+            }
+
+            if fe.key_expr.is_some() {
+                Ok(Value::Object(map_out))
+            } else {
+                Ok(Value::from(arr_out))
+            }
         }
         hcl::Expression::Operation(op) => match &**op {
             hcl::expr::Operation::Unary(u) => {
@@ -1120,4 +1219,27 @@ fn load_file(
 
     visited.pop();
     Ok(cfg)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::frontend::env::EnvVars;
+
+    #[test]
+    fn evaluates_conditional_expression() {
+        let expr: hcl::Expression = "true ? 1 : 0".parse().unwrap();
+        let env = EnvVars::default();
+        let v = expr_to_value(&expr, &env).unwrap();
+        assert_eq!(v, Value::from(1));
+    }
+
+    #[test]
+    fn evaluates_for_expression() {
+        let expr: hcl::Expression = "[for x in [1,2,3] : x]".parse().unwrap();
+        let env = EnvVars::default();
+        let v = expr_to_value(&expr, &env).unwrap();
+        let expected = Value::from(vec![Value::from(1), Value::from(2), Value::from(3)]);
+        assert_eq!(v, expected);
+    }
 }
