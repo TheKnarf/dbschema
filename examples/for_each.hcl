@@ -1,13 +1,21 @@
-variable "tables" { default = ["users", "orders"] }
+variable "tables" {
+  default = ["users", "orders"]
+}
 
 table "users" {
   schema = "public"
-  column "updated_at" { type = "timestamptz" nullable = true }
+  column "updated_at" {
+    type = "timestamptz"
+    nullable = true
+  }
 }
 
 table "orders" {
   schema = "public"
-  column "updated_at" { type = "timestamptz" nullable = true }
+  column "updated_at" {
+    type = "timestamptz"
+    nullable = true
+  }
 }
 
 function "set_updated_at" {
