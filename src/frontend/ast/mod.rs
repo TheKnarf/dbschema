@@ -144,6 +144,7 @@ pub struct AstTable {
     pub indexes: Vec<AstIndex>,
     pub foreign_keys: Vec<AstForeignKey>,
     pub back_references: Vec<AstBackReference>,
+    pub lint_ignore: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -159,6 +160,7 @@ pub struct AstColumn {
     pub nullable: bool,
     pub default: Option<String>,
     pub db_type: Option<String>,
+    pub lint_ignore: Vec<String>,
 }
 
 #[derive(Debug, Clone)]

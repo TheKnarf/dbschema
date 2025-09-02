@@ -84,8 +84,30 @@ test_backend = "pglite"
 - Validate: `./target/release/dbschema --input examples/main.hcl validate`
 - Create migration (Postgres SQL): `./target/release/dbschema --input examples/main.hcl create-migration --out-dir migrations --name triggers`
 - Create Prisma models/enums only (no generator/datasource): `./target/release/dbschema --backend prisma --input examples/main.hcl create-migration --out-dir prisma --name schema`
+- Lint schema: `./target/release/dbschema --input examples/main.hcl lint`
 - Variables: `--var schema=public` or `--var-file .env.hcl`
 - Using config file: `dbschema --config` or `dbschema --config --target <target_name>`
+
+
+## Linting
+
+`dbschema lint` runs built-in checks against your schema. The default checks are:
+
+- `naming-convention`: table and column names must be `snake_case`.
+- `missing-index`: tables should define at least one index or primary key.
+
+Suppress a rule for a specific table or column with `lint_ignore`:
+
+```hcl
+table "users" {
+  lint_ignore = ["missing-index"]
+
+  column "ID" {
+    type = "int"
+    lint_ignore = ["naming-convention"]
+  }
+}
+```
 
 ## Logging
 

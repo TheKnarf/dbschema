@@ -145,6 +145,7 @@ pub struct TableSpec {
     pub indexes: Vec<IndexSpec>,
     pub foreign_keys: Vec<ForeignKeySpec>,
     pub back_references: Vec<BackReferenceSpec>,
+    pub lint_ignore: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -160,6 +161,7 @@ pub struct ColumnSpec {
     pub nullable: bool,
     pub default: Option<String>,
     pub db_type: Option<String>, // NEW: Database-specific type like "CHAR(32)", "VARCHAR(255)"
+    pub lint_ignore: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

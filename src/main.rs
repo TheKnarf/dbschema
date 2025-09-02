@@ -72,6 +72,8 @@ enum TestBackendKind {
 enum Commands {
     /// Validate HCL and print a summary
     Validate {},
+    /// Lint schema and report potential issues
+    Lint {},
     /// Format HCL files in place
     Fmt {
         /// Files or directories to format (defaults to current directory)
@@ -168,6 +170,42 @@ fn main() -> Result<()> {
                     filtered.triggers.len()
                 );
                 print_outputs(&filtered.outputs);
+            }
+            Commands::Lint {} => {
+                let mut vars: HashMap<String, hcl::Value> = HashMap::new();
+                for vf in &cli.var_file {
+                    let loaded = load_var_file(vf)
+                        .with_context(|| format!("loading var file {}", vf.display()))?;
+                    vars.extend(loaded);
+                }
+                for (k, v) in cli.var.iter() {
+                    vars.insert(k.clone(), hcl::Value::String(v.clone()));
+                }
+
+                let fs_loader = FsLoader;
+                let env = EnvVars {
+                    vars,
+                    locals: HashMap::new(),
+                    modules: HashMap::new(),
+                    each: None,
+                    count: None,
+                };
+                let config = load_config(&cli.input, &fs_loader, env.clone())
+                    .with_context(|| format!("loading root HCL {}", cli.input.display()))?;
+
+                let (include_set, exclude_set) =
+                    cli_filter_sets(&cli.backend, &cli.include_resources, &cli.exclude_resources);
+                let filtered = apply_filters(&config, &include_set, &exclude_set);
+
+                let lints = dbschema::lint::run(&filtered);
+                if lints.is_empty() {
+                    info!("No lint issues found");
+                } else {
+                    for l in lints {
+                        println!("[{}] {}", l.check, l.message);
+                    }
+                    std::process::exit(1);
+                }
             }
             Commands::Fmt { paths } => {
                 for p in paths {

@@ -6,6 +6,7 @@ pub mod passes;
 pub mod postgres;
 pub mod prisma;
 pub mod test_runner;
+pub mod lint;
 
 use anyhow::Result;
 // Keep types public via re-exports
@@ -603,6 +604,7 @@ mod tests {
                 indexes: vec![],
                 foreign_keys: vec![],
                 back_references: vec![],
+                lint_ignore: vec![],
             }],
             ..Default::default()
         };
@@ -639,6 +641,7 @@ mod tests {
                 indexes: vec![],
                 foreign_keys: vec![],
                 back_references: vec![],
+                lint_ignore: vec![],
             }],
             ..Default::default()
         };
