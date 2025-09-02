@@ -30,13 +30,15 @@ pub struct PGliteRuntime {
 
 impl PGliteRuntime {
     /// Load the PGlite module and initialise the database files.
-    fn new() -> Result<Self> {
+    pub fn new() -> Result<Self> {
         // Locate the bundled wasm and data files
         let wasm_path = "vendor/pglite/pglite.wasm";
 
         let engine = Engine::default();
         let module = Module::from_file(&engine, wasm_path)?;
         let mut linker = Linker::new(&engine);
+        // Minimal host env required by the PGlite module
+        linker.func_wrap("env", "invoke_iii", |_a: i32, _b: i32, _c: i32| -> i32 { 0 })?;
         add_to_linker_sync(&mut linker, |ctx: &mut WasiP1Ctx| ctx)?;
 
         // Preopen the directory containing pglite.data as /tmp/pglite
@@ -104,7 +106,7 @@ impl PGliteRuntime {
     }
 
     /// Perform the initial startup handshake.
-    fn startup(&mut self) -> Result<()> {
+    pub fn startup(&mut self) -> Result<()> {
         let mut buf = BytesMut::new();
         let params = [("user", "postgres"), ("database", "postgres")];
         frontend::startup_message(params.iter().copied(), &mut buf)?;
@@ -119,7 +121,7 @@ impl PGliteRuntime {
     }
 
     /// Execute a simple query and return backend messages.
-    fn simple_query(&mut self, sql: &str) -> Result<Vec<backend::Message>> {
+    pub fn simple_query(&mut self, sql: &str) -> Result<Vec<backend::Message>> {
         let mut buf = BytesMut::new();
         frontend::query(sql, &mut buf)?;
         let resp = self.exec_protocol(&buf)?;
@@ -136,7 +138,7 @@ impl PGliteRuntime {
     }
 
     /// Shutdown the backend and flush the filesystem.
-    fn shutdown(&mut self) -> Result<()> {
+    pub fn shutdown(&mut self) -> Result<()> {
         self.shutdown_fn.call(&mut self.store, ())?;
         Ok(())
     }

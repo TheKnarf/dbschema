@@ -16,6 +16,12 @@ pub struct Settings {
     /// Environment variables to set
     #[serde(default)]
     pub env: HashMap<String, String>,
+    /// Default backend for `dbschema test`
+    #[serde(default)]
+    pub test_backend: Option<String>,
+    /// Default DSN for `dbschema test`
+    #[serde(default)]
+    pub test_dsn: Option<String>,
 }
 
 /// Configuration for a single target output
