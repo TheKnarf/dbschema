@@ -1,7 +1,9 @@
 use anyhow::{bail, Context, Result};
 use hcl::eval::{Context as HclContext, Evaluate};
 use hcl::template::{Element as TplElement, Template};
-use hcl::{expr::TemplateExpr, Traversal, TraversalOperator, Value};
+use hcl::{
+    expr::TemplateExpr, Attribute, Block, Body, Structure, Traversal, TraversalOperator, Value,
+};
 use path_absolutize::Absolutize;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -123,20 +125,121 @@ fn resolve_traversal_value(tr: &Traversal, env: &EnvVars) -> Result<Value> {
             let (key, value) = env.each.as_ref().ok_or_else(|| {
                 anyhow::anyhow!("'each' is only available inside for_each blocks")
             })?;
-            match name.as_str() {
-                "key" => Ok(key.clone().into()),
-                "value" => Ok(value.clone().into()),
+            let mut current = match name.as_str() {
+                "key" => key.clone().into(),
+                "value" => value.clone(),
                 other => bail!(
                     "unsupported each attribute '{}': expected key or value",
                     other
                 ),
+            };
+            for op in it {
+                match op {
+                    TraversalOperator::GetAttr(attr) => {
+                        if let Value::Object(map) = current {
+                            current = map.get(attr.as_str()).cloned().ok_or_else(|| {
+                                anyhow::anyhow!("unknown attribute '{}' on each.* value", attr)
+                            })?;
+                        } else {
+                            bail!("cannot access attribute on non-object value");
+                        }
+                    }
+                    _ => bail!("unsupported traversal operator in each.* expression"),
+                }
             }
+            Ok(current)
         }
         _ => bail!(
             "unsupported traversal root '{}': expected var.*, local.*, or each.*",
             root
         ),
     }
+}
+
+// Expand Terraform-style dynamic blocks into concrete blocks.
+// This allows constructs like:
+//
+// dynamic "column" {
+//   for_each = var.cols
+//   labels   = [each.key]
+//   content {
+//     type    = each.value.type
+//     nullable = each.value.nullable
+//   }
+// }
+//
+// to be turned into multiple `column` blocks.
+fn expand_dynamic_blocks(body: &Body, env: &EnvVars) -> Result<Body> {
+    let mut builder = Body::builder();
+    for structure in body.iter() {
+        match structure {
+            Structure::Attribute(attr) => {
+                if env.each.is_some() {
+                    let val = expr_to_value(attr.expr(), env)?;
+                    builder = builder.add_attribute(Attribute::new(attr.key().to_string(), val));
+                } else {
+                    builder = builder.add_attribute(attr.clone());
+                }
+            }
+            Structure::Block(block) => {
+                if block.identifier() == "dynamic" {
+                    // The first label is the resulting block identifier
+                    let ident = block
+                        .labels()
+                        .get(0)
+                        .ok_or_else(|| anyhow::anyhow!("dynamic block missing type label"))?
+                        .as_str()
+                        .to_string();
+
+                    // Retrieve required for_each expression
+                    let for_each_attr = find_attr(block.body(), "for_each")
+                        .context("dynamic block missing for_each")?;
+                    let coll = expr_to_value(for_each_attr.expr(), env)?;
+
+                    // Optional labels expression
+                    let labels_attr = find_attr(block.body(), "labels");
+
+                    // Content block contains the actual body
+                    let content_block = block
+                        .body()
+                        .blocks()
+                        .find(|b| b.identifier() == "content")
+                        .context("dynamic block missing content")?;
+
+                    let mut new_blocks = Vec::new();
+                    crate::eval::for_each::for_each_iter(&coll, &mut |k, v| {
+                        let mut iter_env = env.clone();
+                        iter_env.each = Some((k.clone(), v.clone()));
+
+                        let labels: Vec<String> = match labels_attr {
+                            Some(attr) => expr_to_string_vec(attr.expr(), &iter_env)?,
+                            None => Vec::new(),
+                        };
+
+                        let expanded = expand_dynamic_blocks(content_block.body(), &iter_env)?;
+
+                        let mut bb = Block::builder(ident.clone());
+                        if !labels.is_empty() {
+                            bb = bb.add_labels(labels);
+                        }
+                        bb = bb.add_structures(expanded.into_iter());
+                        new_blocks.push(bb.build());
+                        Ok(())
+                    })?;
+                    builder = builder.add_blocks(new_blocks);
+                } else {
+                    let expanded = expand_dynamic_blocks(block.body(), env)?;
+                    let mut bb = Block::builder(block.identifier().to_string());
+                    if !block.labels().is_empty() {
+                        bb = bb.add_labels(block.labels().iter().cloned());
+                    }
+                    bb = bb.add_structures(expanded.into_iter());
+                    builder = builder.add_block(bb.build());
+                }
+            }
+        }
+    }
+    Ok(builder.build())
 }
 
 pub fn find_attr<'a>(body: &'a hcl::Body, name: &str) -> Option<&'a hcl::Attribute> {
@@ -288,7 +391,7 @@ fn load_file(
     let content = loader
         .load(path)
         .with_context(|| format!("reading HCL file {}", path.display()))?;
-    let body: hcl::Body =
+    let mut body: hcl::Body =
         hcl::from_str(&content).with_context(|| format!("parsing HCL in {}", path.display()))?;
 
     // 1) Collect variable defaults
@@ -321,6 +424,9 @@ fn load_file(
             env.locals.insert(key.to_string(), v);
         }
     }
+
+    // Expand any dynamic blocks now that variables and locals are known
+    body = expand_dynamic_blocks(&body, &env)?;
 
     // 3) Parse resources using the ForEachSupport trait
     let mut cfg = Config::default();

@@ -63,6 +63,7 @@ mod tests {
     use super::*;
 
     // Mock implementation for testing
+    #[allow(dead_code)]
     struct MockResource;
 
     impl ForEachSupport for MockResource {

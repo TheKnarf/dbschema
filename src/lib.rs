@@ -16,8 +16,6 @@ pub use model::{
     SchemaSpec, TableSpec, TriggerSpec, ViewSpec,
 };
 
-
-
 // Loader abstraction: lets callers control how files are read.
 pub trait Loader {
     fn load(&self, path: &Path) -> Result<String>;
@@ -324,6 +322,43 @@ mod tests {
         let sql = generate_sql(&cfg).unwrap();
         assert!(sql.contains("\"users\""));
         assert!(sql.contains("\"orders\""));
+    }
+
+    #[test]
+    fn dynamic_block_expands_columns() {
+        let mut files = HashMap::new();
+        files.insert(
+            p("/root/main.hcl"),
+            r#"
+            variable "cols" {
+              default = {
+                id = { type = "serial", nullable = false },
+                name = { type = "text", nullable = true }
+              }
+            }
+
+            table "users" {
+              dynamic "column" {
+                for_each = var.cols
+                labels   = [each.key]
+                content {
+                  type = each.value.type
+                  nullable = each.value.nullable
+                }
+              }
+            }
+            "#
+            .to_string(),
+        );
+        let loader = MapLoader { files };
+        let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
+        assert_eq!(cfg.tables.len(), 1);
+        let cols = &cfg.tables[0].columns;
+        assert_eq!(cols.len(), 2);
+        assert_eq!(cols[0].name, "id");
+        assert!(!cols[0].nullable);
+        assert_eq!(cols[1].name, "name");
+        assert!(cols[1].nullable);
     }
 
     #[test]
