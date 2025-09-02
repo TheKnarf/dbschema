@@ -83,13 +83,13 @@ pub fn apply_resource_filters(cfg: &Config, include: &[String], exclude: &[Strin
     let exclude_set: HashSet<String> = exclude.iter().cloned().collect();
 
     filter_config_with(cfg, |kind| {
-        let resource_type = kind.as_str();
+        let resource_type = kind.to_string();
         if include_all {
             true
         } else if !include_set.is_empty() {
-            include_set.contains(resource_type)
+            include_set.contains(resource_type.as_str())
         } else {
-            !exclude_set.contains(resource_type)
+            !exclude_set.contains(resource_type.as_str())
         }
     })
 }
