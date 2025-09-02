@@ -4,6 +4,10 @@ set shell := ["bash", "-cu"]
 pglite-assets:
   just --justfile crates/pglite/justfile pglite-assets
 
+# Format HCL files in place
+fmt *paths:
+  cargo run -- fmt {{paths}}
+
 # Run the example test against a local Postgres started via Docker Compose
 # Usage:
 #   just example-test                       # uses default DSN
