@@ -97,12 +97,17 @@ impl ForEachSupport for AstTable {
             let nullable = get_attr_bool(cb, "nullable", env)?.unwrap_or(true);
             let default = get_attr_string(cb, "default", env)?;
             let db_type = get_attr_string(cb, "db_type", env)?;
+            let lint_ignore = match find_attr(cb, "lint_ignore") {
+                Some(attr) => expr_to_string_vec(attr.expr(), env)?,
+                None => Vec::new(),
+            };
             columns.push(AstColumn {
                 name: cname,
                 r#type: ctype,
                 nullable,
                 default,
                 db_type,
+                lint_ignore,
             });
         }
 
@@ -190,6 +195,11 @@ impl ForEachSupport for AstTable {
             });
         }
 
+        let lint_ignore = match find_attr(body, "lint_ignore") {
+            Some(attr) => expr_to_string_vec(attr.expr(), env)?,
+            None => Vec::new(),
+        };
+
         Ok(AstTable {
             name: name.to_string(),
             table_name,
@@ -200,6 +210,7 @@ impl ForEachSupport for AstTable {
             indexes,
             foreign_keys: fks,
             back_references: Vec::new(),
+            lint_ignore,
         })
     }
 

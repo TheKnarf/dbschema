@@ -217,6 +217,7 @@ impl From<ast::AstTable> for ir::TableSpec {
             indexes: t.indexes.into_iter().map(Into::into).collect(),
             foreign_keys: t.foreign_keys.into_iter().map(Into::into).collect(),
             back_references: t.back_references.into_iter().map(Into::into).collect(),
+            lint_ignore: t.lint_ignore,
         }
     }
 }
@@ -229,6 +230,7 @@ impl From<ast::AstColumn> for ir::ColumnSpec {
             nullable: c.nullable,
             default: c.default,
             db_type: c.db_type,
+            lint_ignore: c.lint_ignore,
         }
     }
 }
