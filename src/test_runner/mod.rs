@@ -4,6 +4,7 @@ use std::collections::HashSet;
 use crate::ir::Config;
 
 pub mod postgres;
+pub mod pglite;
 
 pub struct TestResult {
     pub name: String,
