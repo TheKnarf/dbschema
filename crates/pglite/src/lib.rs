@@ -2,8 +2,14 @@ use anyhow::{anyhow, Result};
 use bytes::BytesMut;
 use fallible_iterator::FallibleIterator;
 use postgres_protocol::message::{backend, frontend};
-use std::path::PathBuf;
-use wasmtime::{Engine, Instance, Linker, Memory, Module, Store, TypedFunc};
+use std::{
+    path::PathBuf,
+    sync::{Arc, Mutex},
+};
+use wasmtime::FuncType;
+use wasmtime::{
+    Caller, Engine, Instance, Linker, Memory, Module, Ref, Store, Table, TypedFunc, Val, ValType,
+};
 use wasmtime_wasi::{
     preview1::{add_to_linker_sync, WasiP1Ctx},
     DirPerms, FilePerms, WasiCtxBuilder,
@@ -26,8 +32,146 @@ pub struct PGliteRuntime {
     use_wire: TypedFunc<i32, ()>,
     backend: TypedFunc<(), ()>,
     shutdown_fn: TypedFunc<(), ()>,
+    _table: Table,
 }
 
+fn valtype_from_char(c: char) -> ValType {
+    match c {
+        'i' => ValType::I32,
+        'j' => ValType::I64,
+        'f' => ValType::F32,
+        'd' => ValType::F64,
+        _ => ValType::I32,
+    }
+}
+
+fn default_val(c: char) -> Val {
+    match c {
+        'i' => Val::I32(0),
+        'j' => Val::I64(0),
+        'f' => Val::F32(0.0f32.to_bits()),
+        'd' => Val::F64(0.0f64.to_bits()),
+        _ => Val::I32(0),
+    }
+}
+
+fn bind_invoke_funcs(
+    linker: &mut Linker<WasiP1Ctx>,
+    table: Arc<Mutex<Option<Table>>>,
+) -> Result<()> {
+    fn bind(
+        linker: &mut Linker<WasiP1Ctx>,
+        table: Arc<Mutex<Option<Table>>>,
+        sig: &str,
+    ) -> Result<()> {
+        let name = format!("invoke_{}", sig);
+        let mut chars = sig.chars();
+        let ret = chars.next().unwrap_or('v');
+        let mut params: Vec<ValType> = vec![ValType::I32];
+        for c in chars.clone() {
+            params.push(valtype_from_char(c));
+        }
+        let results: Vec<ValType> = if ret == 'v' {
+            vec![]
+        } else {
+            vec![valtype_from_char(ret)]
+        };
+        let ty = FuncType::new(linker.engine(), params.clone(), results.clone());
+        let table_clone = table.clone();
+        linker.func_new(
+            "env",
+            &name,
+            ty,
+            move |mut caller: Caller<'_, WasiP1Ctx>, args: &[Val], rets: &mut [Val]| {
+                let index = args[0]
+                    .i32()
+                    .ok_or_else(|| anyhow!("invalid function index"))?;
+                let func = {
+                    let tbl_opt = table_clone.lock().unwrap();
+                    let tbl = tbl_opt
+                        .as_ref()
+                        .ok_or_else(|| anyhow!("table not initialized"))?;
+                    let val = tbl
+                        .get(&mut caller, index as u64)
+                        .ok_or_else(|| anyhow!("table lookup failed"))?;
+                    match val {
+                        Ref::Func(Some(f)) => f,
+                        _ => return Err(anyhow!("expected funcref")),
+                    }
+                };
+                let wasm_args = &args[1..];
+                let mut wasm_rets = if rets.is_empty() {
+                    vec![]
+                } else {
+                    vec![default_val(ret)]
+                };
+                func.call(&mut caller, wasm_args, &mut wasm_rets)?;
+                if !rets.is_empty() {
+                    rets[0] = wasm_rets[0].clone();
+                }
+                Ok(())
+            },
+        )?;
+        Ok(())
+    }
+
+    for sig in [
+        "di",
+        "i",
+        "id",
+        "ii",
+        "iii",
+        "iiii",
+        "iiiii",
+        "iiiiii",
+        "iiiiiii",
+        "iiiiiiii",
+        "iiiiiiiii",
+        "iiiiiiiiii",
+        "iiiiiiiiiii",
+        "iiiiiiiiiiiiii",
+        "iiiiiiiiiiiiiiiiii",
+        "iiiiiji",
+        "iiiij",
+        "iiiijii",
+        "iiij",
+        "iiji",
+        "ij",
+        "ijiiiii",
+        "ijiiiiii",
+        "j",
+        "ji",
+        "jii",
+        "jiiii",
+        "jiiiiii",
+        "jiiiiiiiii",
+        "v",
+        "vi",
+        "vid",
+        "vii",
+        "viii",
+        "viiii",
+        "viiiii",
+        "viiiiii",
+        "viiiiiii",
+        "viiiiiiii",
+        "viiiiiiiii",
+        "viiiiiiiiiiii",
+        "viiiji",
+        "viij",
+        "viiji",
+        "viijii",
+        "viijiiii",
+        "vij",
+        "viji",
+        "vijiji",
+        "vj",
+        "vji",
+    ] {
+        bind(linker, table.clone(), sig)?;
+    }
+    Ok(())
+}
 impl PGliteRuntime {
     /// Load the PGlite module and initialise the database files.
     pub fn new() -> Result<Self> {
@@ -39,18 +183,8 @@ impl PGliteRuntime {
         let engine = Engine::default();
         let module = Module::from_file(&engine, &wasm_path)?;
         let mut linker = Linker::new(&engine);
-        // Minimal host env required by the PGlite module
-        linker.func_wrap("env", "invoke_iii", |_a: i32, _b: i32, _c: i32| -> i32 {
-            0
-        })?;
-        linker.func_wrap(
-            "env",
-            "invoke_viiii",
-            |_a: i32, _b: i32, _c: i32, _d: i32, _e: i32| {},
-        )?;
-        linker.func_wrap("env", "invoke_vi", |_a: i32, _b: i32| {})?;
-        linker.func_wrap("env", "invoke_v", |_a: i32| {})?;
-        linker.func_wrap("env", "invoke_j", |_a: i32| -> i64 { 0 })?;
+        let table_cell: Arc<Mutex<Option<Table>>> = Arc::new(Mutex::new(None));
+        bind_invoke_funcs(&mut linker, table_cell.clone())?;
         add_to_linker_sync(&mut linker, |ctx: &mut WasiP1Ctx| ctx)?;
 
         // Preopen the directory containing pglite.data as /tmp/pglite
@@ -64,6 +198,10 @@ impl PGliteRuntime {
         let wasi = builder.build_p1();
         let mut store = Store::new(&engine, wasi);
         let instance = linker.instantiate(&mut store, &module)?;
+        let table = instance
+            .get_table(&mut store, "__indirect_function_table")
+            .ok_or_else(|| anyhow!("missing table export"))?;
+        *table_cell.lock().unwrap() = Some(table.clone());
 
         // Call _pgl_initdb to ensure the database files are set up
         let init = instance.get_typed_func::<(), i32>(&mut store, "_pgl_initdb")?;
@@ -94,6 +232,7 @@ impl PGliteRuntime {
             use_wire,
             backend,
             shutdown_fn,
+            _table: table,
         })
     }
     /// Execute a single protocol message and return the backend response bytes.
