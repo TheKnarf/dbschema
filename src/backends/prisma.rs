@@ -242,55 +242,45 @@ fn prisma_enum_variant(db_value: &str) -> (String, Option<String>) {
 fn prisma_type(pg: &str, db_specific: Option<&str>) -> (String, Option<String>) {
     // If we have a specific database type annotation, use it
     if let Some(db_type) = db_specific {
-        let dt = db_type.to_uppercase();
-        if dt.starts_with("CHAR(") {
+        let dt = db_type.to_lowercase();
+        if dt.starts_with("char(") {
             return ("String".into(), Some(format!("@db.Char{}", &db_type[4..])));
-        } else if dt.starts_with("VARCHAR(") {
+        } else if dt.starts_with("varchar(") {
             return (
                 "String".into(),
                 Some(format!("@db.VarChar{}", &db_type[7..])),
             );
-        } else if dt == "TEXT" {
+        } else if dt == "text" {
             return ("String".into(), Some("@db.Text".into()));
-        } else if dt == "UUID" {
+        } else if dt == "uuid" {
             return ("String".into(), Some("@db.Uuid".into()));
         }
     }
 
     // Fall back to type-based inference
     let t = pg.to_lowercase();
-    let (base, db): (String, Option<&str>) = if t.contains("serial") {
-        ("Int".into(), None)
-    } else if t == "int" || t == "integer" || t == "int4" {
-        ("Int".into(), Some("@db.Integer"))
-    } else if t == "bigint" || t == "int8" || t == "bigserial" {
-        ("BigInt".into(), Some("@db.BigInt"))
-    } else if t.starts_with("varchar") || t == "text" || t.starts_with("char") || t == "citext" {
-        ("String".into(), None)
-    } else if t == "uuid" {
-        ("String".into(), Some("@db.Uuid"))
-    } else if t == "bool" || t == "boolean" {
-        ("Boolean".into(), None)
-    } else if t.starts_with("timestamp with time zone") || t == "timestamptz" {
-        ("DateTime".into(), Some("@db.Timestamptz"))
-    } else if t.starts_with("timestamp") {
-        ("DateTime".into(), Some("@db.Timestamp"))
-    } else if t == "date" {
-        ("DateTime".into(), Some("@db.Date"))
-    } else if t == "time" || t.starts_with("time ") {
-        ("DateTime".into(), Some("@db.Time"))
-    } else if t == "bytea" {
-        ("Bytes".into(), Some("@db.Bytea"))
-    } else if t.starts_with("jsonb") || t == "json" {
-        ("Json".into(), None)
-    } else if t.starts_with("numeric") || t.starts_with("decimal") {
-        ("Decimal".into(), None)
-    } else if t == "float4" || t == "real" || t == "float8" || t.contains("double") {
-        ("Float".into(), None)
-    } else {
-        (format!("Unsupported(\"{}\")", pg), None)
-    };
-    (base, db.map(|d| d.to_string()))
+    match t.as_str() {
+        s if s.contains("serial") => ("Int".into(), None),
+        "int" | "integer" | "int4" => ("Int".into(), Some("@db.Integer".into())),
+        "bigint" | "int8" | "bigserial" => ("BigInt".into(), Some("@db.BigInt".into())),
+        s if s.starts_with("varchar") || s.starts_with("char") || s == "text" || s == "citext" => {
+            ("String".into(), None)
+        }
+        "uuid" => ("String".into(), Some("@db.Uuid".into())),
+        "bool" | "boolean" => ("Boolean".into(), None),
+        s if s.starts_with("timestamp with time zone") || s == "timestamptz" => {
+            ("DateTime".into(), Some("@db.Timestamptz".into()))
+        }
+        s if s.starts_with("timestamp") => ("DateTime".into(), Some("@db.Timestamp".into())),
+        "date" => ("DateTime".into(), Some("@db.Date".into())),
+        s if s == "time" || s.starts_with("time ") => ("DateTime".into(), Some("@db.Time".into())),
+        "bytea" => ("Bytes".into(), Some("@db.Bytea".into())),
+        s if s.starts_with("jsonb") || s == "json" => ("Json".into(), None),
+        s if s.starts_with("numeric") || s.starts_with("decimal") => ("Decimal".into(), None),
+        "float4" | "real" | "float8" => ("Float".into(), None),
+        s if s.contains("double") => ("Float".into(), None),
+        _ => (format!("Unsupported(\"{}\")", pg), None),
+    }
 }
 
 fn is_serial(pg: &str) -> bool {
@@ -328,5 +318,3 @@ fn map_fk_action(s: &str) -> &str {
         _ => "NoAction",
     }
 }
-
-
