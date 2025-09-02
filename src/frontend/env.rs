@@ -1,4 +1,7 @@
 use std::collections::HashMap;
+use hcl::Value;
+
+use super::ast::VarValidation;
 
 /// Variables available during expression evaluation.
 ///
@@ -27,13 +30,20 @@ use std::collections::HashMap;
 #[derive(Default, Clone, Debug)]
 pub struct EnvVars {
     /// Variables passed from the outside world, resolved as `var.*`.
-    pub vars: HashMap<String, hcl::Value>,
+    pub vars: HashMap<String, Value>,
     /// Locally defined values, resolved as `local.*` or `locals.*`.
-    pub locals: HashMap<String, hcl::Value>,
+    pub locals: HashMap<String, Value>,
     /// Outputs from loaded modules, referenced as `module.<name>.<output>`.
-    pub modules: HashMap<String, HashMap<String, hcl::Value>>,
+    pub modules: HashMap<String, HashMap<String, Value>>,
     /// Key/value for the current iteration of a `for_each` block, enabling `each.key` and `each.value`.
-    pub each: Option<(hcl::Value, hcl::Value)>, // (key, value)
+    pub each: Option<(Value, Value)>, // (key, value)
     /// Index for `count`-based iterations, enabling `count.index`.
     pub count: Option<usize>,
+}
+
+#[derive(Default, Clone)]
+pub struct VarSpec {
+    pub default: Option<Value>,
+    pub r#type: Option<String>,
+    pub validation: Option<VarValidation>,
 }

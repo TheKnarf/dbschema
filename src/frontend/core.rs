@@ -3,7 +3,7 @@ use hcl::eval::{Context as HclContext, Evaluate};
 use hcl::template::{Element as TplElement, Template};
 use hcl::{
     expr::{BinaryOperator, TemplateExpr, UnaryOperator},
-    Attribute, Block, Body, Expression, Number, Structure, Traversal, TraversalOperator, Value,
+    Attribute, Block, Body, Number, Structure, Traversal, TraversalOperator, Value,
 };
 use path_absolutize::Absolutize;
 use std::collections::HashMap;
@@ -11,7 +11,8 @@ use std::path::{Path, PathBuf};
 
 use crate::frontend::ast;
 use crate::frontend::builtins;
-use crate::frontend::env::EnvVars;
+use crate::frontend::env::{EnvVars, VarSpec};
+use crate::frontend::ast::VarValidation;
 use crate::frontend::for_each::execute_for_each;
 use crate::frontend::lower;
 use crate::ir;
@@ -597,12 +598,6 @@ fn populate_back_references(cfg: &mut ir::Config) -> Result<()> {
     Ok(())
 }
 
-#[derive(Default, Clone)]
-struct VarSpec {
-    default: Option<Value>,
-    r#type: Option<String>,
-    validation: Option<Expression>,
-}
 
 fn value_kind(v: &Value) -> &'static str {
     match v {
@@ -676,8 +671,19 @@ fn load_file(
                 .with_context(|| format!("evaluating type for variable '{}')", name))?;
             spec.r#type = Some(t);
         }
-        if let Some(attr) = find_attr(blk.body(), "validation") {
-            spec.validation = Some(attr.expr().clone());
+        if let Some(vblk) = blk
+            .body()
+            .blocks()
+            .find(|b| b.identifier() == "validation")
+        {
+            let cond_attr = find_attr(vblk.body(), "condition")
+                .ok_or_else(|| anyhow::anyhow!("validation block missing 'condition'"))?;
+            let err_attr = find_attr(vblk.body(), "error_message")
+                .ok_or_else(|| anyhow::anyhow!("validation block missing 'error_message'"))?;
+            spec.validation = Some(VarValidation {
+                condition: cond_attr.expr().clone(),
+                error_message: err_attr.expr().clone(),
+            });
         }
         var_specs.insert(name, spec);
     }
@@ -707,13 +713,20 @@ fn load_file(
             if let Some(t) = &spec.r#type {
                 check_var_type(name, value, t)?;
             }
-            if let Some(expr) = &spec.validation {
-                let v = expr_to_value(expr, &env)
+            if let Some(vspec) = &spec.validation {
+                let v = expr_to_value(&vspec.condition, &env)
                     .with_context(|| format!("evaluating validation for variable '{}')", name))?;
                 match v {
                     Value::Bool(true) => {}
                     Value::Bool(false) => {
-                        bail!("validation for variable '{}' failed", name);
+                        let msg = expr_to_string(&vspec.error_message, &env)
+                            .with_context(|| {
+                                format!(
+                                    "evaluating validation error_message for variable '{}')",
+                                    name
+                                )
+                            })?;
+                        bail!(msg);
                     }
                     other => bail!(
                         "validation for variable '{}' must return a bool, got {}",
