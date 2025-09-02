@@ -1,5 +1,6 @@
 pub mod builtins;
 pub mod core;
+pub mod env;
 pub mod for_each;
 pub mod resource_impls;
 

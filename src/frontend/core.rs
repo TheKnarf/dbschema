@@ -9,8 +9,9 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crate::frontend::builtins;
+use crate::frontend::env::EnvVars;
 use crate::frontend::for_each::execute_for_each;
-use crate::ir::{Config, EnvVars};
+use crate::ir::Config;
 use crate::Loader;
 
 pub fn expr_to_string(expr: &hcl::Expression, env: &EnvVars) -> Result<String> {

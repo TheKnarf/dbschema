@@ -4,8 +4,9 @@ use dbschema::test_runner::TestBackend;
 use dbschema::{
     apply_filters,
     config::{self, Config as DbschemaConfig, ResourceKind, TargetConfig},
-    load_config, validate, EnvVars, Loader,
+    load_config, validate, Loader,
 };
+use dbschema::frontend::env::EnvVars;
 use log::{error, info};
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -145,7 +146,7 @@ fn main() -> Result<()> {
             Commands::CreateMigration { out_dir, name } => {
                 dbschema::validate(&filtered, cli.strict)?;
                 let artifact =
-                    dbschema::generate_with_backend(&cli.backend, &filtered, &env, cli.strict)?;
+                    dbschema::generate_with_backend(&cli.backend, &filtered, cli.strict)?;
                 if let Some(dir) = out_dir {
                     let name = name.unwrap_or_else(|| "triggers".to_string());
                     let ext = dbschema::backends::get_backend(&cli.backend)
@@ -235,7 +236,7 @@ fn run_target(dbschema_config: &DbschemaConfig, target: &TargetConfig, strict: b
     let filtered = apply_filters(&config, &include_set, &exclude_set);
 
     validate(&filtered, strict)?;
-    let artifact = dbschema::generate_with_backend(&target.backend, &filtered, &env, strict)?;
+    let artifact = dbschema::generate_with_backend(&target.backend, &filtered, strict)?;
 
     if let Some(output_path) = &target.output {
         let path = Path::new(output_path);
@@ -451,7 +452,7 @@ include = ["tables"]
         let main_hcl = r#"
 variable "table_name" { default = "users" }
 table "users" {
-    name = var.table_name
+    table_name = var.table_name
 }
 function "my_func" {
     returns = "trigger"

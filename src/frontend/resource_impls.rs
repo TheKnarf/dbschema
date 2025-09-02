@@ -3,6 +3,7 @@ use hcl::Body;
 
 use crate::frontend::core::{expr_to_string_vec, find_attr, get_attr_bool, get_attr_string};
 use crate::frontend::for_each::ForEachSupport;
+use crate::frontend::env::EnvVars;
 use crate::ir::*;
 
 // Schema implementation
