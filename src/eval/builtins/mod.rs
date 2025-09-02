@@ -31,10 +31,26 @@ pub fn create_context() -> Context<'static> {
     ctx.declare_func("max", numeric::create_max_func());
     ctx.declare_func("abs", numeric::create_abs_func());
 
+    // Collection functions
+    ctx.declare_func("concat", collection::create_concat_func());
+    ctx.declare_func("flatten", collection::create_flatten_func());
+    ctx.declare_func("distinct", collection::create_distinct_func());
+    ctx.declare_func("slice", collection::create_slice_func());
+    ctx.declare_func("sort", collection::create_sort_func());
+    ctx.declare_func("reverse", collection::create_reverse_func());
+    ctx.declare_func("index", collection::create_index_func());
+
     // Utility functions
     ctx.declare_func("coalesce", utility::create_coalesce_func());
     ctx.declare_func("join", utility::create_join_func());
     ctx.declare_func("split", utility::create_split_func());
+
+    // Conversion functions
+    ctx.declare_func("tostring", conversion::create_tostring_func());
+    ctx.declare_func("tonumber", conversion::create_tonumber_func());
+    ctx.declare_func("tobool", conversion::create_tobool_func());
+    ctx.declare_func("tolist", conversion::create_tolist_func());
+    ctx.declare_func("tomap", conversion::create_tomap_func());
 
     // Cryptographic functions
     ctx.declare_func("md5", crypto::create_md5_func());
@@ -44,6 +60,12 @@ pub fn create_context() -> Context<'static> {
     // Base64 functions
     ctx.declare_func("base64encode", base64::create_base64encode_func());
     ctx.declare_func("base64decode", base64::create_base64decode_func());
+
+    // Datetime functions
+    ctx.declare_func("timestamp", datetime::create_timestamp_func());
+    ctx.declare_func("formatdate", datetime::create_formatdate_func());
+    ctx.declare_func("timeadd", datetime::create_timeadd_func());
+    ctx.declare_func("timecmp", datetime::create_timecmp_func());
 
     ctx
 }
@@ -71,14 +93,30 @@ mod tests {
             "min",
             "max",
             "abs",
+            "concat",
+            "flatten",
+            "distinct",
+            "slice",
+            "sort",
+            "reverse",
+            "index",
             "coalesce",
             "join",
             "split",
+            "tostring",
+            "tonumber",
+            "tobool",
+            "tolist",
+            "tomap",
             "md5",
             "sha256",
             "sha512",
             "base64encode",
             "base64decode",
+            "timestamp",
+            "formatdate",
+            "timeadd",
+            "timecmp",
         ];
 
         for func_name in functions {
