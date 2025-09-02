@@ -121,6 +121,37 @@ fn resolve_traversal_value(tr: &Traversal, env: &EnvVars) -> Result<Value> {
                 .cloned()
                 .with_context(|| format!("undefined local '{}': define in locals block", name))
         }
+        "module" => {
+            let Some(TraversalOperator::GetAttr(mod_name)) = it.next() else {
+                bail!("expected module.<name>.<output>");
+            };
+            let module_outputs = env
+                .modules
+                .get(mod_name.as_str())
+                .with_context(|| format!("undefined module '{}'", mod_name))?;
+            let Some(TraversalOperator::GetAttr(out_name)) = it.next() else {
+                bail!("expected module.<name>.<output>");
+            };
+            let mut current = module_outputs
+                .get(out_name.as_str())
+                .cloned()
+                .with_context(|| format!("undefined module output '{}.{}'", mod_name, out_name))?;
+            for op in it {
+                match op {
+                    TraversalOperator::GetAttr(attr) => {
+                        if let Value::Object(map) = current {
+                            current = map.get(attr.as_str()).cloned().ok_or_else(|| {
+                                anyhow::anyhow!("unknown attribute '{}' on module output", attr)
+                            })?;
+                        } else {
+                            bail!("cannot access attribute on non-object value");
+                        }
+                    }
+                    _ => bail!("unsupported traversal operator in module.* expression"),
+                }
+            }
+            Ok(current)
+        }
         "each" => {
             let Some(TraversalOperator::GetAttr(name)) = it.next() else {
                 bail!("expected each.key or each.value");
@@ -153,7 +184,7 @@ fn resolve_traversal_value(tr: &Traversal, env: &EnvVars) -> Result<Value> {
             Ok(current)
         }
         _ => bail!(
-            "unsupported traversal root '{}': expected var.*, local.*, or each.*",
+            "unsupported traversal root '{}': expected var.*, local.*, module.*, or each.*",
             root
         ),
     }
@@ -432,9 +463,116 @@ fn load_file(
     // Expand any dynamic blocks now that variables and locals are known
     body = expand_dynamic_blocks(&body, &env)?;
 
-    // 3) Parse resources using the ForEachSupport trait
+    // 3) Load modules first so their outputs are available
     let mut cfg = ast::Config::default();
+    for blk in body.blocks().filter(|b| b.identifier() == "module") {
+        let label = blk
+            .labels()
+            .get(0)
+            .ok_or_else(|| anyhow::anyhow!("module block missing name label"))?;
+        let b = blk.body();
+        let source = get_attr_string(b, "source", &env)?
+            .with_context(|| format!("module '{}' missing 'source'", label.as_str()))?;
+        let module_path = resolve_module_path(base, &source)?;
+        if let Some(fe) = find_attr(b, "for_each") {
+            let coll = expr_to_value(fe.expr(), &env)?;
+            crate::frontend::for_each::for_each_iter(&coll, &mut |k, v| {
+                let mut iter_env = env.clone();
+                iter_env.each = Some((k.clone(), v.clone()));
+                let mut mod_vars: HashMap<String, hcl::Value> = HashMap::new();
+                for attr in b.attributes() {
+                    let k = attr.key();
+                    if k == "source" || k == "for_each" {
+                        continue;
+                    }
+                    let v = expr_to_value(attr.expr(), &iter_env).with_context(|| {
+                        format!("evaluating module var '{}.{}'", label.as_str(), k)
+                    })?;
+                    mod_vars.insert(k.to_string(), v);
+                }
+                let mod_env = EnvVars {
+                    vars: mod_vars,
+                    locals: HashMap::new(),
+                    modules: HashMap::new(),
+                    each: None,
+                };
+                let sub = load_file(
+                    loader,
+                    &module_path.join("main.hcl"),
+                    &module_path,
+                    &mod_env,
+                    visited,
+                )
+                .with_context(|| {
+                    format!(
+                        "loading module '{}' from {}",
+                        label.as_str(),
+                        module_path.display()
+                    )
+                })?;
+                cfg.schemas.extend(sub.schemas);
+                cfg.enums.extend(sub.enums);
+                cfg.functions.extend(sub.functions);
+                cfg.triggers.extend(sub.triggers);
+                cfg.extensions.extend(sub.extensions);
+                cfg.tables.extend(sub.tables);
+                cfg.views.extend(sub.views);
+                cfg.materialized.extend(sub.materialized);
+                cfg.policies.extend(sub.policies);
+                // Outputs from for_each modules aren't accessible via module.*
+                Ok(())
+            })?;
+        } else {
+            // Prepare vars for module: start empty, collect its own defaults while loading; pass overrides from attrs (excluding 'source'/'for_each')
+            let mut mod_vars: HashMap<String, hcl::Value> = HashMap::new();
+            for attr in b.attributes() {
+                let k = attr.key();
+                if k == "source" || k == "for_each" {
+                    continue;
+                }
+                let v = expr_to_value(attr.expr(), &env)
+                    .with_context(|| format!("evaluating module var '{}.{}'", label.as_str(), k))?;
+                mod_vars.insert(k.to_string(), v);
+            }
+            let mod_env = EnvVars {
+                vars: mod_vars,
+                locals: HashMap::new(),
+                modules: HashMap::new(),
+                each: None,
+            };
+            let sub = load_file(
+                loader,
+                &module_path.join("main.hcl"),
+                &module_path,
+                &mod_env,
+                visited,
+            )
+            .with_context(|| {
+                format!(
+                    "loading module '{}' from {}",
+                    label.as_str(),
+                    module_path.display()
+                )
+            })?;
+            // Store module outputs for traversal
+            let mut map = HashMap::new();
+            for o in &sub.outputs {
+                map.insert(o.name.clone(), o.value.clone());
+            }
+            env.modules.insert(label.as_str().to_string(), map);
+            cfg.schemas.extend(sub.schemas);
+            cfg.enums.extend(sub.enums);
+            cfg.functions.extend(sub.functions);
+            cfg.triggers.extend(sub.triggers);
+            cfg.extensions.extend(sub.extensions);
+            cfg.tables.extend(sub.tables);
+            cfg.views.extend(sub.views);
+            cfg.materialized.extend(sub.materialized);
+            cfg.policies.extend(sub.policies);
+        }
+    }
 
+    // 4) Parse resources using the ForEachSupport trait
     // Process each resource type using the trait system
     for blk in body.blocks().filter(|b| b.identifier() == "schema") {
         let name = blk
@@ -541,7 +679,6 @@ fn load_file(
         execute_for_each::<ast::AstEnum>(&name, blk.body(), &env, &mut cfg, for_each_expr)?;
     }
 
-    // Handle test blocks (these don't use for_each typically)
     for blk in body.blocks().filter(|b| b.identifier() == "test") {
         let name = blk
             .labels()
@@ -568,103 +705,20 @@ fn load_file(
         });
     }
 
-    // 4) Load modules (merge their resources)
-    for blk in body.blocks().filter(|b| b.identifier() == "module") {
+    // Handle output blocks
+    for blk in body.blocks().filter(|b| b.identifier() == "output") {
         let label = blk
             .labels()
             .get(0)
-            .ok_or_else(|| anyhow::anyhow!("module block missing name label"))?;
+            .ok_or_else(|| anyhow::anyhow!("output block missing name label"))?
+            .as_str()
+            .to_string();
         let b = blk.body();
-        let source = get_attr_string(b, "source", &env)?
-            .with_context(|| format!("module '{}' missing 'source'", label.as_str()))?;
-        let module_path = resolve_module_path(base, &source)?;
-        if let Some(fe) = find_attr(b, "for_each") {
-            let coll = expr_to_value(fe.expr(), &env)?;
-            crate::frontend::for_each::for_each_iter(&coll, &mut |k, v| {
-                let mut iter_env = env.clone();
-                iter_env.each = Some((k.clone(), v.clone()));
-                let mut mod_vars: HashMap<String, hcl::Value> = HashMap::new();
-                for attr in b.attributes() {
-                    let k = attr.key();
-                    if k == "source" || k == "for_each" {
-                        continue;
-                    }
-                    let v = expr_to_value(attr.expr(), &iter_env).with_context(|| {
-                        format!("evaluating module var '{}.{}'", label.as_str(), k)
-                    })?;
-                    mod_vars.insert(k.to_string(), v);
-                }
-                let mod_env = EnvVars {
-                    vars: mod_vars,
-                    locals: HashMap::new(),
-                    each: None,
-                };
-                let sub = load_file(
-                    loader,
-                    &module_path.join("main.hcl"),
-                    &module_path,
-                    &mod_env,
-                    visited,
-                )
-                .with_context(|| {
-                    format!(
-                        "loading module '{}' from {}",
-                        label.as_str(),
-                        module_path.display()
-                    )
-                })?;
-                cfg.schemas.extend(sub.schemas);
-                cfg.enums.extend(sub.enums);
-                cfg.functions.extend(sub.functions);
-                cfg.triggers.extend(sub.triggers);
-                cfg.extensions.extend(sub.extensions);
-                cfg.tables.extend(sub.tables);
-                cfg.views.extend(sub.views);
-                cfg.materialized.extend(sub.materialized);
-                cfg.policies.extend(sub.policies);
-                Ok(())
-            })?;
-        } else {
-            // Prepare vars for module: start empty, collect its own defaults while loading; pass overrides from attrs (excluding 'source'/'for_each')
-            let mut mod_vars: HashMap<String, hcl::Value> = HashMap::new();
-            for attr in b.attributes() {
-                let k = attr.key();
-                if k == "source" || k == "for_each" {
-                    continue;
-                }
-                let v = expr_to_value(attr.expr(), &env)
-                    .with_context(|| format!("evaluating module var '{}.{}'", label.as_str(), k))?;
-                mod_vars.insert(k.to_string(), v);
-            }
-            let mod_env = EnvVars {
-                vars: mod_vars,
-                locals: HashMap::new(),
-                each: None,
-            };
-            let sub = load_file(
-                loader,
-                &module_path.join("main.hcl"),
-                &module_path,
-                &mod_env,
-                visited,
-            )
-            .with_context(|| {
-                format!(
-                    "loading module '{}' from {}",
-                    label.as_str(),
-                    module_path.display()
-                )
-            })?;
-            cfg.schemas.extend(sub.schemas);
-            cfg.enums.extend(sub.enums);
-            cfg.functions.extend(sub.functions);
-            cfg.triggers.extend(sub.triggers);
-            cfg.extensions.extend(sub.extensions);
-            cfg.tables.extend(sub.tables);
-            cfg.views.extend(sub.views);
-            cfg.materialized.extend(sub.materialized);
-            cfg.policies.extend(sub.policies);
-        }
+        let value_attr =
+            find_attr(b, "value").context("output block requires 'value' attribute")?;
+        let value = expr_to_value(value_attr.expr(), &env)
+            .with_context(|| format!("evaluating output '{}'", label))?;
+        cfg.outputs.push(ast::AstOutput { name: label, value });
     }
 
     visited.pop();

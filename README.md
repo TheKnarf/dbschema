@@ -22,6 +22,7 @@ Prisma ORM support custom migrations, so you can use this tool to generate an SQ
    - `extension`
    - `policy`
    - `module`
+   - `output`
    - `test`
 
 - Variables via `--var key=value` and `--var-file`.
@@ -307,10 +308,6 @@ table "users" {
 ```
 
 ## Roadmap
-
-### Planned feature
-
-- Module outputs and references (`module.foo.*`).
 
 ### Non-goals (for now)
 

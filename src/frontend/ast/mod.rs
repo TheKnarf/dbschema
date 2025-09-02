@@ -1,3 +1,5 @@
+use hcl::Value;
+
 #[derive(Debug, Clone, Default)]
 pub struct Config {
     pub functions: Vec<AstFunction>,
@@ -10,6 +12,7 @@ pub struct Config {
     pub materialized: Vec<AstMaterializedView>,
     pub policies: Vec<AstPolicy>,
     pub tests: Vec<AstTest>,
+    pub outputs: Vec<AstOutput>,
 }
 
 #[derive(Debug, Clone)]
@@ -153,4 +156,10 @@ pub struct AstTest {
     pub setup: Vec<String>,
     pub assert_sql: String,
     pub teardown: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AstOutput {
+    pub name: String,
+    pub value: Value,
 }

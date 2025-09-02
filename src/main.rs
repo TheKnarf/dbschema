@@ -1,12 +1,12 @@
 use anyhow::{anyhow, Context, Result};
 use clap::{Parser, Subcommand};
+use dbschema::frontend::env::EnvVars;
 use dbschema::test_runner::TestBackend;
 use dbschema::{
     apply_filters,
     config::{self, Config as DbschemaConfig, ResourceKind, TargetConfig},
-    load_config, validate, Loader,
+    load_config, validate, Loader, OutputSpec,
 };
-use dbschema::frontend::env::EnvVars;
 use log::{error, info};
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -119,6 +119,7 @@ fn main() -> Result<()> {
         let env = EnvVars {
             vars,
             locals: HashMap::new(),
+            modules: HashMap::new(),
             each: None,
         };
         let config = load_config(&cli.input, &fs_loader, env.clone())
@@ -192,6 +193,7 @@ fn main() -> Result<()> {
                 }
             }
         }
+        print_outputs(&filtered.outputs);
     }
 
     Ok(())
@@ -248,6 +250,8 @@ fn run_target(dbschema_config: &DbschemaConfig, target: &TargetConfig, strict: b
         print!("{}", artifact);
     }
 
+    print_outputs(&filtered.outputs);
+
     Ok(())
 }
 
@@ -284,6 +288,18 @@ fn write_artifact(out_dir: &Path, name: &str, ext: &str, contents: &str) -> Resu
     let path = out_dir.join(file);
     fs::write(&path, contents)?;
     Ok(path)
+}
+
+fn print_outputs(outputs: &[OutputSpec]) {
+    for o in outputs {
+        let val = match &o.value {
+            hcl::Value::String(s) => s.clone(),
+            hcl::Value::Number(n) => n.to_string(),
+            hcl::Value::Bool(b) => b.to_string(),
+            _ => serde_json::to_string(&o.value).unwrap_or_default(),
+        };
+        println!("{} = {}", o.name, val);
+    }
 }
 
 fn sanitize_filename(s: &str) -> String {
