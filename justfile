@@ -1,11 +1,8 @@
 set shell := ["bash", "-cu"]
 
-# Download the PGlite runtime artifacts
+# Download the PGlite runtime artifacts via the crate's helper
 pglite-assets:
-  set -euo pipefail
-  mkdir -p vendor/pglite
-  curl -L -o vendor/pglite/pglite.wasm https://cdn.jsdelivr.net/npm/@electric-sql/pglite/dist/pglite.wasm
-  curl -L -o vendor/pglite/pglite.data https://cdn.jsdelivr.net/npm/@electric-sql/pglite/dist/pglite.data
+  just --justfile crates/pglite/justfile pglite-assets
 
 # Run the example test against a local Postgres started via Docker Compose
 # Usage:
