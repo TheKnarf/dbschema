@@ -1,20 +1,20 @@
 use anyhow::{bail, Context, Result};
 use hcl::Body;
 
+use crate::frontend::ast::*;
 use crate::frontend::core::{expr_to_string_vec, find_attr, get_attr_bool, get_attr_string};
-use crate::frontend::for_each::ForEachSupport;
 use crate::frontend::env::EnvVars;
-use crate::ir::*;
+use crate::frontend::for_each::ForEachSupport;
 
 // Schema implementation
-impl ForEachSupport for crate::ir::SchemaSpec {
+impl ForEachSupport for AstSchema {
     type Item = Self;
 
     fn parse_one(name: &str, body: &Body, env: &EnvVars) -> Result<Self::Item> {
         let alt_name = get_attr_string(body, "name", env)?;
         let if_not_exists = get_attr_bool(body, "if_not_exists", env)?.unwrap_or(true);
         let authorization = get_attr_string(body, "authorization", env)?;
-        Ok(SchemaSpec {
+        Ok(AstSchema {
             name: name.to_string(),
             alt_name,
             if_not_exists,
@@ -28,7 +28,7 @@ impl ForEachSupport for crate::ir::SchemaSpec {
 }
 
 // Table implementation
-impl ForEachSupport for crate::ir::TableSpec {
+impl ForEachSupport for AstTable {
     type Item = Self;
 
     fn parse_one(name: &str, body: &Body, env: &EnvVars) -> Result<Self::Item> {
@@ -51,7 +51,7 @@ impl ForEachSupport for crate::ir::TableSpec {
             let nullable = get_attr_bool(cb, "nullable", env)?.unwrap_or(true);
             let default = get_attr_string(cb, "default", env)?;
             let db_type = get_attr_string(cb, "db_type", env)?;
-            columns.push(ColumnSpec {
+            columns.push(AstColumn {
                 name: cname,
                 r#type: ctype,
                 nullable,
@@ -69,7 +69,7 @@ impl ForEachSupport for crate::ir::TableSpec {
                 None => bail!("primary_key requires columns = [..]"),
             };
             let name = get_attr_string(pb, "name", env)?;
-            primary_key = Some(PrimaryKeySpec {
+            primary_key = Some(AstPrimaryKey {
                 name,
                 columns: cols,
             });
@@ -85,7 +85,7 @@ impl ForEachSupport for crate::ir::TableSpec {
                 None => bail!("index requires columns = [..]"),
             };
             let unique = get_attr_bool(ib, "unique", env)?.unwrap_or(false);
-            indexes.push(IndexSpec {
+            indexes.push(AstIndex {
                 name: name_attr,
                 columns: cols,
                 unique,
@@ -98,7 +98,7 @@ impl ForEachSupport for crate::ir::TableSpec {
                 Some(attr) => expr_to_string_vec(attr.expr(), env)?,
                 None => bail!("unique requires columns = [..]"),
             };
-            indexes.push(IndexSpec {
+            indexes.push(AstIndex {
                 name: name_attr,
                 columns: cols,
                 unique: true,
@@ -132,7 +132,7 @@ impl ForEachSupport for crate::ir::TableSpec {
             let back_reference_name = get_attr_string(fb, "back_reference_name", env)?;
             let ref_table = ref_table.context("foreign_key.ref requires table")?;
             let ref_columns = ref_columns.context("foreign_key.ref requires columns = [..]")?;
-            fks.push(ForeignKeySpec {
+            fks.push(AstForeignKey {
                 name,
                 columns,
                 ref_schema,
@@ -144,7 +144,7 @@ impl ForEachSupport for crate::ir::TableSpec {
             });
         }
 
-        Ok(TableSpec {
+        Ok(AstTable {
             name: name.to_string(),
             table_name,
             schema,
@@ -163,7 +163,7 @@ impl ForEachSupport for crate::ir::TableSpec {
 }
 
 // View implementation
-impl ForEachSupport for crate::ir::ViewSpec {
+impl ForEachSupport for AstView {
     type Item = Self;
 
     fn parse_one(name: &str, body: &Body, env: &EnvVars) -> Result<Self::Item> {
@@ -171,7 +171,7 @@ impl ForEachSupport for crate::ir::ViewSpec {
         let schema = get_attr_string(body, "schema", env)?;
         let replace = get_attr_bool(body, "replace", env)?.unwrap_or(true);
         let sql = get_attr_string(body, "sql", env)?.context("view 'sql' is required")?;
-        Ok(ViewSpec {
+        Ok(AstView {
             name: name.to_string(),
             alt_name,
             schema,
@@ -186,7 +186,7 @@ impl ForEachSupport for crate::ir::ViewSpec {
 }
 
 // MaterializedView implementation
-impl ForEachSupport for crate::ir::MaterializedViewSpec {
+impl ForEachSupport for AstMaterializedView {
     type Item = Self;
 
     fn parse_one(name: &str, body: &Body, env: &EnvVars) -> Result<Self::Item> {
@@ -194,7 +194,7 @@ impl ForEachSupport for crate::ir::MaterializedViewSpec {
         let schema = get_attr_string(body, "schema", env)?;
         let with_data = get_attr_bool(body, "with_data", env)?.unwrap_or(true);
         let sql = get_attr_string(body, "sql", env)?.context("materialized 'sql' is required")?;
-        Ok(MaterializedViewSpec {
+        Ok(AstMaterializedView {
             name: name.to_string(),
             alt_name,
             schema,
@@ -209,7 +209,7 @@ impl ForEachSupport for crate::ir::MaterializedViewSpec {
 }
 
 // Policy implementation
-impl ForEachSupport for crate::ir::PolicySpec {
+impl ForEachSupport for AstPolicy {
     type Item = Self;
 
     fn parse_one(name: &str, body: &Body, env: &EnvVars) -> Result<Self::Item> {
@@ -224,7 +224,7 @@ impl ForEachSupport for crate::ir::PolicySpec {
         };
         let using = get_attr_string(body, "using", env)?;
         let check = get_attr_string(body, "check", env)?;
-        Ok(PolicySpec {
+        Ok(AstPolicy {
             name: name.to_string(),
             alt_name,
             schema,
@@ -243,7 +243,7 @@ impl ForEachSupport for crate::ir::PolicySpec {
 }
 
 // Function implementation
-impl ForEachSupport for crate::ir::FunctionSpec {
+impl ForEachSupport for AstFunction {
     type Item = Self;
 
     fn parse_one(name: &str, body: &Body, env: &EnvVars) -> Result<Self::Item> {
@@ -257,7 +257,7 @@ impl ForEachSupport for crate::ir::FunctionSpec {
         let schema = get_attr_string(body, "schema", env)?;
         let replace = get_attr_bool(body, "replace", env)?.unwrap_or(true);
         let security_definer = get_attr_bool(body, "security_definer", env)?.unwrap_or(false);
-        Ok(FunctionSpec {
+        Ok(AstFunction {
             name: name.to_string(),
             alt_name,
             schema,
@@ -275,7 +275,7 @@ impl ForEachSupport for crate::ir::FunctionSpec {
 }
 
 // Trigger implementation
-impl ForEachSupport for crate::ir::TriggerSpec {
+impl ForEachSupport for AstTrigger {
     type Item = Self;
 
     fn parse_one(name: &str, body: &Body, env: &EnvVars) -> Result<Self::Item> {
@@ -292,7 +292,7 @@ impl ForEachSupport for crate::ir::TriggerSpec {
             get_attr_string(body, "function", env)?.context("trigger 'function' is required")?;
         let function_schema = get_attr_string(body, "function_schema", env)?;
         let when = get_attr_string(body, "when", env)?;
-        Ok(TriggerSpec {
+        Ok(AstTrigger {
             name: name.to_string(),
             alt_name,
             schema,
@@ -312,7 +312,7 @@ impl ForEachSupport for crate::ir::TriggerSpec {
 }
 
 // Extension implementation
-impl ForEachSupport for crate::ir::ExtensionSpec {
+impl ForEachSupport for AstExtension {
     type Item = Self;
 
     fn parse_one(name: &str, body: &Body, env: &EnvVars) -> Result<Self::Item> {
@@ -320,7 +320,7 @@ impl ForEachSupport for crate::ir::ExtensionSpec {
         let if_not_exists = get_attr_bool(body, "if_not_exists", env)?.unwrap_or(true);
         let schema = get_attr_string(body, "schema", env)?;
         let version = get_attr_string(body, "version", env)?;
-        Ok(ExtensionSpec {
+        Ok(AstExtension {
             name: name.to_string(),
             alt_name,
             if_not_exists,
@@ -335,7 +335,7 @@ impl ForEachSupport for crate::ir::ExtensionSpec {
 }
 
 // Enum implementation
-impl ForEachSupport for crate::ir::EnumSpec {
+impl ForEachSupport for AstEnum {
     type Item = Self;
 
     fn parse_one(name: &str, body: &Body, env: &EnvVars) -> Result<Self::Item> {
@@ -345,7 +345,7 @@ impl ForEachSupport for crate::ir::EnumSpec {
             Some(attr) => expr_to_string_vec(attr.expr(), env)?,
             None => bail!("enum '{}' requires values = [..]", name),
         };
-        Ok(EnumSpec {
+        Ok(AstEnum {
             name: name.to_string(),
             alt_name,
             schema,

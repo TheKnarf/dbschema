@@ -1,7 +1,9 @@
+pub mod ast;
 pub mod builtins;
 pub mod core;
 pub mod env;
 pub mod for_each;
+pub mod lower;
 pub mod resource_impls;
 
 // Re-export commonly used functions for convenience
