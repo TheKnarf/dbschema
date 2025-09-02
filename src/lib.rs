@@ -30,61 +30,59 @@ pub fn validate(cfg: &Config, strict: bool) -> Result<()> {
     validate::validate(cfg, strict)
 }
 
-/// Apply filters to a configuration based on target settings
-pub fn apply_filters(
-    cfg: &Config,
-    include: &std::collections::HashSet<crate::config::ResourceKind>,
-    exclude: &std::collections::HashSet<crate::config::ResourceKind>,
-) -> Config {
+fn filter_config_with<F>(cfg: &Config, predicate: F) -> Config
+where
+    F: Fn(crate::config::ResourceKind) -> bool,
+{
     use crate::config::ResourceKind as R;
 
     Config {
-        functions: if include.contains(&R::Functions) && !exclude.contains(&R::Functions) {
+        functions: if predicate(R::Functions) {
             cfg.functions.clone()
         } else {
             Vec::new()
         },
-        triggers: if include.contains(&R::Triggers) && !exclude.contains(&R::Triggers) {
+        triggers: if predicate(R::Triggers) {
             cfg.triggers.clone()
         } else {
             Vec::new()
         },
-        extensions: if include.contains(&R::Extensions) && !exclude.contains(&R::Extensions) {
+        extensions: if predicate(R::Extensions) {
             cfg.extensions.clone()
         } else {
             Vec::new()
         },
-        schemas: if include.contains(&R::Schemas) && !exclude.contains(&R::Schemas) {
+        schemas: if predicate(R::Schemas) {
             cfg.schemas.clone()
         } else {
             Vec::new()
         },
-        enums: if include.contains(&R::Enums) && !exclude.contains(&R::Enums) {
+        enums: if predicate(R::Enums) {
             cfg.enums.clone()
         } else {
             Vec::new()
         },
-        tables: if include.contains(&R::Tables) && !exclude.contains(&R::Tables) {
+        tables: if predicate(R::Tables) {
             cfg.tables.clone()
         } else {
             Vec::new()
         },
-        views: if include.contains(&R::Views) && !exclude.contains(&R::Views) {
+        views: if predicate(R::Views) {
             cfg.views.clone()
         } else {
             Vec::new()
         },
-        materialized: if include.contains(&R::Materialized) && !exclude.contains(&R::Materialized) {
+        materialized: if predicate(R::Materialized) {
             cfg.materialized.clone()
         } else {
             Vec::new()
         },
-        policies: if include.contains(&R::Policies) && !exclude.contains(&R::Policies) {
+        policies: if predicate(R::Policies) {
             cfg.policies.clone()
         } else {
             Vec::new()
         },
-        tests: if include.contains(&R::Tests) && !exclude.contains(&R::Tests) {
+        tests: if predicate(R::Tests) {
             cfg.tests.clone()
         } else {
             Vec::new()
@@ -92,19 +90,30 @@ pub fn apply_filters(
     }
 }
 
+/// Apply filters to a configuration based on target settings
+pub fn apply_filters(
+    cfg: &Config,
+    include: &std::collections::HashSet<crate::config::ResourceKind>,
+    exclude: &std::collections::HashSet<crate::config::ResourceKind>,
+) -> Config {
+    filter_config_with(cfg, |kind| {
+        include.contains(&kind) && !exclude.contains(&kind)
+    })
+}
+
 /// Apply resource filters to a configuration (string-based for TOML config)
 pub fn apply_resource_filters(cfg: &Config, include: &[String], exclude: &[String]) -> Config {
-    use model::*;
+    use std::collections::HashSet;
 
     // If no filters specified, include everything
     let include_all = include.is_empty() && exclude.is_empty();
 
     // Convert filter lists to sets for efficient lookup
-    let include_set: std::collections::HashSet<String> = include.iter().cloned().collect();
-    let exclude_set: std::collections::HashSet<String> = exclude.iter().cloned().collect();
+    let include_set: HashSet<String> = include.iter().cloned().collect();
+    let exclude_set: HashSet<String> = exclude.iter().cloned().collect();
 
-    // Helper function to check if a resource type should be included
-    let should_include = |resource_type: &str| -> bool {
+    filter_config_with(cfg, |kind| {
+        let resource_type = kind.as_str();
         if include_all {
             true
         } else if !include_set.is_empty() {
@@ -112,60 +121,7 @@ pub fn apply_resource_filters(cfg: &Config, include: &[String], exclude: &[Strin
         } else {
             !exclude_set.contains(resource_type)
         }
-    };
-
-    Config {
-        functions: if should_include("functions") {
-            cfg.functions.clone()
-        } else {
-            Vec::new()
-        },
-        triggers: if should_include("triggers") {
-            cfg.triggers.clone()
-        } else {
-            Vec::new()
-        },
-        extensions: if should_include("extensions") {
-            cfg.extensions.clone()
-        } else {
-            Vec::new()
-        },
-        schemas: if should_include("schemas") {
-            cfg.schemas.clone()
-        } else {
-            Vec::new()
-        },
-        enums: if should_include("enums") {
-            cfg.enums.clone()
-        } else {
-            Vec::new()
-        },
-        tables: if should_include("tables") {
-            cfg.tables.clone()
-        } else {
-            Vec::new()
-        },
-        views: if should_include("views") {
-            cfg.views.clone()
-        } else {
-            Vec::new()
-        },
-        materialized: if should_include("materialized") {
-            cfg.materialized.clone()
-        } else {
-            Vec::new()
-        },
-        policies: if should_include("policies") {
-            cfg.policies.clone()
-        } else {
-            Vec::new()
-        },
-        tests: if should_include("tests") {
-            cfg.tests.clone()
-        } else {
-            Vec::new()
-        },
-    }
+    })
 }
 
 // Pure SQL generation wrapper - uses postgres backend by default
@@ -559,5 +515,75 @@ mod tests {
         let json = crate::generate_with_backend("json", &cfg, &env, false).unwrap();
         assert!(json.contains("\"policies\""));
         assert!(json.contains("\"p_users_select\""));
+    }
+
+    #[test]
+    fn apply_filters_excludes_resources() {
+        use crate::config::ResourceKind as R;
+
+        let cfg = Config {
+            functions: vec![FunctionSpec {
+                name: "f".into(),
+                alt_name: None,
+                schema: None,
+                language: "sql".into(),
+                returns: "void".into(),
+                replace: false,
+                security_definer: false,
+                body: String::new(),
+            }],
+            tables: vec![TableSpec {
+                name: "t".into(),
+                table_name: None,
+                schema: None,
+                if_not_exists: false,
+                columns: vec![],
+                primary_key: None,
+                indexes: vec![],
+                foreign_keys: vec![],
+                back_references: vec![],
+            }],
+            ..Default::default()
+        };
+
+        let include: std::collections::HashSet<R> =
+            vec![R::Functions, R::Tables].into_iter().collect();
+        let exclude: std::collections::HashSet<R> = vec![R::Functions].into_iter().collect();
+
+        let filtered = apply_filters(&cfg, &include, &exclude);
+        assert_eq!(filtered.functions.len(), 0);
+        assert_eq!(filtered.tables.len(), 1);
+    }
+
+    #[test]
+    fn apply_resource_filters_handles_strings() {
+        let cfg = Config {
+            functions: vec![FunctionSpec {
+                name: "f".into(),
+                alt_name: None,
+                schema: None,
+                language: "sql".into(),
+                returns: "void".into(),
+                replace: false,
+                security_definer: false,
+                body: String::new(),
+            }],
+            tables: vec![TableSpec {
+                name: "t".into(),
+                table_name: None,
+                schema: None,
+                if_not_exists: false,
+                columns: vec![],
+                primary_key: None,
+                indexes: vec![],
+                foreign_keys: vec![],
+                back_references: vec![],
+            }],
+            ..Default::default()
+        };
+
+        let filtered = apply_resource_filters(&cfg, &vec!["tables".into()], &[]);
+        assert_eq!(filtered.functions.len(), 0);
+        assert_eq!(filtered.tables.len(), 1);
     }
 }
