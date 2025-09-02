@@ -569,6 +569,8 @@ fn load_file(
             cfg.views.extend(sub.views);
             cfg.materialized.extend(sub.materialized);
             cfg.policies.extend(sub.policies);
+            cfg.roles.extend(sub.roles);
+            cfg.grants.extend(sub.grants);
         }
     }
 
@@ -677,6 +679,28 @@ fn load_file(
             .to_string();
         let for_each_expr = find_attr(blk.body(), "for_each");
         execute_for_each::<ast::AstEnum>(&name, blk.body(), &env, &mut cfg, for_each_expr)?;
+    }
+
+    for blk in body.blocks().filter(|b| b.identifier() == "role") {
+        let name = blk
+            .labels()
+            .get(0)
+            .ok_or_else(|| anyhow::anyhow!("role block missing name label"))?
+            .as_str()
+            .to_string();
+        let for_each_expr = find_attr(blk.body(), "for_each");
+        execute_for_each::<ast::AstRole>(&name, blk.body(), &env, &mut cfg, for_each_expr)?;
+    }
+
+    for blk in body.blocks().filter(|b| b.identifier() == "grant") {
+        let name = blk
+            .labels()
+            .get(0)
+            .ok_or_else(|| anyhow::anyhow!("grant block missing name label"))?
+            .as_str()
+            .to_string();
+        let for_each_expr = find_attr(blk.body(), "for_each");
+        execute_for_each::<ast::AstGrant>(&name, blk.body(), &env, &mut cfg, for_each_expr)?;
     }
 
     for blk in body.blocks().filter(|b| b.identifier() == "test") {

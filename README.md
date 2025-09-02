@@ -21,6 +21,8 @@ Prisma ORM support custom migrations, so you can use this tool to generate an SQ
    - `trigger`
    - `extension`
    - `policy`
+   - `role`
+   - `grant`
    - `module`
    - `output`
    - `test`
@@ -204,6 +206,19 @@ policy "<name>" {
   roles   = ["app_user"]       # optional: omit for PUBLIC
   using   = "email is not null"# optional: USING (...) predicate
   check   = null               # optional: WITH CHECK (...) predicate
+}
+
+role "<name>" {
+  name  = "<new_name>"  # optional, overrides the block name
+  login = true           # optional, default false
+}
+
+grant "<name>" {
+  role       = "app_user"           # grantee role (required)
+  schema     = "public"             # optional, default "public"
+  table      = "users"              # optional table target
+  function   = null                  # optional function target
+  privileges = ["SELECT"]          # required privileges
 }
 
 view "<name>" {

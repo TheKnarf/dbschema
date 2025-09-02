@@ -12,6 +12,8 @@ pub struct Config {
     pub views: Vec<ViewSpec>,
     pub materialized: Vec<MaterializedViewSpec>,
     pub policies: Vec<PolicySpec>,
+    pub roles: Vec<RoleSpec>,
+    pub grants: Vec<GrantSpec>,
     pub tests: Vec<TestSpec>,
     pub outputs: Vec<OutputSpec>,
 }
@@ -96,6 +98,23 @@ pub struct PolicySpec {
     pub roles: Vec<String>,    // empty => PUBLIC (omit TO clause)
     pub using: Option<String>, // USING (expr)
     pub check: Option<String>, // WITH CHECK (expr)
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct RoleSpec {
+    pub name: String,
+    pub alt_name: Option<String>,
+    pub login: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct GrantSpec {
+    pub name: String,
+    pub role: String,
+    pub privileges: Vec<String>,
+    pub schema: Option<String>,
+    pub table: Option<String>,
+    pub function: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

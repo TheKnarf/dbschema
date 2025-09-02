@@ -12,6 +12,8 @@ pub fn lower_config(ast: ast::Config) -> ir::Config {
         views: ast.views.into_iter().map(Into::into).collect(),
         materialized: ast.materialized.into_iter().map(Into::into).collect(),
         policies: ast.policies.into_iter().map(Into::into).collect(),
+        roles: ast.roles.into_iter().map(Into::into).collect(),
+        grants: ast.grants.into_iter().map(Into::into).collect(),
         tests: ast.tests.into_iter().map(Into::into).collect(),
         outputs: ast.outputs.into_iter().map(Into::into).collect(),
     }
@@ -123,6 +125,29 @@ impl From<ast::AstPolicy> for ir::PolicySpec {
     }
 }
 
+impl From<ast::AstRole> for ir::RoleSpec {
+    fn from(r: ast::AstRole) -> Self {
+        Self {
+            name: r.name,
+            alt_name: r.alt_name,
+            login: r.login,
+        }
+    }
+}
+
+impl From<ast::AstGrant> for ir::GrantSpec {
+    fn from(g: ast::AstGrant) -> Self {
+        Self {
+            name: g.name,
+            role: g.role,
+            privileges: g.privileges,
+            schema: g.schema,
+            table: g.table,
+            function: g.function,
+        }
+    }
+}
+
 impl From<ast::AstTable> for ir::TableSpec {
     fn from(t: ast::AstTable) -> Self {
         Self {
@@ -213,4 +238,3 @@ impl From<ast::AstOutput> for ir::OutputSpec {
         }
     }
 }
-
