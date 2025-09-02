@@ -1,0 +1,20 @@
+# view
+
+Defines a SQL view.
+
+```hcl
+view "active_users" {
+  schema = "public"
+  replace = true
+  sql = <<-SQL
+    SELECT * FROM public.users
+  SQL
+}
+```
+
+**Properties**
+
+- `name` (optional): overrides the block label.
+- `schema` (optional): schema for the view, default `"public"`.
+- `replace` (optional): use `CREATE OR REPLACE` when true.
+- `sql` (required): SELECT statement for the view.

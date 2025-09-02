@@ -1,0 +1,25 @@
+# policy
+
+Defines a row-level security policy.
+
+```hcl
+policy "select_users" {
+  schema  = "public"
+  table   = "users"
+  as      = "permissive"
+  command = "select"
+  roles   = ["app_user"]
+  using   = "email is not null"
+}
+```
+
+**Properties**
+
+- `name` (optional): overrides the block label.
+- `schema` (optional): schema of the table, default `"public"`.
+- `table` (required): table to apply the policy to.
+- `as` (optional): `"permissive"` or `"restrictive"`, default `"permissive"`.
+- `command` (optional): operation the policy applies to, default `"all"`.
+- `roles` (optional): array of roles, omit for `PUBLIC`.
+- `using` (optional): USING predicate.
+- `check` (optional): WITH CHECK predicate.

@@ -1,0 +1,15 @@
+# Getting Started
+
+Validate a configuration file and generate migrations.
+
+```bash
+./target/release/dbschema --input examples/main.hcl validate
+./target/release/dbschema --input examples/main.hcl create-migration --out-dir migrations --name triggers
+```
+
+Use variables and config files:
+
+```bash
+./target/release/dbschema --var schema=public --input main.hcl validate
+./target/release/dbschema --config --target postgres_schema
+```

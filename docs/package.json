@@ -1,0 +1,35 @@
+{
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && ./ssg.tsx",
+    "preview": "vite preview",
+    "test": "echo 'no tests'"
+  },
+  "dependencies": {
+    "react": "19.0.0",
+    "react-dom": "19.0.0",
+    "react-router": "0.0.0-nightly-d5ad0613b-20240620",
+    "shiki": "^1.7.0"
+  },
+  "devDependencies": {
+    "@mdx-js/rollup": "^3.0.1",
+    "@types/react": "^18.2.66",
+    "@types/react-dom": "^18.2.22",
+    "@vitejs/plugin-react-swc": "^3.5.0",
+    "rehype-pretty-code": "^0.13.2",
+    "remark-frontmatter": "^5.0.0",
+    "remark-gfm": "^4.0.0",
+    "remark-github-blockquote-alert": "^1.2.1",
+    "remark-mdx-frontmatter": "^4.0.0",
+    "sharp": "^0.33.4",
+    "stream-buffers": "^3.0.3",
+    "typescript": "^5.2.2",
+    "vite": "^5.2.0",
+    "vite-node": "^1.6.0",
+    "vite-plugin-image-optimizer": "^1.1.8",
+    "vite-plugin-svgr": "^4.2.0"
+  },
+  "type": "module",
+  "packageManager": "pnpm@10.15.1+sha256.7c2a67995976b5b592b611d8b236e3b0633bd654fb49aedd96c6eb7ce04c9cbb"
+}

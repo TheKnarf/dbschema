@@ -1,0 +1,16 @@
+# module
+
+Includes another HCL file.
+
+```hcl
+module "timestamps" {
+  source = "./modules/timestamps"
+  schema = var.schema
+  table  = "orders"
+}
+```
+
+**Properties**
+
+- `source` (required): path to the module directory containing `main.hcl`.
+- Additional attributes are passed as variables to the module.

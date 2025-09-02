@@ -1,0 +1,13 @@
+# locals
+
+Defines local values computed from expressions.
+
+```hcl
+locals {
+  some = "${var.name}-suffix"
+}
+```
+
+**Properties**
+
+- Each attribute becomes a local value accessible as `local.<name>`.

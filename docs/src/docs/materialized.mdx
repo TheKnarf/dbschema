@@ -1,0 +1,20 @@
+# materialized
+
+Defines a materialized view.
+
+```hcl
+materialized "sales_summary" {
+  schema = "public"
+  with_data = true
+  sql = <<-SQL
+    SELECT * FROM sales
+  SQL
+}
+```
+
+**Properties**
+
+- `name` (optional): overrides the block label.
+- `schema` (optional): schema for the view, default `"public"`.
+- `with_data` (optional): include data on creation, default `true`.
+- `sql` (required): SELECT statement for the view.

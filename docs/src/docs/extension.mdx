@@ -1,0 +1,18 @@
+# extension
+
+Enables a PostgreSQL extension.
+
+```hcl
+extension "uuid-ossp" {
+  if_not_exists = true
+  schema = "public"
+  version = "1.1"
+}
+```
+
+**Properties**
+
+- `name` (optional): overrides the block label.
+- `if_not_exists` (optional): guard creation with `IF NOT EXISTS`, default `true`.
+- `schema` (optional): install extension into schema.
+- `version` (optional): specific extension version.

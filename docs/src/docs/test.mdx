@@ -1,0 +1,15 @@
+# test
+
+Runs a SQL assertion against a backend.
+
+```hcl
+test "users_have_email" {
+  query  = "SELECT count(*) FROM users WHERE email IS NULL"
+  expect = 0
+}
+```
+
+**Properties**
+
+- `query` (required): SQL statement returning a boolean-like result.
+- `expect` (required): expected value; non-zero or `true` indicates success.

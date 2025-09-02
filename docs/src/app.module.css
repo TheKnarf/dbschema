@@ -1,0 +1,129 @@
+:root {
+  --margin-note-width: 15rem;
+  --main-content-width: 60rem;
+
+  --content-width: calc(var(--main-content-width) + var(--margin-note-width));
+}
+
+html {
+	font-size: 20px;
+}
+
+header, footer, .home, .blogOverview, .gardenOverview {
+	max-width: var(--content-width);
+	margin-left: auto;
+	margin-right: auto;
+}
+
+header {
+  display: flex;
+
+  nav {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    margin-top: 2.5rem;
+    margin-left: 1rem;
+  }
+
+  nav::before {
+    content: '•';
+    font-weight: 400;
+    margin-right: 0.2rem;
+  }
+
+  h1 {
+    margin-bottom: 0;
+  }
+}
+
+.posts > div > span {
+	display: inline-block;
+	min-width: 100px;
+}
+
+.postWrapper {
+	max-width: var(--content-width);
+	margin-left: auto;
+	margin-right: auto;
+}
+
+.post {
+  .postMeta {
+    font-style: italic;
+    color: grey;
+    margin-top: -1rem;
+    margin-bottom: 2rem;
+  }
+
+	img {
+		max-width: 100%;
+	}
+
+	figure {
+		margin: 0;
+	}
+
+	pre {
+		overflow-x: auto;
+		padding: 1rem 0;
+	}
+	
+	pre [data-line] {
+		padding: 0 1rem;
+	}
+
+  table {
+    border-spacing: 0;
+
+    thead {
+      background: lightgrey;
+      text-align: left;
+    }
+
+    th, td {
+      padding: 0.4rem 1.1rem;
+    }
+
+    tr:nth-of-type(even) {
+      background: #efefef;
+    }
+  }
+
+  /* relative to support margin notes / aside */
+  position: relative;
+  margin-right: var(--margin-note-width);
+
+  aside {
+    position: absolute;
+    float: right;
+    margin-left: 100%;
+    font-size: 0.8rem;
+    font-style: italic;
+    width: var(--margin-note-width);
+    padding-left: 1rem;
+    box-sizing: content-box;
+
+    /*
+     * Margins notes usually come at the end of a paragraph
+     * So we use this to move it up so that the lowest point
+     * of the margin note aligns with where the paragraph ends.
+     *
+     * <aside>
+     *  <div>
+     *    <div>
+     *      { children }
+     *    </div>
+     *  </div>
+     * </aside>
+     **/
+    & > div {
+      position: relative;
+
+      & > div {
+        position: absolute;
+        bottom: 0;
+      }
+    }
+  }
+}

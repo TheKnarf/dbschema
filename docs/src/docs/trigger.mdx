@@ -1,0 +1,26 @@
+# trigger
+
+Defines a database trigger.
+
+```hcl
+trigger "set_updated_at" {
+  schema   = "public"
+  table    = "users"
+  timing   = "BEFORE"
+  events   = ["UPDATE"]
+  level    = "ROW"
+  function = "set_updated_at"
+}
+```
+
+**Properties**
+
+- `name` (optional): overrides the block label.
+- `schema` (optional): schema for the trigger, default `"public"`.
+- `table` (required): table to attach the trigger to.
+- `timing` (optional): trigger timing, default `"BEFORE"`.
+- `events` (required): array of events such as `"INSERT"`, `"UPDATE"`, `"DELETE"`.
+- `level` (optional): `"ROW"` or `"STATEMENT"`, default `"ROW"`.
+- `function` (required): unqualified function name to call.
+- `function_schema` (optional): schema of the function, defaults to trigger schema.
+- `when` (optional): raw SQL condition.

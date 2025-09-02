@@ -1,0 +1,22 @@
+# Installation
+
+Ensure the Rust toolchain is installed.
+
+```bash
+cargo build --release
+```
+
+## Optional: PGlite in-memory backend
+
+Enable tests without a real Postgres server.
+
+```bash
+just pglite-assets        # download pglite.wasm and pglite.data
+cargo build --features pglite
+```
+
+Run tests with PGlite:
+
+```bash
+cargo test --features pglite
+```

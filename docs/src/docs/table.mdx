@@ -1,0 +1,34 @@
+# table
+
+Defines a table and related constraints.
+
+```hcl
+table "users" {
+  schema = "public"
+  if_not_exists = true
+
+  column "id" { type = "serial" nullable = false }
+  column "email" { type = "text" nullable = false }
+
+  primary_key { columns = ["id"] }
+  unique "users_email_key" { columns = ["email"] }
+  index "users_created_idx" { columns = ["created_at"] }
+
+  foreign_key {
+    columns = ["org_id"]
+    ref { schema = "public" table = "orgs" columns = ["id"] }
+    on_delete = "CASCADE"
+    on_update = "NO ACTION"
+  }
+}
+```
+
+**Properties**
+
+- `name` (optional): overrides the block label.
+- `schema` (optional): schema for the table, default `"public"`.
+- `if_not_exists` (optional): create table only if it does not exist.
+- `column` blocks: define columns with `type`, `nullable`, and optional `default`.
+- `primary_key` block: specify primary key columns.
+- `unique` and `index` blocks: create indexes.
+- `foreign_key` block: link columns to referenced table with optional `on_delete` and `on_update` actions.

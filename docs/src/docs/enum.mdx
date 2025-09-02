@@ -1,0 +1,16 @@
+# enum
+
+Defines a PostgreSQL enum type.
+
+```hcl
+enum "status" {
+  schema = "public"
+  values = ["a", "b"]
+}
+```
+
+**Properties**
+
+- `name` (optional): overrides the block label.
+- `schema` (optional): target schema, default `"public"`.
+- `values` (required): array of enum values.

@@ -1,0 +1,28 @@
+# function
+
+Defines a PostgreSQL function.
+
+```hcl
+function "set_updated_at" {
+  schema   = "public"
+  language = "plpgsql"
+  returns  = "trigger"
+  replace  = true
+  body     = <<-SQL
+    BEGIN
+      NEW.updated_at = now();
+      RETURN NEW;
+    END;
+  SQL
+}
+```
+
+**Properties**
+
+- `name` (optional): overrides the block label.
+- `schema` (optional): schema for the function, default `"public"`.
+- `language` (required): programming language, default `"plpgsql"`.
+- `returns` (optional): return type, default `"trigger"`.
+- `replace` (optional): use `CREATE OR REPLACE` when true.
+- `security_definer` (optional): set SECURITY DEFINER.
+- `body` (required): function body.
