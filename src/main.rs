@@ -594,6 +594,8 @@ fn cli_filter_sets(
         [
             R::Schemas,
             R::Enums,
+            R::Domains,
+            R::Types,
             R::Tables,
             R::Views,
             R::Materialized,

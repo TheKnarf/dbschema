@@ -9,6 +9,8 @@ pub fn lower_config(ast: ast::Config) -> ir::Config {
         sequences: ast.sequences.into_iter().map(Into::into).collect(),
         schemas: ast.schemas.into_iter().map(Into::into).collect(),
         enums: ast.enums.into_iter().map(Into::into).collect(),
+        domains: ast.domains.into_iter().map(Into::into).collect(),
+        types: ast.types.into_iter().map(Into::into).collect(),
         tables: ast.tables.into_iter().map(Into::into).collect(),
         views: ast.views.into_iter().map(Into::into).collect(),
         materialized: ast.materialized.into_iter().map(Into::into).collect(),
@@ -101,6 +103,41 @@ impl From<ast::AstEnum> for ir::EnumSpec {
             alt_name: e.alt_name,
             schema: e.schema,
             values: e.values,
+        }
+    }
+}
+
+impl From<ast::AstDomain> for ir::DomainSpec {
+    fn from(d: ast::AstDomain) -> Self {
+        Self {
+            name: d.name,
+            alt_name: d.alt_name,
+            schema: d.schema,
+            r#type: d.r#type,
+            not_null: d.not_null,
+            default: d.default,
+            constraint: d.constraint,
+            check: d.check,
+        }
+    }
+}
+
+impl From<ast::AstCompositeType> for ir::CompositeTypeSpec {
+    fn from(t: ast::AstCompositeType) -> Self {
+        Self {
+            name: t.name,
+            alt_name: t.alt_name,
+            schema: t.schema,
+            fields: t.fields.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+impl From<ast::AstCompositeTypeField> for ir::CompositeTypeFieldSpec {
+    fn from(f: ast::AstCompositeTypeField) -> Self {
+        Self {
+            name: f.name,
+            r#type: f.r#type,
         }
     }
 }

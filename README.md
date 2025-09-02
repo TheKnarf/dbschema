@@ -14,6 +14,8 @@ Prisma ORM support custom migrations, so you can use this tool to generate an SQ
    - `locals`
    - `schema`
    - `enum`
+   - `domain`
+   - `type`
    - `sequence`
    - `table`
    - `view`
@@ -185,6 +187,23 @@ enum "<name>" {
   name   = "<new_name>"     # optional, overrides the block name
   schema = "public"    # optional, default "public"
   values = ["a", "b"]  # required
+}
+
+domain "<name>" {
+  name      = "<new_name>"   # optional, overrides the block name
+  schema    = "public"       # optional, default "public"
+  type      = "text"         # required base type
+  not_null  = false           # optional
+  default   = null            # optional
+  constraint = null           # optional constraint name
+  check     = "VALUE <> ''"  # optional CHECK expression
+}
+
+type "<name>" {
+  name   = "<new_name>"   # optional, overrides the block name
+  schema = "public"       # optional, default "public"
+  field "a" { type = "int" }
+  field "b" { type = "text" }
 }
 
 sequence "<name>" {

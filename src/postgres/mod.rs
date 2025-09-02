@@ -193,6 +193,111 @@ impl fmt::Display for Sequence {
 }
 
 #[derive(Debug, Clone)]
+pub struct Domain {
+    pub schema: String,
+    pub name: String,
+    pub r#type: String,
+    pub not_null: bool,
+    pub default: Option<String>,
+    pub constraint: Option<String>,
+    pub check: Option<String>,
+}
+
+impl From<&crate::ir::DomainSpec> for Domain {
+    fn from(d: &crate::ir::DomainSpec) -> Self {
+        Self {
+            schema: d.schema.clone().unwrap_or_else(|| "public".to_string()),
+            name: d.alt_name.clone().unwrap_or_else(|| d.name.clone()),
+            r#type: d.r#type.clone(),
+            not_null: d.not_null,
+            default: d.default.clone(),
+            constraint: d.constraint.clone(),
+            check: d.check.clone(),
+        }
+    }
+}
+
+impl fmt::Display for Domain {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "DO $$\nBEGIN\n  IF NOT EXISTS (\n    SELECT 1 FROM pg_type t\n    JOIN pg_namespace n ON n.oid = t.typnamespace\n  WHERE t.typname = {name_lit}\n      AND n.nspname = {schema_lit}\n  ) THEN\n    CREATE DOMAIN {schema_ident}.{name_ident} AS {ty}",
+            name_lit = literal(&self.name),
+            schema_lit = literal(&self.schema),
+            schema_ident = ident(&self.schema),
+            name_ident = ident(&self.name),
+            ty = self.r#type,
+        )?;
+        if let Some(def) = &self.default {
+            write!(f, " DEFAULT {}", def)?;
+        }
+        if self.not_null {
+            write!(f, " NOT NULL")?;
+        }
+        if let Some(check) = &self.check {
+            if let Some(cons) = &self.constraint {
+                write!(f, " CONSTRAINT {} CHECK ({})", ident(cons), check)?;
+            } else {
+                write!(f, " CHECK ({})", check)?;
+            }
+        }
+        write!(f, ";\n  END IF;\nEND$$;")
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct CompositeField {
+    pub name: String,
+    pub r#type: String,
+}
+
+impl From<&crate::ir::CompositeTypeFieldSpec> for CompositeField {
+    fn from(f: &crate::ir::CompositeTypeFieldSpec) -> Self {
+        Self {
+            name: f.name.clone(),
+            r#type: f.r#type.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct CompositeType {
+    pub schema: String,
+    pub name: String,
+    pub fields: Vec<CompositeField>,
+}
+
+impl From<&crate::ir::CompositeTypeSpec> for CompositeType {
+    fn from(t: &crate::ir::CompositeTypeSpec) -> Self {
+        Self {
+            schema: t.schema.clone().unwrap_or_else(|| "public".to_string()),
+            name: t.alt_name.clone().unwrap_or_else(|| t.name.clone()),
+            fields: t.fields.iter().map(Into::into).collect(),
+        }
+    }
+}
+
+impl fmt::Display for CompositeType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let fields = self
+            .fields
+            .iter()
+            .map(|c| format!("{} {}", ident(&c.name), c.r#type))
+            .collect::<Vec<_>>()
+            .join(", ");
+        write!(
+            f,
+            "DO $$\nBEGIN\n  IF NOT EXISTS (\n    SELECT 1 FROM pg_type t\n    JOIN pg_namespace n ON n.oid = t.typnamespace\n  WHERE t.typname = {name_lit}\n      AND n.nspname = {schema_lit}\n  ) THEN\n    CREATE TYPE {schema_ident}.{name_ident} AS ({fields});\n  END IF;\nEND$$;",
+            name_lit = literal(&self.name),
+            schema_lit = literal(&self.schema),
+            schema_ident = ident(&self.schema),
+            name_ident = ident(&self.name),
+            fields = fields,
+        )
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct Enum {
     pub schema: String,
     pub name: String,
