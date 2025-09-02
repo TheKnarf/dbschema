@@ -188,9 +188,21 @@ impl PGliteRuntime {
         add_to_linker_sync(&mut linker, |ctx: &mut WasiP1Ctx| ctx)?;
         // PGlite expects an `env::exit` import; implement it via a host panic
         // to signal termination back to the caller.
-        linker.func_wrap("env", "exit", |_: Caller<'_, WasiP1Ctx>, code: i32| {
+        linker.func_wrap::<_, ()>("env", "exit", |_: Caller<'_, WasiP1Ctx>, code: i32| {
             panic!("env::exit({code})")
         })?;
+
+        // PGlite may import `env::getaddrinfo` even though networking isn't
+        // supported in this runtime. Provide a stub that always fails to
+        // resolve addresses so module instantiation succeeds.
+        linker.func_wrap(
+            "env",
+            "getaddrinfo",
+            |_: Caller<'_, WasiP1Ctx>, _node: i32, _service: i32, _hints: i32, _res: i32| {
+                // Return a non-zero error code (e.g. EAI_NONAME)
+                1
+            },
+        )?;
 
         // Preopen the directory containing pglite.data as /tmp/pglite
         let mut builder = WasiCtxBuilder::new();
