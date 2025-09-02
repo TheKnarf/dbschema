@@ -3,6 +3,7 @@ pub mod config;
 pub mod frontend;
 pub mod ir;
 pub mod passes;
+pub mod postgres;
 pub mod prisma;
 pub mod test_runner;
 
