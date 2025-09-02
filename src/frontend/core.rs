@@ -2,7 +2,8 @@ use anyhow::{bail, Context, Result};
 use hcl::eval::{Context as HclContext, Evaluate};
 use hcl::template::{Element as TplElement, Template};
 use hcl::{
-    expr::TemplateExpr, Attribute, Block, Body, Structure, Traversal, TraversalOperator, Value,
+    expr::{BinaryOperator, TemplateExpr, UnaryOperator},
+    Attribute, Block, Body, Expression, Number, Structure, Traversal, TraversalOperator, Value,
 };
 use path_absolutize::Absolutize;
 use std::collections::HashMap;
@@ -83,6 +84,75 @@ pub fn expr_to_value(expr: &hcl::Expression, env: &EnvVars) -> Result<Value> {
             }
             Ok(Value::Object(map))
         }
+        hcl::Expression::Operation(op) => match &**op {
+            hcl::expr::Operation::Unary(u) => {
+                let v = expr_to_value(&u.expr, env)?;
+                match u.operator {
+                    UnaryOperator::Not => match v {
+                        Value::Bool(b) => Ok(Value::Bool(!b)),
+                        _ => bail!("unsupported operand type for !: {}", value_kind(&v)),
+                    },
+                    UnaryOperator::Neg => match v {
+                        Value::Number(n) => Ok(Value::Number(
+                            Number::from_f64(-n.as_f64().unwrap_or(0.0)).unwrap(),
+                        )),
+                        _ => bail!("unsupported operand type for -: {}", value_kind(&v)),
+                    },
+                }
+            }
+            hcl::expr::Operation::Binary(b) => {
+                let lhs = expr_to_value(&b.lhs_expr, env)?;
+                let rhs = expr_to_value(&b.rhs_expr, env)?;
+                match b.operator {
+                    BinaryOperator::Eq => Ok(Value::Bool(lhs == rhs)),
+                    BinaryOperator::NotEq => Ok(Value::Bool(lhs != rhs)),
+                    BinaryOperator::And => match (lhs, rhs) {
+                        (Value::Bool(a), Value::Bool(b)) => Ok(Value::Bool(a && b)),
+                        (a, b) => bail!(
+                            "unsupported operands for &&: {} && {}",
+                            value_kind(&a),
+                            value_kind(&b)
+                        ),
+                    },
+                    BinaryOperator::Or => match (lhs, rhs) {
+                        (Value::Bool(a), Value::Bool(b)) => Ok(Value::Bool(a || b)),
+                        (a, b) => bail!(
+                            "unsupported operands for ||: {} || {}",
+                            value_kind(&a),
+                            value_kind(&b)
+                        ),
+                    },
+                    BinaryOperator::Less
+                    | BinaryOperator::LessEq
+                    | BinaryOperator::Greater
+                    | BinaryOperator::GreaterEq => {
+                        let l = match lhs {
+                            Value::Number(n) => n.as_f64().unwrap_or(0.0),
+                            _ => bail!(
+                                "unsupported operand type for comparison: {}",
+                                value_kind(&lhs)
+                            ),
+                        };
+                        let r = match rhs {
+                            Value::Number(n) => n.as_f64().unwrap_or(0.0),
+                            _ => bail!(
+                                "unsupported operand type for comparison: {}",
+                                value_kind(&rhs)
+                            ),
+                        };
+                        let res = match b.operator {
+                            BinaryOperator::Less => l < r,
+                            BinaryOperator::LessEq => l <= r,
+                            BinaryOperator::Greater => l > r,
+                            BinaryOperator::GreaterEq => l >= r,
+                            _ => unreachable!(),
+                        };
+                        Ok(Value::Bool(res))
+                    }
+                    _ => bail!("unsupported binary operator: {:?}", b.operator),
+                }
+            }
+        },
         _ => bail!("unsupported expression: {expr:?}"),
     }
 }
@@ -407,6 +477,43 @@ fn populate_back_references(cfg: &mut ir::Config) -> Result<()> {
     Ok(())
 }
 
+#[derive(Default, Clone)]
+struct VarSpec {
+    default: Option<Value>,
+    r#type: Option<String>,
+    validation: Option<Expression>,
+}
+
+fn value_kind(v: &Value) -> &'static str {
+    match v {
+        Value::String(_) => "string",
+        Value::Number(_) => "number",
+        Value::Bool(_) => "bool",
+        Value::Array(_) => "array",
+        Value::Object(_) => "object",
+        _ => "unknown",
+    }
+}
+
+fn check_var_type(name: &str, v: &Value, expected: &str) -> Result<()> {
+    let ok = match expected {
+        "string" => matches!(v, Value::String(_)),
+        "number" => matches!(v, Value::Number(_)),
+        "bool" | "boolean" => matches!(v, Value::Bool(_)),
+        "array" | "list" => matches!(v, Value::Array(_)),
+        "object" | "map" => matches!(v, Value::Object(_)),
+        _ => bail!("unknown variable type '{expected}' for '{name}'"),
+    };
+    if ok {
+        Ok(())
+    } else {
+        bail!(
+            "variable '{name}' expected type {expected}, got {}",
+            value_kind(v)
+        );
+    }
+}
+
 fn load_file(
     loader: &dyn Loader,
     path: &Path,
@@ -429,8 +536,8 @@ fn load_file(
     let mut body: hcl::Body =
         hcl::from_str(&content).with_context(|| format!("parsing HCL in {}", path.display()))?;
 
-    // 1) Collect variable defaults
-    let mut var_defaults: HashMap<String, hcl::Value> = HashMap::new();
+    // 1) Collect variable specs (default/type/validation)
+    let mut var_specs: HashMap<String, VarSpec> = HashMap::new();
     for blk in body.blocks().filter(|b| b.identifier() == "variable") {
         let name = blk
             .labels()
@@ -438,16 +545,30 @@ fn load_file(
             .ok_or_else(|| anyhow::anyhow!("variable block missing name label"))?
             .as_str()
             .to_string();
+        let mut spec = VarSpec::default();
         if let Some(attr) = find_attr(blk.body(), "default") {
             let v = expr_to_value(attr.expr(), parent_env)
                 .with_context(|| format!("evaluating default for variable '{}')", name))?;
-            var_defaults.insert(name, v);
+            spec.default = Some(v);
         }
+        if let Some(attr) = find_attr(blk.body(), "type") {
+            let t = expr_to_string(attr.expr(), parent_env)
+                .with_context(|| format!("evaluating type for variable '{}')", name))?;
+            spec.r#type = Some(t);
+        }
+        if let Some(attr) = find_attr(blk.body(), "validation") {
+            spec.validation = Some(attr.expr().clone());
+        }
+        var_specs.insert(name, spec);
     }
 
     // Merge env: defaults overridden by parent vars (root) for root file; for modules we override via module call
     let mut env = EnvVars::default();
-    env.vars.extend(var_defaults);
+    for (name, spec) in &var_specs {
+        if let Some(v) = &spec.default {
+            env.vars.insert(name.clone(), v.clone());
+        }
+    }
     env.vars.extend(parent_env.vars.clone());
 
     // 2) Compute locals (can reference vars)
@@ -457,6 +578,30 @@ fn load_file(
             let v = expr_to_value(attr.expr(), &env)
                 .with_context(|| format!("evaluating local '{}')", key))?;
             env.locals.insert(key.to_string(), v);
+        }
+    }
+
+    // Enforce variable types and run validations
+    for (name, spec) in &var_specs {
+        if let Some(value) = env.vars.get(name) {
+            if let Some(t) = &spec.r#type {
+                check_var_type(name, value, t)?;
+            }
+            if let Some(expr) = &spec.validation {
+                let v = expr_to_value(expr, &env)
+                    .with_context(|| format!("evaluating validation for variable '{}')", name))?;
+                match v {
+                    Value::Bool(true) => {}
+                    Value::Bool(false) => {
+                        bail!("validation for variable '{}' failed", name);
+                    }
+                    other => bail!(
+                        "validation for variable '{}' must return a bool, got {}",
+                        name,
+                        value_kind(&other)
+                    ),
+                }
+            }
         }
     }
 
