@@ -87,7 +87,6 @@ fn main() -> Result<()> {
 
     if cli.config {
         let dbschema_config = config::load_config()
-            .map_err(|e| anyhow::Error::msg(e.to_string()))
             .with_context(|| "failed to load dbschema.toml")?
             .ok_or_else(|| anyhow!("dbschema.toml not found"))?;
 
@@ -477,7 +476,6 @@ table_name = "from_file"
         fs::write(&var_file_path, var_file)?;
 
         let dbschema_config = config::load_config_from_path(&dbschema_toml_path)
-            .map_err(|e| anyhow::Error::msg(e.to_string()))
             .with_context(|| "failed to load dbschema.toml")?
             .ok_or_else(|| anyhow!("dbschema.toml not found"))?;
 
