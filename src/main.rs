@@ -1,6 +1,10 @@
 use anyhow::{anyhow, Context, Result};
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use dbschema::frontend::env::EnvVars;
+#[cfg(feature = "pglite")]
+use postgres_protocol::message::backend;
+#[cfg(feature = "pglite")]
+use fallible_iterator::FallibleIterator;
 use dbschema::test_runner::TestBackend;
 use dbschema::{
     apply_filters,
@@ -56,6 +60,13 @@ struct Cli {
     command: Option<Commands>,
 }
 
+#[derive(Copy, Clone, ValueEnum)]
+enum TestBackendKind {
+    Postgres,
+    #[cfg(feature = "pglite")]
+    Pglite,
+}
+
 #[derive(Subcommand)]
 enum Commands {
     /// Validate HCL and print a summary
@@ -74,10 +85,16 @@ enum Commands {
         /// Database connection string (falls back to env DATABASE_URL)
         #[arg(long)]
         dsn: Option<String>,
+        /// Test backend: postgres or pglite
+        #[arg(long, value_enum, default_value = "postgres")]
+        backend: TestBackendKind,
         /// Names of tests to run (repeatable). If omitted, runs all.
         #[arg(long = "name")]
         names: Vec<String>,
     },
+    /// Start an in-memory PGlite database REPL
+    #[cfg(feature = "pglite")]
+    Pglite {},
 }
 
 fn main() -> Result<()> {
@@ -85,7 +102,7 @@ fn main() -> Result<()> {
 
     let cli = Cli::parse();
 
-    if cli.config {
+    if cli.config && cli.command.is_none() {
         let dbschema_config = config::load_config()
             .with_context(|| "failed to load dbschema.toml")?
             .ok_or_else(|| anyhow!("dbschema.toml not found"))?;
@@ -105,32 +122,32 @@ fn main() -> Result<()> {
             run_target(&dbschema_config, &target, cli.strict)?;
         }
     } else if let Some(command) = cli.command {
-        let mut vars: HashMap<String, hcl::Value> = HashMap::new();
-        for vf in &cli.var_file {
-            let loaded =
-                load_var_file(vf).with_context(|| format!("loading var file {}", vf.display()))?;
-            vars.extend(loaded);
-        }
-        for (k, v) in cli.var.iter() {
-            vars.insert(k.clone(), hcl::Value::String(v.clone()));
-        }
-
-        let fs_loader = FsLoader;
-        let env = EnvVars {
-            vars,
-            locals: HashMap::new(),
-            modules: HashMap::new(),
-            each: None,
-        };
-        let config = load_config(&cli.input, &fs_loader, env.clone())
-            .with_context(|| format!("loading root HCL {}", cli.input.display()))?;
-
-        let (include_set, exclude_set) =
-            cli_filter_sets(&cli.backend, &cli.include_resources, &cli.exclude_resources);
-        let filtered = apply_filters(&config, &include_set, &exclude_set);
-
         match command {
             Commands::Validate {} => {
+                let mut vars: HashMap<String, hcl::Value> = HashMap::new();
+                for vf in &cli.var_file {
+                    let loaded = load_var_file(vf)
+                        .with_context(|| format!("loading var file {}", vf.display()))?;
+                    vars.extend(loaded);
+                }
+                for (k, v) in cli.var.iter() {
+                    vars.insert(k.clone(), hcl::Value::String(v.clone()));
+                }
+
+                let fs_loader = FsLoader;
+                let env = EnvVars {
+                    vars,
+                    locals: HashMap::new(),
+                    modules: HashMap::new(),
+                    each: None,
+                };
+                let config = load_config(&cli.input, &fs_loader, env.clone())
+                    .with_context(|| format!("loading root HCL {}", cli.input.display()))?;
+
+                let (include_set, exclude_set) =
+                    cli_filter_sets(&cli.backend, &cli.include_resources, &cli.exclude_resources);
+                let filtered = apply_filters(&config, &include_set, &exclude_set);
+
                 dbschema::validate(&filtered, cli.strict)?;
                 info!(
                     "Valid: {} schema(s), {} enum(s), {} table(s), {} view(s), {} materialized view(s), {} function(s), {} trigger(s)",
@@ -142,8 +159,33 @@ fn main() -> Result<()> {
                     filtered.functions.len(),
                     filtered.triggers.len()
                 );
+                print_outputs(&filtered.outputs);
             }
             Commands::CreateMigration { out_dir, name } => {
+                let mut vars: HashMap<String, hcl::Value> = HashMap::new();
+                for vf in &cli.var_file {
+                    let loaded = load_var_file(vf)
+                        .with_context(|| format!("loading var file {}", vf.display()))?;
+                    vars.extend(loaded);
+                }
+                for (k, v) in cli.var.iter() {
+                    vars.insert(k.clone(), hcl::Value::String(v.clone()));
+                }
+
+                let fs_loader = FsLoader;
+                let env = EnvVars {
+                    vars,
+                    locals: HashMap::new(),
+                    modules: HashMap::new(),
+                    each: None,
+                };
+                let config = load_config(&cli.input, &fs_loader, env.clone())
+                    .with_context(|| format!("loading root HCL {}", cli.input.display()))?;
+
+                let (include_set, exclude_set) =
+                    cli_filter_sets(&cli.backend, &cli.include_resources, &cli.exclude_resources);
+                let filtered = apply_filters(&config, &include_set, &exclude_set);
+
                 dbschema::validate(&filtered, cli.strict)?;
                 let artifact =
                     dbschema::generate_with_backend(&cli.backend, &filtered, cli.strict)?;
@@ -158,25 +200,91 @@ fn main() -> Result<()> {
                 } else {
                     print!("{}", artifact);
                 }
+                print_outputs(&filtered.outputs);
             }
-            Commands::Test { dsn, names } => {
-                let dsn = dsn
-                    .or_else(|| std::env::var("DATABASE_URL").ok())
-                    .ok_or_else(|| anyhow!("missing DSN: pass --dsn or set DATABASE_URL"))?;
-                // Allow using the in-memory PGlite backend by specifying
-                // a DSN starting with "pglite". Otherwise default to the
-                // external Postgres server.
-                let runner: Box<dyn TestBackend> = if dsn.starts_with("pglite") {
-                    Box::new(dbschema::test_runner::pglite::PGliteTestBackend)
+            Commands::Test { dsn, names, backend } => {
+                let (dsn, backend, config) = if cli.config {
+                    let dbschema_config = config::load_config()
+                        .with_context(|| "failed to load dbschema.toml")?
+                        .ok_or_else(|| anyhow!("dbschema.toml not found"))?;
+                    for (key, value) in &dbschema_config.settings.env {
+                        std::env::set_var(key, value);
+                    }
+                    let mut vars: HashMap<String, hcl::Value> = HashMap::new();
+                    for vf in &dbschema_config.settings.var_files {
+                        vars.extend(load_var_file(&PathBuf::from(vf))?);
+                    }
+                    let input_path = dbschema_config
+                        .settings
+                        .input
+                        .as_deref()
+                        .unwrap_or("main.hcl");
+                    let fs_loader = FsLoader;
+                    let env = EnvVars {
+                        vars,
+                        locals: HashMap::new(),
+                        modules: HashMap::new(),
+                        each: None,
+                    };
+                    let cfg = load_config(&PathBuf::from(input_path), &fs_loader, env.clone())
+                        .with_context(|| format!("loading root HCL from {}", input_path))?;
+                    let dsn = dsn
+                        .or_else(|| dbschema_config.settings.test_dsn.clone())
+                        .or_else(|| std::env::var("DATABASE_URL").ok());
+                    let mut backend_choice = backend;
+                    if matches!(backend_choice, TestBackendKind::Postgres) {
+                        if let Some(be) = &dbschema_config.settings.test_backend {
+                            backend_choice = match be.as_str() {
+                                "postgres" => TestBackendKind::Postgres,
+                                #[cfg(feature = "pglite")]
+                                "pglite" => TestBackendKind::Pglite,
+                                other => return Err(anyhow!("unknown test backend '{other}'")),
+                            };
+                        }
+                    }
+                    (dsn, backend_choice, cfg)
                 } else {
-                    Box::new(dbschema::test_runner::postgres::PostgresTestBackend)
+                    let mut vars: HashMap<String, hcl::Value> = HashMap::new();
+                    for vf in &cli.var_file {
+                        let loaded = load_var_file(vf)
+                            .with_context(|| format!("loading var file {}", vf.display()))?;
+                        vars.extend(loaded);
+                    }
+                    for (k, v) in cli.var.iter() {
+                        vars.insert(k.clone(), hcl::Value::String(v.clone()));
+                    }
+                    let fs_loader = FsLoader;
+                    let env = EnvVars {
+                        vars,
+                        locals: HashMap::new(),
+                        modules: HashMap::new(),
+                        each: None,
+                    };
+                    let cfg = load_config(&cli.input, &fs_loader, env.clone())
+                        .with_context(|| format!("loading root HCL {}", cli.input.display()))?;
+                    (dsn, backend, cfg)
+                };
+                let dsn = match backend {
+                    TestBackendKind::Postgres => dsn
+                        .or_else(|| std::env::var("DATABASE_URL").ok())
+                        .ok_or_else(|| anyhow!("missing DSN: pass --dsn or set DATABASE_URL"))?,
+                    #[cfg(feature = "pglite")]
+                    TestBackendKind::Pglite => dsn.unwrap_or_else(|| "pglite".to_string()),
+                };
+                let runner: Box<dyn TestBackend> = match backend {
+                    TestBackendKind::Postgres => {
+                        Box::new(dbschema::test_runner::postgres::PostgresTestBackend)
+                    }
+                    #[cfg(feature = "pglite")]
+                    TestBackendKind::Pglite => {
+                        Box::new(dbschema::test_runner::pglite::PGliteTestBackend)
+                    }
                 };
                 let only: Option<std::collections::HashSet<String>> = if names.is_empty() {
                     None
                 } else {
                     Some(names.into_iter().collect())
                 };
-                // Tests run against full config regardless of filters
                 let summary = runner.run(&config, &dsn, only.as_ref())?;
                 for r in summary.results {
                     if r.passed {
@@ -197,9 +305,58 @@ fn main() -> Result<()> {
                         summary.passed, summary.failed, summary.total
                     );
                 }
+                print_outputs(&config.outputs);
+            }
+            #[cfg(feature = "pglite")]
+            Commands::Pglite {} => {
+                use std::io::{self, Write};
+                let mut rt = dbschema::test_runner::pglite::PGliteRuntime::new()?;
+                rt.startup()?;
+                let stdin = io::stdin();
+                let mut line = String::new();
+                loop {
+                    print!("pglite=> ");
+                    io::stdout().flush()?;
+                    line.clear();
+                    if stdin.read_line(&mut line)? == 0 {
+                        break;
+                    }
+                    let sql = line.trim();
+                    if sql.eq_ignore_ascii_case("\\q") {
+                        break;
+                    }
+                    match rt.simple_query(sql) {
+                        Ok(msgs) => {
+                            for m in msgs {
+                                if let backend::Message::DataRow(row) = m {
+                                    let buf = row.buffer();
+                                    let mut fields = row.ranges();
+                                    let mut out = Vec::new();
+                                    while let Some(res) = fields.next()? {
+                                        match res {
+                                            Some(range) => {
+                                                let val = &buf[range];
+                                                out.push(String::from_utf8_lossy(val).to_string());
+                                            }
+                                            None => out.push("NULL".into()),
+                                        }
+                                    }
+                                    println!("{}", out.join(" | "));
+                                } else if let backend::Message::CommandComplete(c) = m {
+                                    if let Ok(tag) = c.tag() {
+                                        println!("{}", tag);
+                                    } else {
+                                        println!("<command complete>");
+                                    }
+                                }
+                            }
+                        }
+                        Err(e) => eprintln!("error: {e}"),
+                    }
+                }
+                rt.shutdown()?;
             }
         }
-        print_outputs(&filtered.outputs);
     }
 
     Ok(())

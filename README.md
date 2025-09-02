@@ -40,6 +40,40 @@ Prisma ORM support custom migrations, so you can use this tool to generate an SQ
 cargo build --release
 ```
 
+### Optional: PGlite in-memory backend
+
+The PGlite runtime enables running tests without a real Postgres server. It is
+gated behind the `pglite` feature and requires downloading the WebAssembly
+artifacts:
+
+```bash
+just pglite-assets        # download pglite.wasm and pglite.data
+cargo build --features pglite
+```
+
+Run tests with the PGlite backend:
+
+```bash
+cargo test --features pglite
+```
+
+Start an interactive PGlite shell:
+
+```bash
+./target/debug/dbschema pglite
+```
+
+Run HCL tests with PGlite either by passing the backend on the command line or
+through `dbschema.toml`:
+
+```bash
+./target/debug/dbschema --input examples/main.hcl test --backend pglite
+
+# dbschema.toml
+[settings]
+test_backend = "pglite"
+```
+
 ## Usage
 
 - Validate: `./target/release/dbschema --input examples/main.hcl validate`
@@ -101,6 +135,8 @@ vars = { generate_client = "true" }
 - `input`: The root HCL file to use. Defaults to `main.hcl`.
 - `var_files`: A list of variable files to load.
 - `env`: A map of environment variables to set before running a target.
+- `test_backend`: Optional default backend for the `test` command (`postgres` or `pglite`).
+- `test_dsn`: Optional default database connection string for tests when using Postgres.
 
 ### `[[targets]]` block
 
@@ -253,7 +289,7 @@ See `examples/main.hcl` and `examples/modules/timestamps/main.hcl`.
   - Prisma models for tables: `dbschema --backend prisma --include tables --input examples/main.hcl create-migration --out-dir prisma --name schema`
   - SQL for everything else: `dbschema --backend postgres --exclude tables --input examples/main.hcl create-migration --out-dir migrations --name non_tables`
 - Variables can be arrays/objects; use `for_each` on blocks and `each.value` inside.
-- Tests currently run against Postgres only; each test executes inside a transaction and is rolled back.
+- Tests can run against a real Postgres server or the in-memory PGlite backend; each test executes inside a transaction and is rolled back when using Postgres.
   - Assertion queries may return `bool`, any signed or unsigned integer (non-zero is treated as `true`), or text values `"t"`/`"true"` (case-insensitive).
 
 ## Expression Language
