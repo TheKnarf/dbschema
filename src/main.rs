@@ -163,8 +163,14 @@ fn main() -> Result<()> {
                 let dsn = dsn
                     .or_else(|| std::env::var("DATABASE_URL").ok())
                     .ok_or_else(|| anyhow!("missing DSN: pass --dsn or set DATABASE_URL"))?;
-                // Only Postgres tests supported currently
-                let runner = dbschema::test_runner::postgres::PostgresTestBackend;
+                // Allow using the in-memory PGlite backend by specifying
+                // a DSN starting with "pglite". Otherwise default to the
+                // external Postgres server.
+                let runner: Box<dyn TestBackend> = if dsn.starts_with("pglite") {
+                    Box::new(dbschema::test_runner::pglite::PGliteTestBackend)
+                } else {
+                    Box::new(dbschema::test_runner::postgres::PostgresTestBackend)
+                };
                 let only: Option<std::collections::HashSet<String>> = if names.is_empty() {
                     None
                 } else {

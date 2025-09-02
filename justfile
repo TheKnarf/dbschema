@@ -1,5 +1,12 @@
 set shell := ["bash", "-cu"]
 
+# Download the PGlite runtime artifacts
+pglite-assets:
+  set -euo pipefail
+  mkdir -p vendor/pglite
+  curl -L -o vendor/pglite/pglite.wasm https://cdn.jsdelivr.net/npm/@electric-sql/pglite/dist/pglite.wasm
+  curl -L -o vendor/pglite/pglite.data https://cdn.jsdelivr.net/npm/@electric-sql/pglite/dist/pglite.data
+
 # Run the example test against a local Postgres started via Docker Compose
 # Usage:
 #   just example-test                       # uses default DSN
