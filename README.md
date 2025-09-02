@@ -355,7 +355,7 @@ module "<name>" {
 
 ## Expression Language
 
-dbschema evaluates HCL expressions with support for strings, numbers, booleans, arrays, objects, function calls, traversals like `var.*` and `local.*`, and `${...}` string templates.
+ dbschema evaluates HCL expressions with support for strings, numbers, booleans, arrays, objects, function calls, traversals like `var.*` and `local.*`, `${...}` string templates, list comprehensions (`[for x in list : expr]`), and conditional expressions (`a ? b : c`).
 
 ## Variables, for_each, dynamic blocks, and each.value
 
