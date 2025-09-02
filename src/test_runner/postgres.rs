@@ -73,6 +73,38 @@ impl TestBackend for PostgresTestBackend {
     }
 }
 
+type Converter = fn(&Row) -> Result<bool>;
+
+macro_rules! converters {
+    ($($src:ty => $map:expr),+ $(,)?) => {
+        &[
+            $(|row: &Row| row
+                .try_get::<usize, $src>(0)
+                .map($map)
+                .map_err(Into::into),)+
+        ]
+    };
+}
+
+static CONVERTERS: &[Converter] = converters!(
+    bool => |v| v,
+    i64 => |v| v != 0,
+    i32 => |v| v != 0,
+    i16 => |v| v != 0,
+    i8 => |v| v != 0,
+    i64 => |v| (v as u64) != 0,
+    u32 => |v| v != 0,
+    i16 => |v| (v as u16) != 0,
+    i8 => |v| (v as u8) != 0,
+    String => |v| v == "t" || v.eq_ignore_ascii_case("true"),
+);
+
+/// Evaluate the first column of the first row for truthiness.
+///
+/// Supported types:
+/// * `bool`
+/// * any signed or unsigned integer (non-zero is treated as `true`)
+/// * text values "t" or "true" (case-insensitive)
 fn assert_rows_true(rows: &[Row]) -> Result<bool> {
     if rows.is_empty() {
         return Ok(false);
@@ -81,26 +113,11 @@ fn assert_rows_true(rows: &[Row]) -> Result<bool> {
     if cols.is_empty() {
         return Ok(false);
     }
-    // Try bool
-    if let Ok(v) = rows[0].try_get::<usize, bool>(0) {
-        return Ok(v);
-    }
-    // Try integer non-zero
-    if let Ok(v) = rows[0].try_get::<usize, i64>(0) {
-        return Ok(v != 0);
-    }
-    if let Ok(v) = rows[0].try_get::<usize, i32>(0) {
-        return Ok(v != 0);
-    }
-    if let Ok(v) = rows[0].try_get::<usize, i16>(0) {
-        return Ok(v != 0);
-    }
-    if let Ok(v) = rows[0].try_get::<usize, i8>(0) {
-        return Ok(v != 0);
-    }
-    // Try text equals 't' or 'true'
-    if let Ok(v) = rows[0].try_get::<usize, String>(0) {
-        return Ok(v == "t" || v.eq_ignore_ascii_case("true"));
+    let row = &rows[0];
+    for conv in CONVERTERS {
+        if let Ok(v) = conv(row) {
+            return Ok(v);
+        }
     }
     Err(anyhow!("unsupported assert result type"))
 }
