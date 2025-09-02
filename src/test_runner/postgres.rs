@@ -1,6 +1,7 @@
 use anyhow::{anyhow, Context, Result};
 use postgres::{Client, NoTls, Row};
 use std::collections::HashSet;
+use url::Url;
 
 use super::{TestBackend, TestResult, TestSummary};
 use crate::ir::Config;
@@ -123,13 +124,46 @@ fn assert_rows_true(rows: &[Row]) -> Result<bool> {
 }
 
 fn redacted(dsn: &str) -> String {
-    // Very basic redaction (remove password part after : )
-    if let Some(idx) = dsn.find("@") {
-        let (left, right) = dsn.split_at(idx);
-        if let Some(colon) = left.find(":") {
-            let (scheme_user, _rest) = left.split_at(colon + 1);
-            return format!("{}****{}", scheme_user, right);
+    match Url::parse(dsn) {
+        Ok(mut url) => {
+            if url.password().is_some() {
+                // ignore result since failure to set password is non-fatal
+                let _ = url.set_password(Some("****"));
+            }
+            url.to_string()
         }
+        Err(_) => dsn.to_string(),
     }
-    dsn.to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::redacted;
+
+    #[test]
+    fn masks_password() {
+        let dsn = "postgres://user:secret@localhost:5432/db";
+        assert_eq!(redacted(dsn), "postgres://user:****@localhost:5432/db");
+    }
+
+    #[test]
+    fn preserves_query_and_port() {
+        let dsn = "postgresql://user:secret@localhost:5432/db?sslmode=require";
+        assert_eq!(
+            redacted(dsn),
+            "postgresql://user:****@localhost:5432/db?sslmode=require"
+        );
+    }
+
+    #[test]
+    fn leaves_without_password() {
+        let dsn = "postgres://user@localhost/db";
+        assert_eq!(redacted(dsn), dsn);
+    }
+
+    #[test]
+    fn falls_back_on_parse_failure() {
+        let dsn = "host=localhost user=me password=secret";
+        assert_eq!(redacted(dsn), dsn);
+    }
 }
