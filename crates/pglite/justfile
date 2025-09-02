@@ -6,4 +6,5 @@ pglite-assets:
 
 # Inspect the PGlite WASM imports using wasm-tools
 wasm-check:
+  cargo install wasm-tools
   wasm-tools print node_modules/@electric-sql/pglite/dist/pglite.wasm | grep '(import'
