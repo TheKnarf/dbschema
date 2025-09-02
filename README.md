@@ -27,6 +27,7 @@ Prisma ORM support custom migrations, so you can use this tool to generate an SQ
 - Variables via `--var key=value` and `--var-file`.
 - Dynamic blocks: replicate nested blocks with `dynamic "name" { for_each = ... content { ... } }`.
 - Modules: `module "name" { source = "./path" ... }`.
+- Full HCL expression support: numbers, booleans, arrays, objects, traversals (`var.*`, `local.*`), function calls, and `${...}` templates.
 - Validate config, then generate SQL with safe `CREATE OR REPLACE FUNCTION` and idempotent guards for triggers/enums/materialized views.
 
 ## Install
@@ -253,6 +254,10 @@ See `examples/main.hcl` and `examples/modules/timestamps/main.hcl`.
 - Variables can be arrays/objects; use `for_each` on blocks and `each.value` inside.
 - Tests currently run against Postgres only; each test executes inside a transaction and is rolled back.
 
+## Expression Language
+
+dbschema evaluates HCL expressions with support for strings, numbers, booleans, arrays, objects, function calls, traversals like `var.*` and `local.*`, and `${...}` string templates.
+
 ## Variables, for_each, dynamic blocks, and each.value
 
 - Variables can be strings, numbers, booleans, arrays, or objects.
@@ -304,13 +309,6 @@ table "users" {
 
 ### Planned feature
 
-- Full HCL expression language.
-    - Supported expressions:
-       - strings
-       - numbers/bools (to-string)
-       - arrays of strings
-       - traversals `var.*` and `local.*`
-       - and string templates `${...}`.
 - Module outputs and references (`module.foo.*`).
 
 ### Non-goals (for now)
