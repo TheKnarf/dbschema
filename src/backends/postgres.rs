@@ -29,8 +29,7 @@ impl Backend for PostgresBackend {
         to_sql(cfg)
     }
 }
-
-pub fn to_sql(cfg: &Config) -> Result<String> {
+fn to_sql(cfg: &Config) -> Result<String> {
     let mut out = String::new();
 
     // Schemas first

@@ -125,11 +125,6 @@ pub fn apply_resource_filters(cfg: &Config, include: &[String], exclude: &[Strin
     })
 }
 
-// Pure SQL generation wrapper - uses postgres backend by default
-pub fn generate_sql(cfg: &Config) -> Result<String> {
-    backends::postgres::to_sql(cfg)
-}
-
 pub fn generate_with_backend(
     backend: &str,
     cfg: &Config,
@@ -195,7 +190,7 @@ mod tests {
         assert_eq!(cfg.functions.len(), 1);
         assert_eq!(cfg.triggers.len(), 1);
         validate(&cfg, false).unwrap();
-        let sql = generate_sql(&cfg).unwrap();
+        let sql = generate_with_backend("postgres", &cfg, false).unwrap();
         assert!(sql.contains("CREATE OR REPLACE FUNCTION \"public\".\"set_updated_at\""));
         assert!(sql.contains("CREATE TRIGGER \"users_upd\""));
     }
@@ -275,7 +270,7 @@ mod tests {
         let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
         assert_eq!(cfg.triggers.len(), 2);
         validate(&cfg, false).unwrap();
-        let sql = generate_sql(&cfg).unwrap();
+        let sql = generate_with_backend("postgres", &cfg, false).unwrap();
         assert!(sql.contains("\"users\""));
         assert!(sql.contains("\"orders\""));
     }
@@ -330,7 +325,7 @@ mod tests {
         let loader = MapLoader { files };
         let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
         assert_eq!(cfg.extensions.len(), 1);
-        let sql = generate_sql(&cfg).unwrap();
+        let sql = generate_with_backend("postgres", &cfg, false).unwrap();
         assert!(sql.contains("CREATE EXTENSION IF NOT EXISTS \"pgcrypto\";"));
     }
 
@@ -384,7 +379,7 @@ mod tests {
         let loader = MapLoader { files };
         let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
         assert_eq!(cfg.views.len(), 1);
-        let sql = generate_sql(&cfg).unwrap();
+        let sql = generate_with_backend("postgres", &cfg, false).unwrap();
         assert!(sql.contains("CREATE OR REPLACE VIEW \"public\".\"v_users\" AS"));
         let json = crate::generate_with_backend("json", &cfg, false).unwrap();
         assert!(json.contains("\"views\""));
@@ -407,7 +402,7 @@ mod tests {
         let loader = MapLoader { files };
         let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
         assert_eq!(cfg.materialized.len(), 1);
-        let sql = generate_sql(&cfg).unwrap();
+        let sql = generate_with_backend("postgres", &cfg, false).unwrap();
         assert!(sql.contains("CREATE MATERIALIZED VIEW \"public\".\"mv\" AS"));
         assert!(sql.contains("WITH NO DATA"));
         let json = crate::generate_with_backend("json", &cfg, false).unwrap();
@@ -438,7 +433,7 @@ mod tests {
         let loader = MapLoader { files };
         let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
         assert_eq!(cfg.enums.len(), 1);
-        let sql = generate_sql(&cfg).unwrap();
+        let sql = generate_with_backend("postgres", &cfg, false).unwrap();
         assert!(sql.contains("CREATE TYPE \"public\".\"status\" AS ENUM"));
         let json = crate::generate_with_backend("json", &cfg, false).unwrap();
         assert!(json.contains("\"enums\""));
@@ -472,7 +467,7 @@ mod tests {
         let loader = MapLoader { files };
         let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
         assert_eq!(cfg.tables.len(), 1);
-        let sql = generate_sql(&cfg).unwrap();
+        let sql = generate_with_backend("postgres", &cfg, false).unwrap();
         assert!(sql.contains("CREATE TABLE IF NOT EXISTS \"public\".\"users\""));
         assert!(sql.contains("CREATE UNIQUE INDEX IF NOT EXISTS \"users_email_key\" ON \"public\".\"users\" (\"email\");"));
     }
@@ -505,7 +500,7 @@ mod tests {
         let loader = MapLoader { files };
         let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
         assert_eq!(cfg.policies.len(), 1);
-        let sql = generate_sql(&cfg).unwrap();
+        let sql = generate_with_backend("postgres", &cfg, false).unwrap();
         assert!(sql.contains("CREATE POLICY \"p_users_select\" ON \"public\".\"users\""));
         let json = crate::generate_with_backend("json", &cfg, false).unwrap();
         assert!(json.contains("\"policies\""));
