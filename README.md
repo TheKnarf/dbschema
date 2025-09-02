@@ -253,6 +253,7 @@ See `examples/main.hcl` and `examples/modules/timestamps/main.hcl`.
   - SQL for everything else: `dbschema --backend postgres --exclude tables --input examples/main.hcl create-migration --out-dir migrations --name non_tables`
 - Variables can be arrays/objects; use `for_each` on blocks and `each.value` inside.
 - Tests currently run against Postgres only; each test executes inside a transaction and is rolled back.
+  - Assertion queries may return `bool`, any signed or unsigned integer (non-zero is treated as `true`), or text values `"t"`/`"true"` (case-insensitive).
 
 ## Expression Language
 
