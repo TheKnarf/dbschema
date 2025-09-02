@@ -6,6 +6,7 @@ use dbschema::{
     config::{self, Config as DbschemaConfig, ResourceKind, TargetConfig},
     load_config, validate, EnvVars, Loader,
 };
+use log::{error, info};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -79,6 +80,8 @@ enum Commands {
 }
 
 fn main() -> Result<()> {
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+
     let cli = Cli::parse();
 
     if cli.config {
@@ -131,7 +134,7 @@ fn main() -> Result<()> {
         match command {
             Commands::Validate {} => {
                 dbschema::validate::validate(&filtered, cli.strict)?;
-                println!(
+                info!(
                     "Valid: {} schema(s), {} enum(s), {} table(s), {} view(s), {} materialized view(s), {} function(s), {} trigger(s)",
                     filtered.schemas.len(),
                     filtered.enums.len(),
@@ -153,7 +156,7 @@ fn main() -> Result<()> {
                         .map(|b| b.file_extension())
                         .unwrap_or("txt");
                     let path = write_artifact(&dir, &name, ext, &artifact)?;
-                    println!("Wrote migration: {}", path.display());
+                    info!("Wrote migration: {}", path.display());
                 } else {
                     print!("{}", artifact);
                 }
@@ -173,17 +176,22 @@ fn main() -> Result<()> {
                 let summary = runner.run(&config, &dsn, only.as_ref())?;
                 for r in summary.results {
                     if r.passed {
-                        println!("ok - {}", r.name);
+                        info!("ok - {}", r.name);
                     } else {
-                        println!("FAIL - {}: {}", r.name, r.message);
+                        error!("FAIL - {}: {}", r.name, r.message);
                     }
                 }
-                println!(
-                    "Summary: {} passed, {} failed ({} total)",
-                    summary.passed, summary.failed, summary.total
-                );
                 if summary.failed > 0 {
+                    error!(
+                        "Summary: {} passed, {} failed ({} total)",
+                        summary.passed, summary.failed, summary.total
+                    );
                     std::process::exit(1);
+                } else {
+                    info!(
+                        "Summary: {} passed, {} failed ({} total)",
+                        summary.passed, summary.failed, summary.total
+                    );
                 }
             }
         }
@@ -193,7 +201,7 @@ fn main() -> Result<()> {
 }
 
 fn run_target(dbschema_config: &DbschemaConfig, target: &TargetConfig, strict: bool) -> Result<()> {
-    println!("Running target: {}", target.name);
+    info!("Running target: {}", target.name);
 
     for (key, value) in &dbschema_config.settings.env {
         std::env::set_var(key, value);
@@ -238,7 +246,7 @@ fn run_target(dbschema_config: &DbschemaConfig, target: &TargetConfig, strict: b
             fs::create_dir_all(parent)?;
         }
         fs::write(path, artifact)?;
-        println!("Wrote output to: {}", output_path);
+        info!("Wrote output to: {}", output_path);
     } else {
         print!("{}", artifact);
     }
