@@ -2,19 +2,19 @@ pub mod backends;
 pub mod config;
 pub mod frontend;
 pub mod ir;
-pub mod test_runner;
 pub mod passes;
+pub mod test_runner;
 
 use anyhow::Result;
 // Keep types public via re-exports
 use std::path::Path;
 
 // Public re-exports
+use crate::frontend::env::EnvVars;
 pub use ir::{
     Config, EnumSpec, ExtensionSpec, FunctionSpec, MaterializedViewSpec, PolicySpec, SchemaSpec,
     TableSpec, TriggerSpec, ViewSpec,
 };
-use crate::frontend::env::EnvVars;
 
 // Loader abstraction: lets callers control how files are read.
 pub trait Loader {
@@ -37,57 +37,26 @@ where
 {
     use crate::config::ResourceKind as R;
 
+    macro_rules! maybe {
+        ($kind:ident, $field:ident) => {
+            predicate(R::$kind)
+                .then(|| cfg.$field.clone())
+                .unwrap_or_default()
+        };
+    }
+
     Config {
-        functions: if predicate(R::Functions) {
-            cfg.functions.clone()
-        } else {
-            Vec::new()
-        },
-        triggers: if predicate(R::Triggers) {
-            cfg.triggers.clone()
-        } else {
-            Vec::new()
-        },
-        extensions: if predicate(R::Extensions) {
-            cfg.extensions.clone()
-        } else {
-            Vec::new()
-        },
-        schemas: if predicate(R::Schemas) {
-            cfg.schemas.clone()
-        } else {
-            Vec::new()
-        },
-        enums: if predicate(R::Enums) {
-            cfg.enums.clone()
-        } else {
-            Vec::new()
-        },
-        tables: if predicate(R::Tables) {
-            cfg.tables.clone()
-        } else {
-            Vec::new()
-        },
-        views: if predicate(R::Views) {
-            cfg.views.clone()
-        } else {
-            Vec::new()
-        },
-        materialized: if predicate(R::Materialized) {
-            cfg.materialized.clone()
-        } else {
-            Vec::new()
-        },
-        policies: if predicate(R::Policies) {
-            cfg.policies.clone()
-        } else {
-            Vec::new()
-        },
-        tests: if predicate(R::Tests) {
-            cfg.tests.clone()
-        } else {
-            Vec::new()
-        },
+        functions: maybe!(Functions, functions),
+        triggers: maybe!(Triggers, triggers),
+        extensions: maybe!(Extensions, extensions),
+        schemas: maybe!(Schemas, schemas),
+        enums: maybe!(Enums, enums),
+        tables: maybe!(Tables, tables),
+        views: maybe!(Views, views),
+        materialized: maybe!(Materialized, materialized),
+        policies: maybe!(Policies, policies),
+        tests: maybe!(Tests, tests),
+        ..Default::default()
     }
 }
 
@@ -125,11 +94,7 @@ pub fn apply_resource_filters(cfg: &Config, include: &[String], exclude: &[Strin
     })
 }
 
-pub fn generate_with_backend(
-    backend: &str,
-    cfg: &Config,
-    strict: bool,
-) -> Result<String> {
+pub fn generate_with_backend(backend: &str, cfg: &Config, strict: bool) -> Result<String> {
     let be = backends::get_backend(backend)
         .ok_or_else(|| anyhow::anyhow!(format!("unknown backend '{backend}'")))?;
     be.generate(cfg, strict)
@@ -138,9 +103,9 @@ pub fn generate_with_backend(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::frontend::env::EnvVars;
     use std::collections::HashMap;
     use std::path::PathBuf;
-    use crate::frontend::env::EnvVars;
 
     struct MapLoader {
         files: HashMap<PathBuf, String>,
