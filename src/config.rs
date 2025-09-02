@@ -75,6 +75,8 @@ pub struct Config {
 pub enum ResourceKind {
     Schemas,
     Enums,
+    Domains,
+    Types,
     Tables,
     Views,
     Materialized,
@@ -93,6 +95,8 @@ impl fmt::Display for ResourceKind {
         let s = match self {
             ResourceKind::Schemas => "schemas",
             ResourceKind::Enums => "enums",
+            ResourceKind::Domains => "domains",
+            ResourceKind::Types => "types",
             ResourceKind::Tables => "tables",
             ResourceKind::Views => "views",
             ResourceKind::Materialized => "materialized",
@@ -116,6 +120,8 @@ impl std::str::FromStr for ResourceKind {
         match s.to_lowercase().as_str() {
             "schemas" => Ok(ResourceKind::Schemas),
             "enums" => Ok(ResourceKind::Enums),
+            "domains" => Ok(ResourceKind::Domains),
+            "types" => Ok(ResourceKind::Types),
             "tables" => Ok(ResourceKind::Tables),
             "views" => Ok(ResourceKind::Views),
             "materialized" => Ok(ResourceKind::Materialized),
@@ -140,6 +146,8 @@ impl TargetConfig {
             vec![
                 ResourceKind::Schemas,
                 ResourceKind::Enums,
+                ResourceKind::Domains,
+                ResourceKind::Types,
                 ResourceKind::Tables,
                 ResourceKind::Views,
                 ResourceKind::Materialized,
@@ -215,7 +223,7 @@ mod tests {
         let include_set = target.get_include_set();
         assert!(include_set.contains(&ResourceKind::Tables));
         assert!(include_set.contains(&ResourceKind::Enums));
-        assert_eq!(include_set.len(), 13); // All resource types
+        assert_eq!(include_set.len(), 15); // All resource types
     }
 
     #[test]

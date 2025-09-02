@@ -8,6 +8,8 @@ pub struct Config {
     pub sequences: Vec<AstSequence>,
     pub schemas: Vec<AstSchema>,
     pub enums: Vec<AstEnum>,
+    pub domains: Vec<AstDomain>,
+    pub types: Vec<AstCompositeType>,
     pub tables: Vec<AstTable>,
     pub views: Vec<AstView>,
     pub materialized: Vec<AstMaterializedView>,
@@ -83,6 +85,32 @@ pub struct AstEnum {
     pub alt_name: Option<String>,
     pub schema: Option<String>,
     pub values: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AstDomain {
+    pub name: String,
+    pub alt_name: Option<String>,
+    pub schema: Option<String>,
+    pub r#type: String,
+    pub not_null: bool,
+    pub default: Option<String>,
+    pub constraint: Option<String>,
+    pub check: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AstCompositeType {
+    pub name: String,
+    pub alt_name: Option<String>,
+    pub schema: Option<String>,
+    pub fields: Vec<AstCompositeTypeField>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AstCompositeTypeField {
+    pub name: String,
+    pub r#type: String,
 }
 
 #[derive(Debug, Clone)]

@@ -404,6 +404,72 @@ impl ForEachSupport for AstEnum {
     }
 }
 
+// Domain implementation
+impl ForEachSupport for AstDomain {
+    type Item = Self;
+
+    fn parse_one(name: &str, body: &Body, env: &EnvVars) -> Result<Self::Item> {
+        let alt_name = get_attr_string(body, "name", env)?;
+        let schema = get_attr_string(body, "schema", env)?;
+        let r#type = get_attr_string(body, "type", env)?
+            .with_context(|| format!("domain '{}' missing type", name))?;
+        let not_null = get_attr_bool(body, "not_null", env)?.unwrap_or(false);
+        let default = get_attr_string(body, "default", env)?;
+        let constraint = get_attr_string(body, "constraint", env)?;
+        let check = get_attr_string(body, "check", env)?;
+        Ok(AstDomain {
+            name: name.to_string(),
+            alt_name,
+            schema,
+            r#type,
+            not_null,
+            default,
+            constraint,
+            check,
+        })
+    }
+
+    fn add_to_config(item: Self::Item, config: &mut Config) {
+        config.domains.push(item);
+    }
+}
+
+// Composite type implementation
+impl ForEachSupport for AstCompositeType {
+    type Item = Self;
+
+    fn parse_one(name: &str, body: &Body, env: &EnvVars) -> Result<Self::Item> {
+        let alt_name = get_attr_string(body, "name", env)?;
+        let schema = get_attr_string(body, "schema", env)?;
+        let mut fields = Vec::new();
+        for fblk in body.blocks().filter(|bb| bb.identifier() == "field") {
+            let fname = fblk
+                .labels()
+                .get(0)
+                .ok_or_else(|| anyhow::anyhow!("field block missing name label"))?
+                .as_str()
+                .to_string();
+            let fb = fblk.body();
+            let ftype = get_attr_string(fb, "type", env)?
+                .with_context(|| format!("field '{}' missing type", fname))?;
+            fields.push(AstCompositeTypeField {
+                name: fname,
+                r#type: ftype,
+            });
+        }
+        Ok(AstCompositeType {
+            name: name.to_string(),
+            alt_name,
+            schema,
+            fields,
+        })
+    }
+
+    fn add_to_config(item: Self::Item, config: &mut Config) {
+        config.types.push(item);
+    }
+}
+
 // Role implementation
 impl ForEachSupport for AstRole {
     type Item = Self;

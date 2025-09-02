@@ -793,6 +793,8 @@ fn load_file(
             env.modules.insert(label.as_str().to_string(), map);
             cfg.schemas.extend(sub.schemas);
             cfg.enums.extend(sub.enums);
+            cfg.domains.extend(sub.domains);
+            cfg.types.extend(sub.types);
             cfg.functions.extend(sub.functions);
             cfg.triggers.extend(sub.triggers);
             cfg.extensions.extend(sub.extensions);
@@ -989,6 +991,44 @@ fn load_file(
         let for_each_expr = find_attr(blk.body(), "for_each");
         let count_expr = find_attr(blk.body(), "count");
         execute_for_each::<ast::AstEnum>(
+            &name,
+            blk.body(),
+            &env,
+            &mut cfg,
+            for_each_expr,
+            count_expr,
+        )?;
+    }
+
+    for blk in body.blocks().filter(|b| b.identifier() == "domain") {
+        let name = blk
+            .labels()
+            .get(0)
+            .ok_or_else(|| anyhow::anyhow!("domain block missing name label"))?
+            .as_str()
+            .to_string();
+        let for_each_expr = find_attr(blk.body(), "for_each");
+        let count_expr = find_attr(blk.body(), "count");
+        execute_for_each::<ast::AstDomain>(
+            &name,
+            blk.body(),
+            &env,
+            &mut cfg,
+            for_each_expr,
+            count_expr,
+        )?;
+    }
+
+    for blk in body.blocks().filter(|b| b.identifier() == "type") {
+        let name = blk
+            .labels()
+            .get(0)
+            .ok_or_else(|| anyhow::anyhow!("type block missing name label"))?
+            .as_str()
+            .to_string();
+        let for_each_expr = find_attr(blk.body(), "for_each");
+        let count_expr = find_attr(blk.body(), "count");
+        execute_for_each::<ast::AstCompositeType>(
             &name,
             blk.body(),
             &env,

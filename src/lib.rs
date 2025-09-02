@@ -14,8 +14,9 @@ use std::path::Path;
 // Public re-exports
 use crate::frontend::env::EnvVars;
 pub use ir::{
-    Config, EnumSpec, ExtensionSpec, FunctionSpec, GrantSpec, MaterializedViewSpec, OutputSpec,
-    PolicySpec, RoleSpec, SchemaSpec, SequenceSpec, TableSpec, TriggerSpec, ViewSpec,
+    CompositeTypeSpec, Config, DomainSpec, EnumSpec, ExtensionSpec, FunctionSpec, GrantSpec,
+    MaterializedViewSpec, OutputSpec, PolicySpec, RoleSpec, SchemaSpec, SequenceSpec, TableSpec,
+    TriggerSpec, ViewSpec,
 };
 
 // Loader abstraction: lets callers control how files are read.
@@ -54,6 +55,8 @@ where
         sequences: maybe!(Sequences, sequences),
         schemas: maybe!(Schemas, schemas),
         enums: maybe!(Enums, enums),
+        domains: maybe!(Domains, domains),
+        types: maybe!(Types, types),
         tables: maybe!(Tables, tables),
         views: maybe!(Views, views),
         materialized: maybe!(Materialized, materialized),

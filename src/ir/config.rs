@@ -9,6 +9,8 @@ pub struct Config {
     pub sequences: Vec<SequenceSpec>,
     pub schemas: Vec<SchemaSpec>,
     pub enums: Vec<EnumSpec>,
+    pub domains: Vec<DomainSpec>,
+    pub types: Vec<CompositeTypeSpec>,
     pub tables: Vec<TableSpec>,
     pub views: Vec<ViewSpec>,
     pub materialized: Vec<MaterializedViewSpec>,
@@ -84,6 +86,32 @@ pub struct EnumSpec {
     pub alt_name: Option<String>,
     pub schema: Option<String>,
     pub values: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DomainSpec {
+    pub name: String,
+    pub alt_name: Option<String>,
+    pub schema: Option<String>,
+    pub r#type: String,
+    pub not_null: bool,
+    pub default: Option<String>,
+    pub constraint: Option<String>,
+    pub check: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CompositeTypeSpec {
+    pub name: String,
+    pub alt_name: Option<String>,
+    pub schema: Option<String>,
+    pub fields: Vec<CompositeTypeFieldSpec>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CompositeTypeFieldSpec {
+    pub name: String,
+    pub r#type: String,
 }
 
 #[derive(Debug, Clone, Serialize)]

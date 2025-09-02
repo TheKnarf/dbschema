@@ -39,6 +39,14 @@ fn to_sql(cfg: &Config) -> Result<String> {
         out.push_str(&format!("{}\n\n", pg::Enum::from(e)));
     }
 
+    for d in &cfg.domains {
+        out.push_str(&format!("{}\n\n", pg::Domain::from(d)));
+    }
+
+    for t in &cfg.types {
+        out.push_str(&format!("{}\n\n", pg::CompositeType::from(t)));
+    }
+
     for t in &cfg.tables {
         out.push_str(&format!("{}\n\n", pg::Table::from(t)));
         for idx in &t.indexes {
