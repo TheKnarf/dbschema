@@ -1,3 +1,4 @@
+use anyhow::Result;
 use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -147,12 +148,12 @@ impl TargetConfig {
 }
 
 /// Load configuration from dbschema.toml file
-pub fn load_config() -> Result<Option<Config>, Box<dyn std::error::Error>> {
-    load_config_from_path(&Path::new("dbschema.toml"))
+pub fn load_config() -> Result<Option<Config>> {
+    load_config_from_path(Path::new("dbschema.toml"))
 }
 
 /// Load configuration from a specific path
-pub fn load_config_from_path(path: &Path) -> Result<Option<Config>, Box<dyn std::error::Error>> {
+pub fn load_config_from_path(path: &Path) -> Result<Option<Config>> {
     if !path.exists() {
         return Ok(None);
     }
