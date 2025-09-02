@@ -7,7 +7,7 @@ WebAssembly.
 
 ## Setup
 
-Download the required WebAssembly artifacts with:
+Install the required WebAssembly package with:
 
 ```sh
 just --justfile crates/pglite/justfile pglite-assets
@@ -15,7 +15,8 @@ just --justfile crates/pglite/justfile pglite-assets
 just pglite-assets
 ```
 
-This fetches the `pglite.wasm` and `pglite.data` files into `vendor/pglite`.
+This runs `pnpm install`, placing `pglite.wasm` and `pglite.data` under
+`node_modules/@electric-sql/pglite/dist` for the runtime to load.
 
 ## Usage
 

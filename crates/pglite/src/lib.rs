@@ -2,6 +2,7 @@ use anyhow::{anyhow, Result};
 use bytes::BytesMut;
 use fallible_iterator::FallibleIterator;
 use postgres_protocol::message::{backend, frontend};
+use std::path::PathBuf;
 use wasmtime::{Engine, Instance, Linker, Memory, Module, Store, TypedFunc};
 use wasmtime_wasi::{
     preview1::{add_to_linker_sync, WasiP1Ctx},
@@ -30,11 +31,13 @@ pub struct PGliteRuntime {
 impl PGliteRuntime {
     /// Load the PGlite module and initialise the database files.
     pub fn new() -> Result<Self> {
-        // Locate the bundled wasm and data files
-        let wasm_path = "vendor/pglite/pglite.wasm";
+        // Locate the bundled wasm and data files within node_modules
+        let pkg_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("node_modules/@electric-sql/pglite/dist");
+        let wasm_path = pkg_dir.join("pglite.wasm");
 
         let engine = Engine::default();
-        let module = Module::from_file(&engine, wasm_path)?;
+        let module = Module::from_file(&engine, &wasm_path)?;
         let mut linker = Linker::new(&engine);
         // Minimal host env required by the PGlite module
         linker.func_wrap("env", "invoke_iii", |_a: i32, _b: i32, _c: i32| -> i32 {
@@ -53,7 +56,7 @@ impl PGliteRuntime {
         // Preopen the directory containing pglite.data as /tmp/pglite
         let mut builder = WasiCtxBuilder::new();
         builder.inherit_stdio().preopened_dir(
-            "vendor/pglite",
+            &pkg_dir,
             "/tmp/pglite",
             DirPerms::all(),
             FilePerms::all(),
