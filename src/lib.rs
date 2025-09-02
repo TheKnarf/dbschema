@@ -2,11 +2,11 @@ pub mod backends;
 pub mod config;
 pub mod frontend;
 pub mod ir;
+pub mod lint;
 pub mod passes;
 pub mod postgres;
 pub mod prisma;
 pub mod test_runner;
-pub mod lint;
 
 use anyhow::Result;
 // Keep types public via re-exports
@@ -596,6 +596,7 @@ mod tests {
                 replace: false,
                 security_definer: false,
                 body: String::new(),
+                comment: None,
             }],
             tables: vec![TableSpec {
                 name: "t".into(),
@@ -608,6 +609,7 @@ mod tests {
                 foreign_keys: vec![],
                 back_references: vec![],
                 lint_ignore: vec![],
+                comment: None,
             }],
             ..Default::default()
         };
@@ -633,6 +635,7 @@ mod tests {
                 replace: false,
                 security_definer: false,
                 body: String::new(),
+                comment: None,
             }],
             tables: vec![TableSpec {
                 name: "t".into(),
@@ -645,6 +648,7 @@ mod tests {
                 foreign_keys: vec![],
                 back_references: vec![],
                 lint_ignore: vec![],
+                comment: None,
             }],
             ..Default::default()
         };

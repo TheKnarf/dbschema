@@ -21,57 +21,194 @@ fn to_sql(cfg: &Config) -> Result<String> {
 
     for r in &cfg.roles {
         out.push_str(&format!("{}\n\n", pg::Role::from(r)));
+        if let Some(comment) = &r.comment {
+            let name = r.alt_name.clone().unwrap_or_else(|| r.name.clone());
+            out.push_str(&format!(
+                "COMMENT ON ROLE {} IS {};\n\n",
+                pg::ident(&name),
+                pg::literal(comment)
+            ));
+        }
     }
 
     for s in &cfg.schemas {
         out.push_str(&format!("{}\n\n", pg::Schema::from(s)));
+        if let Some(comment) = &s.comment {
+            let name = s.alt_name.clone().unwrap_or_else(|| s.name.clone());
+            out.push_str(&format!(
+                "COMMENT ON SCHEMA {} IS {};\n\n",
+                pg::ident(&name),
+                pg::literal(comment)
+            ));
+        }
     }
 
     for e in &cfg.extensions {
         out.push_str(&format!("{}\n\n", pg::Extension::from(e)));
+        if let Some(comment) = &e.comment {
+            let name = e.alt_name.clone().unwrap_or_else(|| e.name.clone());
+            out.push_str(&format!(
+                "COMMENT ON EXTENSION {} IS {};\n\n",
+                pg::ident(&name),
+                pg::literal(comment)
+            ));
+        }
     }
 
     for s in &cfg.sequences {
         out.push_str(&format!("{}\n\n", pg::Sequence::from(s)));
+        if let Some(comment) = &s.comment {
+            let schema = s.schema.clone().unwrap_or_else(|| "public".to_string());
+            let name = s.alt_name.clone().unwrap_or_else(|| s.name.clone());
+            out.push_str(&format!(
+                "COMMENT ON SEQUENCE {}.{} IS {};\n\n",
+                pg::ident(&schema),
+                pg::ident(&name),
+                pg::literal(comment)
+            ));
+        }
     }
 
     for e in &cfg.enums {
         out.push_str(&format!("{}\n\n", pg::Enum::from(e)));
+        if let Some(comment) = &e.comment {
+            let schema = e.schema.clone().unwrap_or_else(|| "public".to_string());
+            let name = e.alt_name.clone().unwrap_or_else(|| e.name.clone());
+            out.push_str(&format!(
+                "COMMENT ON TYPE {}.{} IS {};\n\n",
+                pg::ident(&schema),
+                pg::ident(&name),
+                pg::literal(comment)
+            ));
+        }
     }
 
     for d in &cfg.domains {
         out.push_str(&format!("{}\n\n", pg::Domain::from(d)));
+        if let Some(comment) = &d.comment {
+            let schema = d.schema.clone().unwrap_or_else(|| "public".to_string());
+            let name = d.alt_name.clone().unwrap_or_else(|| d.name.clone());
+            out.push_str(&format!(
+                "COMMENT ON DOMAIN {}.{} IS {};\n\n",
+                pg::ident(&schema),
+                pg::ident(&name),
+                pg::literal(comment)
+            ));
+        }
     }
 
     for t in &cfg.types {
         out.push_str(&format!("{}\n\n", pg::CompositeType::from(t)));
+        if let Some(comment) = &t.comment {
+            let schema = t.schema.clone().unwrap_or_else(|| "public".to_string());
+            let name = t.alt_name.clone().unwrap_or_else(|| t.name.clone());
+            out.push_str(&format!(
+                "COMMENT ON TYPE {}.{} IS {};\n\n",
+                pg::ident(&schema),
+                pg::ident(&name),
+                pg::literal(comment)
+            ));
+        }
     }
 
     for t in &cfg.tables {
         out.push_str(&format!("{}\n\n", pg::Table::from(t)));
+        let schema = t.schema.clone().unwrap_or_else(|| "public".to_string());
+        let table_name = t.table_name.clone().unwrap_or_else(|| t.name.clone());
         for idx in &t.indexes {
             out.push_str(&format!("{}\n\n", pg::Index::from_specs(t, idx)));
+        }
+        if let Some(comment) = &t.comment {
+            out.push_str(&format!(
+                "COMMENT ON TABLE {}.{} IS {};\n\n",
+                pg::ident(&schema),
+                pg::ident(&table_name),
+                pg::literal(comment)
+            ));
+        }
+        for c in &t.columns {
+            if let Some(comment) = &c.comment {
+                out.push_str(&format!(
+                    "COMMENT ON COLUMN {}.{}.{} IS {};\n\n",
+                    pg::ident(&schema),
+                    pg::ident(&table_name),
+                    pg::ident(&c.name),
+                    pg::literal(comment)
+                ));
+            }
         }
     }
 
     for p in &cfg.policies {
         out.push_str(&format!("{}\n\n", pg::Policy::from(p)));
+        if let Some(comment) = &p.comment {
+            let schema = p.schema.clone().unwrap_or_else(|| "public".to_string());
+            let name = p.alt_name.clone().unwrap_or_else(|| p.name.clone());
+            out.push_str(&format!(
+                "COMMENT ON POLICY {} ON {}.{} IS {};\n\n",
+                pg::ident(&name),
+                pg::ident(&schema),
+                pg::ident(&p.table),
+                pg::literal(comment)
+            ));
+        }
     }
 
     for f in &cfg.functions {
         out.push_str(&format!("{}\n\n", pg::Function::from(f)));
+        if let Some(comment) = &f.comment {
+            let schema = f.schema.clone().unwrap_or_else(|| "public".to_string());
+            let name = f.alt_name.clone().unwrap_or_else(|| f.name.clone());
+            out.push_str(&format!(
+                "COMMENT ON FUNCTION {}.{}() IS {};\n\n",
+                pg::ident(&schema),
+                pg::ident(&name),
+                pg::literal(comment)
+            ));
+        }
     }
 
     for v in &cfg.views {
         out.push_str(&format!("{}\n\n", pg::View::from(v)));
+        if let Some(comment) = &v.comment {
+            let schema = v.schema.clone().unwrap_or_else(|| "public".to_string());
+            let name = v.alt_name.clone().unwrap_or_else(|| v.name.clone());
+            out.push_str(&format!(
+                "COMMENT ON VIEW {}.{} IS {};\n\n",
+                pg::ident(&schema),
+                pg::ident(&name),
+                pg::literal(comment)
+            ));
+        }
     }
 
     for mv in &cfg.materialized {
         out.push_str(&format!("{}\n\n", pg::MaterializedView::from(mv)));
+        if let Some(comment) = &mv.comment {
+            let schema = mv.schema.clone().unwrap_or_else(|| "public".to_string());
+            let name = mv.alt_name.clone().unwrap_or_else(|| mv.name.clone());
+            out.push_str(&format!(
+                "COMMENT ON MATERIALIZED VIEW {}.{} IS {};\n\n",
+                pg::ident(&schema),
+                pg::ident(&name),
+                pg::literal(comment)
+            ));
+        }
     }
 
     for t in &cfg.triggers {
         out.push_str(&format!("{}\n\n", pg::Trigger::from(t)));
+        if let Some(comment) = &t.comment {
+            let schema = t.schema.clone().unwrap_or_else(|| "public".to_string());
+            let name = t.alt_name.clone().unwrap_or_else(|| t.name.clone());
+            out.push_str(&format!(
+                "COMMENT ON TRIGGER {} ON {}.{} IS {};\n\n",
+                pg::ident(&name),
+                pg::ident(&schema),
+                pg::ident(&t.table),
+                pg::literal(comment)
+            ));
+        }
     }
 
     for g in &cfg.grants {
