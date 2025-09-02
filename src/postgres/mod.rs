@@ -110,6 +110,89 @@ impl fmt::Display for Schema {
 }
 
 #[derive(Debug, Clone)]
+pub struct Sequence {
+    pub schema: String,
+    pub name: String,
+    pub if_not_exists: bool,
+    pub r#as: Option<String>,
+    pub increment: Option<i64>,
+    pub min_value: Option<i64>,
+    pub max_value: Option<i64>,
+    pub start: Option<i64>,
+    pub cache: Option<i64>,
+    pub cycle: bool,
+    pub owned_by: Option<String>,
+}
+
+impl From<&crate::ir::SequenceSpec> for Sequence {
+    fn from(s: &crate::ir::SequenceSpec) -> Self {
+        Self {
+            schema: s.schema.clone().unwrap_or_else(|| "public".to_string()),
+            name: s.alt_name.clone().unwrap_or_else(|| s.name.clone()),
+            if_not_exists: s.if_not_exists,
+            r#as: s.r#as.clone(),
+            increment: s.increment,
+            min_value: s.min_value,
+            max_value: s.max_value,
+            start: s.start,
+            cache: s.cache,
+            cycle: s.cycle,
+            owned_by: s.owned_by.clone(),
+        }
+    }
+}
+
+impl fmt::Display for Sequence {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "CREATE SEQUENCE")?;
+        if self.if_not_exists {
+            write!(f, " IF NOT EXISTS")?;
+        }
+        write!(f, " {}.{}", ident(&self.schema), ident(&self.name))?;
+        if let Some(t) = &self.r#as {
+            write!(f, " AS {}", t)?;
+        }
+        if let Some(i) = self.increment {
+            write!(f, " INCREMENT BY {}", i)?;
+        }
+        if let Some(min) = self.min_value {
+            write!(f, " MINVALUE {}", min)?;
+        }
+        if let Some(max) = self.max_value {
+            write!(f, " MAXVALUE {}", max)?;
+        }
+        if let Some(start) = self.start {
+            write!(f, " START WITH {}", start)?;
+        }
+        if let Some(cache) = self.cache {
+            write!(f, " CACHE {}", cache)?;
+        }
+        if self.cycle {
+            write!(f, " CYCLE")?;
+        }
+        if let Some(ob) = &self.owned_by {
+            if ob.eq_ignore_ascii_case("NONE") {
+                write!(f, " OWNED BY NONE")?;
+            } else {
+                let parts: Vec<&str> = ob.split('.').collect();
+                match parts.as_slice() {
+                    [table, column] => write!(f, " OWNED BY {}.{}", ident(table), ident(column))?,
+                    [schema, table, column] => write!(
+                        f,
+                        " OWNED BY {}.{}.{}",
+                        ident(schema),
+                        ident(table),
+                        ident(column)
+                    )?,
+                    _ => write!(f, " OWNED BY {}", ob)?,
+                }
+            }
+        }
+        write!(f, ";")
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct Enum {
     pub schema: String,
     pub name: String,

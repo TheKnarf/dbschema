@@ -19,7 +19,7 @@ input = "main.hcl"
 output = "schema.sql"
 
 # Include/exclude filters
-include = ["schemas", "tables", "views", "functions", "triggers", "extensions", "policies"]
+include = ["schemas", "sequences", "tables", "views", "functions", "triggers", "extensions", "policies"]
 exclude = []
 
 # Variables for this target
@@ -47,7 +47,7 @@ input = "main.hcl"
 output = "docs/schema.json"
 
 # Include everything for documentation
-include = ["schemas", "enums", "tables", "views", "materialized", "functions", "triggers", "extensions", "policies", "tests"]
+include = ["schemas", "sequences", "enums", "tables", "views", "materialized", "functions", "triggers", "extensions", "policies", "tests"]
 exclude = []
 
 # Documentation-specific variables
@@ -61,7 +61,7 @@ input = "main.hcl"
 output = "test_schema.sql"
 
 # Include test resources
-include = ["schemas", "tables", "functions", "triggers", "tests"]
+include = ["schemas", "sequences", "tables", "functions", "triggers", "tests"]
 exclude = ["extensions", "policies"]
 
 # Test-specific variables

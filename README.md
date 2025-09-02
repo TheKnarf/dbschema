@@ -14,6 +14,7 @@ Prisma ORM support custom migrations, so you can use this tool to generate an SQ
    - `locals`
    - `schema`
    - `enum`
+   - `sequence`
    - `table`
    - `view`
    - `materialized`
@@ -185,6 +186,20 @@ enum "<name>" {
   values = ["a", "b"]  # required
 }
 
+sequence "<name>" {
+  name        = "<new_name>"   # optional, overrides the block name
+  schema      = "public"       # optional, default "public"
+  if_not_exists = true          # optional, default true
+  as          = "bigint"       # optional
+  increment   = 1               # optional
+  min_value   = 1               # optional
+  max_value   = null            # optional
+  start       = 1               # optional
+  cache       = 1               # optional
+  cycle       = false           # optional
+  owned_by    = "table.column" # optional
+}
+
 trigger "<name>" {
   name     = "<new_name>"     # optional, overrides the block name
   schema     = "public"        # optional, default "public"
@@ -288,7 +303,7 @@ module "<name>" {
 - Control which resources are included per run:
   - `--include tables --include functions` (repeatable)
   - `--exclude tables` (repeatable)
-  - Resource kinds: `schemas, enums, tables, views, materialized, functions, triggers, extensions, policies, tests`
+  - Resource kinds: `schemas, sequences, enums, tables, views, materialized, functions, triggers, extensions, policies, tests`
 - Example split-output workflow:
   - Prisma models for tables: `dbschema --backend prisma --include tables --input examples/main.hcl create-migration --out-dir prisma --name schema`
   - SQL for everything else: `dbschema --backend postgres --exclude tables --input examples/main.hcl create-migration --out-dir migrations --name non_tables`

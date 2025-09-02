@@ -6,6 +6,7 @@ pub struct Config {
     pub functions: Vec<FunctionSpec>,
     pub triggers: Vec<TriggerSpec>,
     pub extensions: Vec<ExtensionSpec>,
+    pub sequences: Vec<SequenceSpec>,
     pub schemas: Vec<SchemaSpec>,
     pub enums: Vec<EnumSpec>,
     pub tables: Vec<TableSpec>,
@@ -51,6 +52,22 @@ pub struct ExtensionSpec {
     pub if_not_exists: bool,
     pub schema: Option<String>,
     pub version: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SequenceSpec {
+    pub name: String,
+    pub alt_name: Option<String>,
+    pub schema: Option<String>,
+    pub if_not_exists: bool,
+    pub r#as: Option<String>,
+    pub increment: Option<i64>,
+    pub min_value: Option<i64>,
+    pub max_value: Option<i64>,
+    pub start: Option<i64>,
+    pub cache: Option<i64>,
+    pub cycle: bool,
+    pub owned_by: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

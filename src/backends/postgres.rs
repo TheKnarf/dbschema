@@ -31,6 +31,10 @@ fn to_sql(cfg: &Config) -> Result<String> {
         out.push_str(&format!("{}\n\n", pg::Extension::from(e)));
     }
 
+    for s in &cfg.sequences {
+        out.push_str(&format!("{}\n\n", pg::Sequence::from(s)));
+    }
+
     for e in &cfg.enums {
         out.push_str(&format!("{}\n\n", pg::Enum::from(e)));
     }

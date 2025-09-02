@@ -660,6 +660,7 @@ fn load_file(
                 cfg.functions.extend(sub.functions);
                 cfg.triggers.extend(sub.triggers);
                 cfg.extensions.extend(sub.extensions);
+                cfg.sequences.extend(sub.sequences);
                 cfg.tables.extend(sub.tables);
                 cfg.views.extend(sub.views);
                 cfg.materialized.extend(sub.materialized);
@@ -710,6 +711,7 @@ fn load_file(
             cfg.functions.extend(sub.functions);
             cfg.triggers.extend(sub.triggers);
             cfg.extensions.extend(sub.extensions);
+            cfg.sequences.extend(sub.sequences);
             cfg.tables.extend(sub.tables);
             cfg.views.extend(sub.views);
             cfg.materialized.extend(sub.materialized);
@@ -730,6 +732,17 @@ fn load_file(
             .to_string();
         let for_each_expr = find_attr(blk.body(), "for_each");
         execute_for_each::<ast::AstSchema>(&name, blk.body(), &env, &mut cfg, for_each_expr)?;
+    }
+
+    for blk in body.blocks().filter(|b| b.identifier() == "sequence") {
+        let name = blk
+            .labels()
+            .get(0)
+            .ok_or_else(|| anyhow::anyhow!("sequence block missing name label"))?
+            .as_str()
+            .to_string();
+        let for_each_expr = find_attr(blk.body(), "for_each");
+        execute_for_each::<ast::AstSequence>(&name, blk.body(), &env, &mut cfg, for_each_expr)?;
     }
 
     for blk in body.blocks().filter(|b| b.identifier() == "table") {
