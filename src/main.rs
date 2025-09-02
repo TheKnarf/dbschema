@@ -7,7 +7,7 @@ use dbschema::{
     load_config, validate, EnvVars, Loader,
 };
 use log::{error, info};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -124,12 +124,9 @@ fn main() -> Result<()> {
         let config = load_config(&cli.input, &fs_loader, env.clone())
             .with_context(|| format!("loading root HCL {}", cli.input.display()))?;
 
-        let filtered = apply_cli_filters(
-            &config,
-            &cli.backend,
-            &cli.include_resources,
-            &cli.exclude_resources,
-        );
+        let (include_set, exclude_set) =
+            cli_filter_sets(&cli.backend, &cli.include_resources, &cli.exclude_resources);
+        let filtered = apply_filters(&config, &include_set, &exclude_set);
 
         match command {
             Commands::Validate {} => {
@@ -357,14 +354,14 @@ impl Loader for FsLoader {
     }
 }
 
-fn apply_cli_filters(
-    cfg: &dbschema::Config,
+fn cli_filter_sets(
     backend: &str,
     include: &[ResourceKind],
     exclude: &[ResourceKind],
-) -> dbschema::Config {
+) -> (HashSet<ResourceKind>, HashSet<ResourceKind>) {
     use ResourceKind as R;
-    let mut inc: std::collections::HashSet<R> = if include.is_empty() {
+
+    let mut include_set: HashSet<R> = if include.is_empty() {
         [
             R::Schemas,
             R::Enums,
@@ -382,73 +379,22 @@ fn apply_cli_filters(
     } else {
         include.iter().copied().collect()
     };
-    for r in exclude {
-        inc.remove(r);
+
+    let exclude_set: HashSet<R> = exclude.iter().copied().collect();
+
+    for r in &exclude_set {
+        include_set.remove(r);
     }
 
     // Prisma backend supports tables and enums only; enforce that regardless of flags unless explicitly excluded
     if backend.eq_ignore_ascii_case("prisma") {
-        inc = [R::Enums, R::Tables].into_iter().collect();
-        if exclude.iter().any(|e| *e == R::Tables) {
-            inc.retain(|r| *r != R::Tables);
-        }
-        if exclude.iter().any(|e| *e == R::Enums) {
-            inc.retain(|r| *r != R::Enums);
+        include_set = [R::Enums, R::Tables].into_iter().collect();
+        for r in &exclude_set {
+            include_set.remove(r);
         }
     }
 
-    dbschema::Config {
-        schemas: if inc.contains(&R::Schemas) {
-            cfg.schemas.clone()
-        } else {
-            Vec::new()
-        },
-        enums: if inc.contains(&R::Enums) {
-            cfg.enums.clone()
-        } else {
-            Vec::new()
-        },
-        tables: if inc.contains(&R::Tables) {
-            cfg.tables.clone()
-        } else {
-            Vec::new()
-        },
-        views: if inc.contains(&R::Views) {
-            cfg.views.clone()
-        } else {
-            Vec::new()
-        },
-        materialized: if inc.contains(&R::Materialized) {
-            cfg.materialized.clone()
-        } else {
-            Vec::new()
-        },
-        functions: if inc.contains(&R::Functions) {
-            cfg.functions.clone()
-        } else {
-            Vec::new()
-        },
-        triggers: if inc.contains(&R::Triggers) {
-            cfg.triggers.clone()
-        } else {
-            Vec::new()
-        },
-        extensions: if inc.contains(&R::Extensions) {
-            cfg.extensions.clone()
-        } else {
-            Vec::new()
-        },
-        policies: if inc.contains(&R::Policies) {
-            cfg.policies.clone()
-        } else {
-            Vec::new()
-        },
-        tests: if inc.contains(&R::Tests) {
-            cfg.tests.clone()
-        } else {
-            Vec::new()
-        },
-    }
+    (include_set, exclude_set)
 }
 
 #[cfg(test)]
