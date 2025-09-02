@@ -8,8 +8,8 @@ use std::{
 };
 use wasmtime::FuncType;
 use wasmtime::{
-    Caller, Engine, ExternType, Global, GlobalType, Instance, Linker, Memory, Module, Ref, Store,
-    Table, TypedFunc, Val, ValType,
+    Caller, Engine, ExternType, Global, Instance, Linker, Memory, Module, Ref, Store, Table,
+    TypedFunc, Val, ValType,
 };
 use wasmtime_wasi::{
     preview1::{add_to_linker_sync, WasiP1Ctx},
@@ -77,7 +77,7 @@ fn bind_module_imports(
 
     for import in module.imports() {
         let module_name = import.module();
-        let name = import.name().unwrap_or("");
+        let name = import.name();
         match import.ty() {
             ExternType::Func(ty) if module_name == "env" => {
                 if name.starts_with("invoke_") || name == "exit" || name == "getaddrinfo" {
@@ -92,25 +92,27 @@ fn bind_module_imports(
                 })?;
             }
             ExternType::Memory(mt) if module_name == "env" && name == "memory" => {
-                let mem = Memory::new(store, mt)?;
-                linker.define(module_name, name, mem.clone())?;
+                let mem = Memory::new(&mut *store, mt)?;
+                linker.define(&mut *store, module_name, name, mem.clone())?;
                 memory = Some(mem);
             }
             ExternType::Table(tt)
                 if module_name == "env" && name == "__indirect_function_table" =>
             {
-                let tbl = Table::new(store, tt)?;
-                linker.define(module_name, name, tbl.clone())?;
+                let tbl = Table::new(&mut *store, tt, Ref::Func(None))?;
+                linker.define(&mut *store, module_name, name, tbl.clone())?;
                 *table_cell.lock().unwrap() = Some(tbl.clone());
                 table = Some(tbl);
             }
             ExternType::Global(gt) if module_name == "env" => {
-                let g = Global::new(store, gt, default_valtype(gt.content()))?;
-                linker.define(module_name, name, g)?;
+                let content = gt.content().clone();
+                let g = Global::new(&mut *store, gt, default_valtype(content))?;
+                linker.define(&mut *store, module_name, name, g)?;
             }
             ExternType::Global(gt) if module_name == "GOT.mem" && name == "__heap_base" => {
-                let g = Global::new(store, gt, default_valtype(gt.content()))?;
-                linker.define(module_name, name, g)?;
+                let content = gt.content().clone();
+                let g = Global::new(&mut *store, gt, default_valtype(content))?;
+                linker.define(&mut *store, module_name, name, g)?;
             }
             _ => {}
         }
