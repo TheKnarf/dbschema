@@ -240,6 +240,48 @@ mod tests {
     }
 
     #[test]
+    fn variable_type_and_validation() {
+        use hcl::Value;
+        let mut files = HashMap::new();
+        files.insert(
+            p("/root/main.hcl"),
+            r#"
+            variable "count" {
+              type = "number"
+              validation = var.count > 0
+            }
+            "#
+            .to_string(),
+        );
+        let loader = MapLoader { files };
+
+        // Wrong type
+        let env = EnvVars {
+            vars: HashMap::from([("count".into(), Value::String("x".into()))]),
+            ..EnvVars::default()
+        };
+        let err = load_config(&p("/root/main.hcl"), &loader, env).unwrap_err();
+        assert!(err.to_string().contains("expected type number"));
+
+        // Fails validation
+        let env = EnvVars {
+            vars: HashMap::from([("count".into(), Value::from(0))]),
+            ..EnvVars::default()
+        };
+        let err = load_config(&p("/root/main.hcl"), &loader, env).unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("validation for variable 'count' failed"));
+
+        // Passes
+        let env = EnvVars {
+            vars: HashMap::from([("count".into(), Value::from(2))]),
+            ..EnvVars::default()
+        };
+        load_config(&p("/root/main.hcl"), &loader, env).unwrap();
+    }
+
+    #[test]
     fn for_each_array_in_trigger_uses_each_value() {
         let mut files = HashMap::new();
         files.insert(
