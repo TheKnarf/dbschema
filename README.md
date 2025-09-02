@@ -233,7 +233,15 @@ module "<name>" {
 
 ## Examples
 
-See `examples/main.hcl` and `examples/modules/timestamps/main.hcl`.
+Each feature is shown in a small file under `examples/`, each including a `test` block:
+
+- `variable.hcl`, `locals.hcl`, `schema.hcl`
+- `enum.hcl`, `table.hcl`, `view.hcl`, `materialized.hcl`
+- `function.hcl`, `trigger.hcl`, `extension.hcl`, `policy.hcl`
+- `module.hcl` (uses `examples/modules/timestamps`)
+- `output.hcl`, `dynamic.hcl`, `for_each.hcl`
+
+These examples can be mixed and matched as starting points for your own schema.
 
 ## Notes
 
