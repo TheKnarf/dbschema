@@ -25,6 +25,7 @@ Prisma ORM support custom migrations, so you can use this tool to generate an SQ
    - `test`
 
 - Variables via `--var key=value` and `--var-file`.
+- Dynamic blocks: replicate nested blocks with `dynamic "name" { for_each = ... content { ... } }`.
 - Modules: `module "name" { source = "./path" ... }`.
 - Validate config, then generate SQL with safe `CREATE OR REPLACE FUNCTION` and idempotent guards for triggers/enums/materialized views.
 
@@ -241,13 +242,15 @@ See `examples/main.hcl` and `examples/modules/timestamps/main.hcl`.
 - Variables can be arrays/objects; use `for_each` on blocks and `each.value` inside.
 - Tests currently run against Postgres only; each test executes inside a transaction and is rolled back.
 
-## Variables, for_each, and each.value
+## Variables, for_each, dynamic blocks, and each.value
 
 - Variables can be strings, numbers, booleans, arrays, or objects.
 - Use `variable "name" { default = [...] }` or provide via `--var-file`.
 - Replicate blocks with `for_each` on the block (arrays or objects):
   - Arrays: `each.key` is the index (number), `each.value` is the element.
   - Objects: `each.key` is the object key (string), `each.value` is the value.
+- Generate nested blocks with Terraform-style `dynamic` blocks:
+  - Set `labels` to populate block labels when needed.
 - Example:
 
 ```hcl
@@ -261,6 +264,28 @@ trigger "upd" {
   events   = ["UPDATE"]
   level    = "ROW"
   function = "set_updated_at"
+}
+```
+
+Dynamic blocks allow repeated nested blocks. This example builds columns from a map:
+
+```hcl
+variable "cols" {
+  default = {
+    id   = { type = "serial", nullable = false }
+    name = { type = "text",   nullable = true }
+  }
+}
+
+table "users" {
+  dynamic "column" {
+    for_each = var.cols
+    labels   = [each.key]
+    content {
+      type     = each.value.type
+      nullable = each.value.nullable
+    }
+  }
 }
 ```
 
