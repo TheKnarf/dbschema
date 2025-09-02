@@ -2,7 +2,6 @@ pub mod backends;
 pub mod config;
 pub mod eval;
 pub mod model;
-pub mod parser;
 pub mod test_runner;
 pub mod validate;
 
@@ -23,7 +22,7 @@ pub trait Loader {
 
 // Pure API: parse + evaluate HCL config starting at `root_path` using a Loader.
 pub fn load_config(root_path: &Path, loader: &dyn Loader, env: EnvVars) -> Result<Config> {
-    parser::load_root_with_loader(root_path, loader, env)
+    eval::load_root_with_loader(root_path, loader, env)
 }
 
 // Pure validation: check references etc.
