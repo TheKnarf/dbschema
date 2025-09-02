@@ -3,7 +3,7 @@ use postgres::{Client, NoTls, Row};
 use std::collections::HashSet;
 
 use super::{TestBackend, TestResult, TestSummary};
-use crate::model::Config;
+use crate::ir::Config;
 
 pub struct PostgresTestBackend;
 

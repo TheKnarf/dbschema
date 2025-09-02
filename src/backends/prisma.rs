@@ -1,5 +1,6 @@
 use super::Backend;
-use crate::model::{ColumnSpec, Config, EnumSpec, TableSpec};
+use crate::ir::{ColumnSpec, Config, EnumSpec, TableSpec};
+use crate::passes::validate::{find_enum_for_type, is_likely_enum};
 
 use anyhow::{bail, Result};
 
@@ -12,7 +13,7 @@ impl Backend for PrismaBackend {
     fn file_extension(&self) -> &'static str {
         "prisma"
     }
-    fn generate(&self, cfg: &Config, _env: &crate::model::EnvVars, strict: bool) -> Result<String> {
+    fn generate(&self, cfg: &Config, _env: &crate::ir::EnvVars, strict: bool) -> Result<String> {
         let mut out = String::new();
         // Output only enums and models; generator/datasource are managed externally.
 
@@ -82,7 +83,7 @@ fn render_model(t: &TableSpec, enums: &[EnumSpec], strict: bool) -> Result<Strin
 fn render_field(c: &ColumnSpec, t: &TableSpec, enums: &[EnumSpec], strict: bool) -> Result<String> {
     let _table_name = t.table_name.as_deref().unwrap_or(&t.name);
     let (ptype, db_attr) = {
-        let found_enum = crate::validate::find_enum_for_type(enums, &c.r#type, t.schema.as_deref());
+        let found_enum = find_enum_for_type(enums, &c.r#type, t.schema.as_deref());
         if let Some(e) = found_enum {
             // Enum is defined in HCL
             (e.alt_name.as_deref().unwrap_or(&e.name).to_string(), None)
@@ -92,7 +93,7 @@ fn render_field(c: &ColumnSpec, t: &TableSpec, enums: &[EnumSpec], strict: bool)
                 "Enum type '{}' not found in HCL and strict mode is enabled",
                 c.r#type
             );
-        } else if crate::validate::is_likely_enum(&c.r#type) {
+        } else if is_likely_enum(&c.r#type) {
             // Non-strict mode: assume enum exists externally, use its raw name
             (c.r#type.clone(), None)
         } else {
