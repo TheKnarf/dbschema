@@ -1,6 +1,7 @@
 use super::Backend;
 use crate::ir::{ColumnSpec, Config, EnumSpec, TableSpec};
 use crate::passes::validate::{find_enum_for_type, is_likely_enum};
+use crate::prisma as ps;
 
 use anyhow::{bail, Result};
 
@@ -14,204 +15,191 @@ impl Backend for PrismaBackend {
         "prisma"
     }
     fn generate(&self, cfg: &Config, strict: bool) -> Result<String> {
-        let mut out = String::new();
-        // Output only enums and models; generator/datasource are managed externally.
-
-        // Enums first so models can refer to them
+        let mut schema = ps::Schema::default();
         for e in &cfg.enums {
-            out.push_str(&render_enum(e));
-            out.push_str("\n\n");
+            schema.enums.push(enum_to_ast(e));
         }
-
         for t in &cfg.tables {
-            out.push_str(&render_model(t, &cfg.enums, strict)?);
-            out.push_str("\n\n");
+            schema.models.push(model_to_ast(t, &cfg.enums, strict)?);
         }
-        Ok(out)
+        Ok(schema.to_string())
     }
 }
 
-fn render_model(t: &TableSpec, enums: &[EnumSpec], strict: bool) -> Result<String> {
-    let mut s = String::new();
+fn model_to_ast(t: &TableSpec, enums: &[EnumSpec], strict: bool) -> Result<ps::Model> {
     let model_name = to_model_name(&t.name);
-    s.push_str(&format!("model {} {{\n", model_name));
+    let mut model = ps::Model {
+        name: model_name,
+        fields: Vec::new(),
+        attributes: Vec::new(),
+    };
 
-    // columns → fields
     for c in &t.columns {
-        s.push_str("  ");
-        s.push_str(&render_field(c, t, enums, strict)?);
-        s.push_str("\n");
+        let fields = column_to_fields(c, t, enums, strict)?;
+        model.fields.extend(fields);
     }
 
-    // back-references
     for br in &t.back_references {
-        s.push_str(&format!("  {} {}[]\n", br.name, br.table));
+        model.fields.push(ps::Field {
+            name: br.name.clone(),
+            r#type: ps::Type {
+                name: br.table.clone(),
+                optional: false,
+                list: true,
+            },
+            attributes: Vec::new(),
+        });
     }
 
-    // primary key
     if let Some(pk) = &t.primary_key {
-        if pk.columns.len() == 1 {
-            // Ensure field has @id (added in render_field if matches)
-        } else {
-            let cols = pk.columns.join(", ");
-            s.push_str(&format!("  @@id([{}])\n", cols));
+        if pk.columns.len() > 1 {
+            model
+                .attributes
+                .push(ps::BlockAttribute::Id(pk.columns.clone()));
         }
     }
 
-    // indexes
     for ix in &t.indexes {
-        let col_list = ix.columns.join(", ");
         if ix.unique {
-            // Skip single-column uniques; they are added as @unique on the field
             if ix.columns.len() > 1 {
-                s.push_str(&format!("  @@unique([{}])\n", col_list));
+                model
+                    .attributes
+                    .push(ps::BlockAttribute::Unique(ix.columns.clone()));
             }
         } else {
-            s.push_str(&format!("  @@index([{}])\n", col_list));
+            model
+                .attributes
+                .push(ps::BlockAttribute::Index(ix.columns.clone()));
         }
     }
 
-    // Map model to table name if model name differs
     if let Some(table_name) = &t.table_name {
-        s.push_str(&format!("  @@map(\"{}\")\n", table_name));
+        model
+            .attributes
+            .push(ps::BlockAttribute::Map(table_name.clone()));
     }
 
-    s.push_str("}\n");
-    Ok(s)
+    Ok(model)
 }
 
-fn render_field(c: &ColumnSpec, t: &TableSpec, enums: &[EnumSpec], strict: bool) -> Result<String> {
-    let _table_name = t.table_name.as_deref().unwrap_or(&t.name);
+fn column_to_fields(
+    c: &ColumnSpec,
+    t: &TableSpec,
+    enums: &[EnumSpec],
+    strict: bool,
+) -> Result<Vec<ps::Field>> {
     let (ptype, db_attr) = {
         let found_enum = find_enum_for_type(enums, &c.r#type, t.schema.as_deref());
         if let Some(e) = found_enum {
-            // Enum is defined in HCL
             (e.alt_name.as_deref().unwrap_or(&e.name).to_string(), None)
         } else if strict {
-            // Strict mode: error if enum not found
             bail!(
                 "Enum type '{}' not found in HCL and strict mode is enabled",
                 c.r#type
             );
         } else if is_likely_enum(&c.r#type) {
-            // Non-strict mode: assume enum exists externally, use its raw name
             (c.r#type.clone(), None)
         } else {
-            // Not an enum, or enum not assumed to exist externally
             prisma_type(&c.r#type, c.db_type.as_deref())
         }
     };
 
-    let mut parts: Vec<String> = Vec::new();
-    // name
-    parts.push(c.name.clone());
-    // type + nullability
-    let type_with_null = if c.nullable {
-        format!("{}?", ptype)
-    } else {
-        ptype
-    };
-    parts.push(type_with_null);
+    let mut attrs: Vec<ps::FieldAttribute> = Vec::new();
 
-    // default
     if let Some(def) = &c.default {
-        if def.trim().eq_ignore_ascii_case("now()") {
-            parts.push("@default(now())".into());
+        let dv = if def.trim().eq_ignore_ascii_case("now()") {
+            ps::DefaultValue::Now
         } else if def.trim().eq_ignore_ascii_case("uuid_generate_v4()")
             || def.trim().eq_ignore_ascii_case("gen_random_uuid()")
         {
-            parts.push("@default(uuid())".into());
+            ps::DefaultValue::Uuid
         } else if def.to_lowercase().contains("nextval(")
             || def.to_lowercase().contains("autoincrement")
         {
-            parts.push("@default(autoincrement())".into());
+            ps::DefaultValue::AutoIncrement
         } else {
-            parts.push(format!(
-                "@default(dbgenerated(\"{}\"))",
-                def.replace('\\', "\\\\").replace('"', "\\\"")
-            ));
-        }
+            ps::DefaultValue::DbGenerated(def.replace('\\', "\\\\").replace('"', "\\\""))
+        };
+        attrs.push(ps::FieldAttribute::Default(dv));
     }
 
-    // primary key single column
     if let Some(pk) = &t.primary_key {
         if pk.columns.len() == 1 && pk.columns[0] == c.name {
-            parts.push("@id".into());
-            // If type suggests auto-increment, add it if not already
+            attrs.push(ps::FieldAttribute::Id);
             if is_serial(&c.r#type)
-                && !parts
-                    .iter()
-                    .any(|p| p.contains("@default(autoincrement())"))
+                && !attrs.iter().any(|a| {
+                    matches!(
+                        a,
+                        ps::FieldAttribute::Default(ps::DefaultValue::AutoIncrement)
+                    )
+                })
             {
-                parts.push("@default(autoincrement())".into());
+                attrs.push(ps::FieldAttribute::Default(ps::DefaultValue::AutoIncrement));
             }
         }
     }
 
-    // unique single-column indexes → @unique
     if t.indexes
         .iter()
         .any(|ix| ix.unique && ix.columns.len() == 1 && ix.columns[0] == c.name)
     {
-        parts.push("@unique".into());
+        attrs.push(ps::FieldAttribute::Unique);
     }
 
-    // foreign key relations: add a separate relation field below the scalar?
-    // Keep scalar field here. We'll append relation fields after columns.
-
-    // native db type attribute
     if let Some(db) = db_attr {
-        parts.push(db);
+        attrs.push(ps::FieldAttribute::DbNative(db));
     }
 
-    let mut line = parts.join(" ");
+    let mut fields = Vec::new();
+    fields.push(ps::Field {
+        name: c.name.clone(),
+        r#type: ps::Type {
+            name: ptype,
+            optional: c.nullable,
+            list: false,
+        },
+        attributes: attrs,
+    });
 
-    // After scalar field line, optionally add relation field lines for FKs on this column
-    // Collect relation lines and append after (on separate lines) by returning combined string with \n  prefix in caller.
     if let Some(fk) = t
         .foreign_keys
         .iter()
         .find(|fk| fk.columns.len() == 1 && fk.columns[0] == c.name)
     {
-        let ref_model = to_model_name(&fk.ref_table);
-        let rel_field_name = fk.ref_table.clone();
-        let nullable_char = if c.nullable { "?" } else { "" };
-        let mut rel = format!(
-            "\n  {} {}{} @relation(fields: [{}], references: [{}]",
-            rel_field_name,
-            ref_model,
-            nullable_char,
-            c.name,
-            fk.ref_columns.join(", ")
-        );
-        if let Some(od) = &fk.on_delete {
-            rel.push_str(&format!(", onDelete: {}", map_fk_action(od)));
-        }
-        if let Some(ou) = &fk.on_update {
-            rel.push_str(&format!(", onUpdate: {}", map_fk_action(ou)));
-        }
-        rel.push(')');
-        line.push_str(&rel);
+        let rel_attr = ps::RelationAttribute {
+            fields: vec![c.name.clone()],
+            references: fk.ref_columns.clone(),
+            on_delete: fk.on_delete.as_ref().map(|s| map_fk_action(s).to_string()),
+            on_update: fk.on_update.as_ref().map(|s| map_fk_action(s).to_string()),
+        };
+        fields.push(ps::Field {
+            name: fk.ref_table.clone(),
+            r#type: ps::Type {
+                name: to_model_name(&fk.ref_table),
+                optional: c.nullable,
+                list: false,
+            },
+            attributes: vec![ps::FieldAttribute::Relation(rel_attr)],
+        });
     }
 
-    Ok(line)
+    Ok(fields)
 }
 
-fn render_enum(e: &EnumSpec) -> String {
-    let name = e.alt_name.as_deref().unwrap_or(&e.name);
-    // Keep enum name as DB name to avoid relying on @@map on enums.
-    let mut s = String::new();
-    s.push_str(&format!("enum {} {{\n", name));
-    for v in &e.values {
-        let (ident, map) = prisma_enum_variant(v);
-        if let Some(mapattr) = map {
-            s.push_str(&format!("  {} {}\n", ident, mapattr));
-        } else {
-            s.push_str(&format!("  {}\n", ident));
-        }
-    }
-    s.push_str("}\n");
-    s
+fn enum_to_ast(e: &EnumSpec) -> ps::Enum {
+    let name = e.alt_name.as_deref().unwrap_or(&e.name).to_string();
+    let values = e
+        .values
+        .iter()
+        .map(|v| {
+            let (ident, map) = prisma_enum_variant(v);
+            ps::EnumValue {
+                name: ident,
+                mapped_name: map,
+            }
+        })
+        .collect();
+    ps::Enum { name, values }
 }
 
 fn prisma_enum_variant(db_value: &str) -> (String, Option<String>) {
@@ -235,7 +223,7 @@ fn prisma_enum_variant(db_value: &str) -> (String, Option<String>) {
     if out == db_value {
         (out, None)
     } else {
-        (out, Some(format!("@map(\"{}\")", db_value)))
+        (out, Some(db_value.to_string()))
     }
 }
 
