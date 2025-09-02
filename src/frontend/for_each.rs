@@ -22,7 +22,11 @@ pub fn execute_for_each<T: ForEachSupport>(
     env: &EnvVars,
     config: &mut ast::Config,
     for_each_expr: Option<&hcl::Attribute>,
+    count_expr: Option<&hcl::Attribute>,
 ) -> Result<()> {
+    if for_each_expr.is_some() && count_expr.is_some() {
+        bail!("cannot use both for_each and count on the same block");
+    }
     if let Some(fe) = for_each_expr {
         let coll = core::expr_to_value(fe.expr(), env)?;
         for_each_iter(&coll, &mut |k, v| {
@@ -32,6 +36,21 @@ pub fn execute_for_each<T: ForEachSupport>(
             T::add_to_config(item, config);
             Ok(())
         })?;
+    } else if let Some(ce) = count_expr {
+        let val = core::expr_to_value(ce.expr(), env)?;
+        let times = match val {
+            hcl::Value::Number(n) => n
+                .as_u64()
+                .ok_or_else(|| anyhow::anyhow!("count must be a non-negative integer"))?
+                as usize,
+            other => bail!("count expects number, got {other:?}"),
+        };
+        for i in 0..times {
+            let mut iter_env = env.clone();
+            iter_env.count = Some(i);
+            let item = T::parse_one(name, body, &iter_env)?;
+            T::add_to_config(item, config);
+        }
     } else {
         let item = T::parse_one(name, body, env)?;
         T::add_to_config(item, config);
