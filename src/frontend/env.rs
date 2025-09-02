@@ -9,7 +9,7 @@ use std::collections::HashMap;
 ///
 /// # Example
 /// ```
-/// use dbschema::ir::EnvVars;
+/// use dbschema::frontend::env::EnvVars;
 /// use hcl::Value;
 /// use std::collections::HashMap;
 ///

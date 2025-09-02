@@ -11,9 +11,10 @@ use std::path::Path;
 
 // Public re-exports
 pub use ir::{
-    Config, EnumSpec, EnvVars, ExtensionSpec, FunctionSpec, MaterializedViewSpec, PolicySpec,
-    SchemaSpec, TableSpec, TriggerSpec, ViewSpec,
+    Config, EnumSpec, ExtensionSpec, FunctionSpec, MaterializedViewSpec, PolicySpec, SchemaSpec,
+    TableSpec, TriggerSpec, ViewSpec,
 };
+use crate::frontend::env::EnvVars;
 
 // Loader abstraction: lets callers control how files are read.
 pub trait Loader {
@@ -132,12 +133,11 @@ pub fn generate_sql(cfg: &Config) -> Result<String> {
 pub fn generate_with_backend(
     backend: &str,
     cfg: &Config,
-    env: &EnvVars,
     strict: bool,
 ) -> Result<String> {
     let be = backends::get_backend(backend)
         .ok_or_else(|| anyhow::anyhow!(format!("unknown backend '{backend}'")))?;
-    be.generate(cfg, env, strict)
+    be.generate(cfg, strict)
 }
 
 #[cfg(test)]
@@ -145,6 +145,7 @@ mod tests {
     use super::*;
     use std::collections::HashMap;
     use std::path::PathBuf;
+    use crate::frontend::env::EnvVars;
 
     struct MapLoader {
         files: HashMap<PathBuf, String>,
@@ -359,8 +360,7 @@ mod tests {
         );
         let loader = MapLoader { files };
         let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
-        let env = EnvVars::default();
-        let json = crate::generate_with_backend("json", &cfg, &env, false).unwrap();
+        let json = crate::generate_with_backend("json", &cfg, false).unwrap();
         assert!(json.contains("\"backend\": \"json\""));
         assert!(json.contains("\"functions\""));
         assert!(json.contains("\"triggers\""));
@@ -386,8 +386,7 @@ mod tests {
         assert_eq!(cfg.views.len(), 1);
         let sql = generate_sql(&cfg).unwrap();
         assert!(sql.contains("CREATE OR REPLACE VIEW \"public\".\"v_users\" AS"));
-        let env = EnvVars::default();
-        let json = crate::generate_with_backend("json", &cfg, &env, false).unwrap();
+        let json = crate::generate_with_backend("json", &cfg, false).unwrap();
         assert!(json.contains("\"views\""));
     }
 
@@ -411,8 +410,7 @@ mod tests {
         let sql = generate_sql(&cfg).unwrap();
         assert!(sql.contains("CREATE MATERIALIZED VIEW \"public\".\"mv\" AS"));
         assert!(sql.contains("WITH NO DATA"));
-        let env = EnvVars::default();
-        let json = crate::generate_with_backend("json", &cfg, &env, false).unwrap();
+        let json = crate::generate_with_backend("json", &cfg, false).unwrap();
         assert!(json.contains("\"materialized\""));
     }
 
@@ -442,11 +440,9 @@ mod tests {
         assert_eq!(cfg.enums.len(), 1);
         let sql = generate_sql(&cfg).unwrap();
         assert!(sql.contains("CREATE TYPE \"public\".\"status\" AS ENUM"));
-        let env = EnvVars::default();
-        let json = crate::generate_with_backend("json", &cfg, &env, false).unwrap();
+        let json = crate::generate_with_backend("json", &cfg, false).unwrap();
         assert!(json.contains("\"enums\""));
-        let env = EnvVars::default();
-        let prisma = crate::generate_with_backend("prisma", &cfg, &env, false).unwrap();
+        let prisma = crate::generate_with_backend("prisma", &cfg, false).unwrap();
         assert!(prisma.contains("enum status"));
         assert!(prisma.contains("status status"));
     }
@@ -511,8 +507,7 @@ mod tests {
         assert_eq!(cfg.policies.len(), 1);
         let sql = generate_sql(&cfg).unwrap();
         assert!(sql.contains("CREATE POLICY \"p_users_select\" ON \"public\".\"users\""));
-        let env = EnvVars::default();
-        let json = crate::generate_with_backend("json", &cfg, &env, false).unwrap();
+        let json = crate::generate_with_backend("json", &cfg, false).unwrap();
         assert!(json.contains("\"policies\""));
         assert!(json.contains("\"p_users_select\""));
     }

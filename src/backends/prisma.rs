@@ -13,7 +13,7 @@ impl Backend for PrismaBackend {
     fn file_extension(&self) -> &'static str {
         "prisma"
     }
-    fn generate(&self, cfg: &Config, _env: &crate::ir::EnvVars, strict: bool) -> Result<String> {
+    fn generate(&self, cfg: &Config, strict: bool) -> Result<String> {
         let mut out = String::new();
         // Output only enums and models; generator/datasource are managed externally.
 
