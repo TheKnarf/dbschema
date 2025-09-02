@@ -1,11 +1,11 @@
 #[cfg(feature = "pglite")]
-use dbschema::test_runner::{pglite::PGliteTestBackend, TestBackend};
-#[cfg(feature = "pglite")]
-use dbschema::{load_config, Loader};
+use anyhow::Result;
 #[cfg(feature = "pglite")]
 use dbschema::frontend::env::EnvVars;
 #[cfg(feature = "pglite")]
-use anyhow::Result;
+use dbschema::test_runner::{pglite::PGliteTestBackend, TestBackend};
+#[cfg(feature = "pglite")]
+use dbschema::{load_config, Loader};
 #[cfg(feature = "pglite")]
 use std::collections::HashMap;
 #[cfg(feature = "pglite")]
@@ -40,12 +40,16 @@ fn pglite_backend_runs_test() -> Result<()> {
     )?;
 
     let loader = FsLoader;
-    let cfg = load_config(&hcl_path, &loader, EnvVars {
-        vars: HashMap::new(),
-        locals: HashMap::new(),
-        modules: HashMap::new(),
-        each: None,
-    })?;
+    let cfg = load_config(
+        &hcl_path,
+        &loader,
+        EnvVars {
+            vars: HashMap::new(),
+            locals: HashMap::new(),
+            modules: HashMap::new(),
+            each: None,
+        },
+    )?;
 
     let backend = PGliteTestBackend;
     let summary = backend.run(&cfg, "pglite", None)?;

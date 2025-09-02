@@ -1,17 +1,17 @@
 use anyhow::{anyhow, Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
 use dbschema::frontend::env::EnvVars;
-#[cfg(feature = "pglite")]
-use postgres_protocol::message::backend;
-#[cfg(feature = "pglite")]
-use fallible_iterator::FallibleIterator;
 use dbschema::test_runner::TestBackend;
 use dbschema::{
     apply_filters,
     config::{self, Config as DbschemaConfig, ResourceKind, TargetConfig},
     load_config, validate, Loader, OutputSpec,
 };
+#[cfg(feature = "pglite")]
+use fallible_iterator::FallibleIterator;
 use log::{error, info};
+#[cfg(feature = "pglite")]
+use postgres_protocol::message::backend;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -202,7 +202,11 @@ fn main() -> Result<()> {
                 }
                 print_outputs(&filtered.outputs);
             }
-            Commands::Test { dsn, names, backend } => {
+            Commands::Test {
+                dsn,
+                names,
+                backend,
+            } => {
                 let (dsn, backend, config) = if cli.config {
                     let dbschema_config = config::load_config()
                         .with_context(|| "failed to load dbschema.toml")?

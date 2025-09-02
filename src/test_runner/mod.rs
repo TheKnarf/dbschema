@@ -3,9 +3,9 @@ use std::collections::HashSet;
 
 use crate::ir::Config;
 
-pub mod postgres;
 #[cfg(feature = "pglite")]
 pub mod pglite;
+pub mod postgres;
 
 pub struct TestResult {
     pub name: String,

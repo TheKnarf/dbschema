@@ -1,6 +1,5 @@
 use anyhow::{bail, Result};
 
-
 use crate::ir::{Config, EnumSpec};
 
 pub fn validate(cfg: &Config, strict: bool) -> Result<()> {
@@ -27,11 +26,8 @@ pub fn validate(cfg: &Config, strict: bool) -> Result<()> {
             for column in &table.columns {
                 // Check if column type is an enum and if it's defined in HCL
                 if is_likely_enum(&column.r#type) {
-                    let found_enum = find_enum_for_type(
-                        &cfg.enums,
-                        &column.r#type,
-                        table.schema.as_deref(),
-                    );
+                    let found_enum =
+                        find_enum_for_type(&cfg.enums, &column.r#type, table.schema.as_deref());
                     if found_enum.is_none() {
                         bail!("Strict mode: Enum type '{}' referenced in table '{}' column '{}' is not defined in HCL", column.r#type, table.name, column.name);
                     }

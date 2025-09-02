@@ -11,6 +11,34 @@ pub fn literal(s: &str) -> String {
 }
 
 #[derive(Debug, Clone)]
+pub struct Role {
+    pub name: String,
+    pub login: bool,
+}
+
+impl From<&crate::ir::RoleSpec> for Role {
+    fn from(r: &crate::ir::RoleSpec) -> Self {
+        Self {
+            name: r.alt_name.clone().unwrap_or_else(|| r.name.clone()),
+            login: r.login,
+        }
+    }
+}
+
+impl fmt::Display for Role {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let login = if self.login { " LOGIN" } else { "" };
+        write!(
+            f,
+            "DO $$\nBEGIN\n  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = {name_lit}) THEN\n    CREATE ROLE {name_ident}{login};\n  END IF;\nEND$$;",
+            name_lit = literal(&self.name),
+            name_ident = ident(&self.name),
+            login = login,
+        )
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct Extension {
     pub name: String,
     pub if_not_exists: bool,
@@ -610,5 +638,69 @@ impl fmt::Display for Policy {
             using = using_clause,
             check = check_clause,
         )
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Grant {
+    pub role: String,
+    pub privileges: Vec<String>,
+    pub schema: Option<String>,
+    pub table: Option<String>,
+    pub function: Option<String>,
+}
+
+impl From<&crate::ir::GrantSpec> for Grant {
+    fn from(g: &crate::ir::GrantSpec) -> Self {
+        Self {
+            role: g.role.clone(),
+            privileges: g.privileges.clone(),
+            schema: g.schema.clone(),
+            table: g.table.clone(),
+            function: g.function.clone(),
+        }
+    }
+}
+
+impl fmt::Display for Grant {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let privs = self
+            .privileges
+            .iter()
+            .map(|p| p.to_uppercase())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let role = ident(&self.role);
+        if let Some(table) = &self.table {
+            let schema = self.schema.clone().unwrap_or_else(|| "public".to_string());
+            write!(
+                f,
+                "GRANT {privs} ON TABLE {schema_ident}.{table_ident} TO {role};",
+                privs = privs,
+                schema_ident = ident(&schema),
+                table_ident = ident(table),
+                role = role,
+            )
+        } else if let Some(function) = &self.function {
+            let schema = self.schema.clone().unwrap_or_else(|| "public".to_string());
+            write!(
+                f,
+                "GRANT {privs} ON FUNCTION {schema_ident}.{fn_ident}() TO {role};",
+                privs = privs,
+                schema_ident = ident(&schema),
+                fn_ident = ident(function),
+                role = role,
+            )
+        } else if let Some(schema) = &self.schema {
+            write!(
+                f,
+                "GRANT {privs} ON SCHEMA {schema_ident} TO {role};",
+                privs = privs,
+                schema_ident = ident(schema),
+                role = role,
+            )
+        } else {
+            Ok(())
+        }
     }
 }

@@ -11,6 +11,8 @@ pub struct Config {
     pub views: Vec<AstView>,
     pub materialized: Vec<AstMaterializedView>,
     pub policies: Vec<AstPolicy>,
+    pub roles: Vec<AstRole>,
+    pub grants: Vec<AstGrant>,
     pub tests: Vec<AstTest>,
     pub outputs: Vec<AstOutput>,
 }
@@ -95,6 +97,23 @@ pub struct AstPolicy {
     pub roles: Vec<String>,
     pub using: Option<String>,
     pub check: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AstRole {
+    pub name: String,
+    pub alt_name: Option<String>,
+    pub login: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct AstGrant {
+    pub name: String,
+    pub role: String,
+    pub privileges: Vec<String>,
+    pub schema: Option<String>,
+    pub table: Option<String>,
+    pub function: Option<String>,
 }
 
 #[derive(Debug, Clone)]

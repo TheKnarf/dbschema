@@ -357,3 +357,53 @@ impl ForEachSupport for AstEnum {
         config.enums.push(item);
     }
 }
+
+// Role implementation
+impl ForEachSupport for AstRole {
+    type Item = Self;
+
+    fn parse_one(name: &str, body: &Body, env: &EnvVars) -> Result<Self::Item> {
+        let alt_name = get_attr_string(body, "name", env)?;
+        let login = get_attr_bool(body, "login", env)?.unwrap_or(false);
+        Ok(AstRole {
+            name: name.to_string(),
+            alt_name,
+            login,
+        })
+    }
+
+    fn add_to_config(item: Self::Item, config: &mut Config) {
+        config.roles.push(item);
+    }
+}
+
+// Grant implementation
+impl ForEachSupport for AstGrant {
+    type Item = Self;
+
+    fn parse_one(name: &str, body: &Body, env: &EnvVars) -> Result<Self::Item> {
+        let role = get_attr_string(body, "role", env)?.context("grant 'role' is required")?;
+        let privileges = match find_attr(body, "privileges") {
+            Some(attr) => expr_to_string_vec(attr.expr(), env)?,
+            None => bail!("grant requires privileges = [..]"),
+        };
+        let schema = get_attr_string(body, "schema", env)?;
+        let table = get_attr_string(body, "table", env)?;
+        let function = get_attr_string(body, "function", env)?;
+        if table.is_none() && function.is_none() && schema.is_none() {
+            bail!("grant requires table, schema, or function");
+        }
+        Ok(AstGrant {
+            name: name.to_string(),
+            role,
+            privileges,
+            schema,
+            table,
+            function,
+        })
+    }
+
+    fn add_to_config(item: Self::Item, config: &mut Config) {
+        config.grants.push(item);
+    }
+}

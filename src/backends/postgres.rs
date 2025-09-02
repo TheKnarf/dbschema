@@ -19,6 +19,10 @@ impl Backend for PostgresBackend {
 fn to_sql(cfg: &Config) -> Result<String> {
     let mut out = String::new();
 
+    for r in &cfg.roles {
+        out.push_str(&format!("{}\n\n", pg::Role::from(r)));
+    }
+
     for s in &cfg.schemas {
         out.push_str(&format!("{}\n\n", pg::Schema::from(s)));
     }
@@ -56,6 +60,10 @@ fn to_sql(cfg: &Config) -> Result<String> {
 
     for t in &cfg.triggers {
         out.push_str(&format!("{}\n\n", pg::Trigger::from(t)));
+    }
+
+    for g in &cfg.grants {
+        out.push_str(&format!("{}\n\n", pg::Grant::from(g)));
     }
 
     Ok(out)
