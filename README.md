@@ -43,11 +43,11 @@ cargo build --release
 ### Optional: PGlite in-memory backend
 
 The PGlite runtime enables running tests without a real Postgres server. It is
-gated behind the `pglite` feature and requires downloading the WebAssembly
-artifacts:
+gated behind the `pglite` feature and requires installing the WebAssembly
+package:
 
 ```bash
-just pglite-assets        # download pglite.wasm and pglite.data
+just pglite-assets        # install @electric-sql/pglite into node_modules
 cargo build --features pglite
 ```
 

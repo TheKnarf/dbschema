@@ -1,9 +1,5 @@
 set shell := ["bash", "-cu"]
-root := `git rev-parse --show-toplevel`
 
-# Download the PGlite WASM artifacts
+# Install the PGlite WASM package
 pglite-assets:
-  set -euo pipefail
-  mkdir -p {{root}}/vendor/pglite
-  curl -L -o {{root}}/vendor/pglite/pglite.wasm https://cdn.jsdelivr.net/npm/@electric-sql/pglite/dist/pglite.wasm
-  curl -L -o {{root}}/vendor/pglite/pglite.data https://cdn.jsdelivr.net/npm/@electric-sql/pglite/dist/pglite.data
+  pnpm install --frozen-lockfile
