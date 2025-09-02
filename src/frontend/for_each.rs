@@ -1,3 +1,4 @@
+use crate::frontend::ast;
 use crate::frontend::core;
 use crate::frontend::env::EnvVars;
 use anyhow::{bail, Result};
@@ -11,7 +12,7 @@ pub trait ForEachSupport {
     fn parse_one(name: &str, body: &hcl::Body, env: &EnvVars) -> Result<Self::Item>;
 
     /// Add the parsed item to the configuration
-    fn add_to_config(item: Self::Item, config: &mut crate::ir::Config);
+    fn add_to_config(item: Self::Item, config: &mut ast::Config);
 }
 
 /// Execute for_each iteration for any type that implements ForEachSupport
@@ -19,7 +20,7 @@ pub fn execute_for_each<T: ForEachSupport>(
     name: &str,
     body: &hcl::Body,
     env: &EnvVars,
-    config: &mut crate::ir::Config,
+    config: &mut ast::Config,
     for_each_expr: Option<&hcl::Attribute>,
 ) -> Result<()> {
     if let Some(fe) = for_each_expr {
@@ -70,11 +71,7 @@ mod tests {
     impl ForEachSupport for MockResource {
         type Item = String;
 
-        fn parse_one(
-            name: &str,
-            _body: &hcl::Body,
-            env: &EnvVars,
-        ) -> Result<Self::Item> {
+        fn parse_one(name: &str, _body: &hcl::Body, env: &EnvVars) -> Result<Self::Item> {
             // Simple mock that returns the name with each.value if available
             if let Some((_key, value)) = &env.each {
                 Ok(format!("{}-{}", name, value))
@@ -83,7 +80,7 @@ mod tests {
             }
         }
 
-        fn add_to_config(_item: Self::Item, _config: &mut crate::ir::Config) {
+        fn add_to_config(_item: Self::Item, _config: &mut ast::Config) {
             // Mock implementation - do nothing
         }
     }

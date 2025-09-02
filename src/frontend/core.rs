@@ -8,10 +8,12 @@ use path_absolutize::Absolutize;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use crate::frontend::ast;
 use crate::frontend::builtins;
 use crate::frontend::env::EnvVars;
 use crate::frontend::for_each::execute_for_each;
-use crate::ir::Config;
+use crate::frontend::lower;
+use crate::ir;
 use crate::Loader;
 
 pub fn expr_to_string(expr: &hcl::Expression, env: &EnvVars) -> Result<String> {
@@ -336,7 +338,7 @@ pub fn load_root_with_loader(
     path: &Path,
     loader: &dyn Loader,
     root_env: EnvVars,
-) -> Result<Config> {
+) -> Result<ir::Config> {
     let path = if path.is_dir() {
         path.join("main.hcl")
     } else {
@@ -347,12 +349,13 @@ pub fn load_root_with_loader(
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| PathBuf::from("."));
     let mut visited = Vec::new();
-    let mut cfg = load_file(loader, &path, &base, &root_env, &mut visited)?;
+    let ast_cfg = load_file(loader, &path, &base, &root_env, &mut visited)?;
+    let mut cfg = lower::lower_config(ast_cfg);
     populate_back_references(&mut cfg)?;
     Ok(cfg)
 }
 
-fn populate_back_references(cfg: &mut Config) -> Result<()> {
+fn populate_back_references(cfg: &mut ir::Config) -> Result<()> {
     let tables = cfg.tables.clone();
     for table in &mut cfg.tables {
         for other_table in &tables {
@@ -379,7 +382,7 @@ fn load_file(
     base: &Path,
     parent_env: &EnvVars,
     visited: &mut Vec<PathBuf>,
-) -> Result<Config> {
+) -> Result<ast::Config> {
     let abspath = path
         .absolutize()
         .map_err(|e| anyhow::anyhow!("absolutize error: {e}"))?
@@ -430,7 +433,7 @@ fn load_file(
     body = expand_dynamic_blocks(&body, &env)?;
 
     // 3) Parse resources using the ForEachSupport trait
-    let mut cfg = Config::default();
+    let mut cfg = ast::Config::default();
 
     // Process each resource type using the trait system
     for blk in body.blocks().filter(|b| b.identifier() == "schema") {
@@ -441,13 +444,7 @@ fn load_file(
             .as_str()
             .to_string();
         let for_each_expr = find_attr(blk.body(), "for_each");
-        execute_for_each::<crate::ir::SchemaSpec>(
-            &name,
-            blk.body(),
-            &env,
-            &mut cfg,
-            for_each_expr,
-        )?;
+        execute_for_each::<ast::AstSchema>(&name, blk.body(), &env, &mut cfg, for_each_expr)?;
     }
 
     for blk in body.blocks().filter(|b| b.identifier() == "table") {
@@ -458,13 +455,7 @@ fn load_file(
             .as_str()
             .to_string();
         let for_each_expr = find_attr(blk.body(), "for_each");
-        execute_for_each::<crate::ir::TableSpec>(
-            &name,
-            blk.body(),
-            &env,
-            &mut cfg,
-            for_each_expr,
-        )?;
+        execute_for_each::<ast::AstTable>(&name, blk.body(), &env, &mut cfg, for_each_expr)?;
     }
 
     for blk in body.blocks().filter(|b| b.identifier() == "view") {
@@ -475,13 +466,7 @@ fn load_file(
             .as_str()
             .to_string();
         let for_each_expr = find_attr(blk.body(), "for_each");
-        execute_for_each::<crate::ir::ViewSpec>(
-            &name,
-            blk.body(),
-            &env,
-            &mut cfg,
-            for_each_expr,
-        )?;
+        execute_for_each::<ast::AstView>(&name, blk.body(), &env, &mut cfg, for_each_expr)?;
     }
 
     for blk in body.blocks().filter(|b| b.identifier() == "materialized") {
@@ -492,7 +477,7 @@ fn load_file(
             .as_str()
             .to_string();
         let for_each_expr = find_attr(blk.body(), "for_each");
-        execute_for_each::<crate::ir::MaterializedViewSpec>(
+        execute_for_each::<ast::AstMaterializedView>(
             &name,
             blk.body(),
             &env,
@@ -509,13 +494,7 @@ fn load_file(
             .as_str()
             .to_string();
         let for_each_expr = find_attr(blk.body(), "for_each");
-        execute_for_each::<crate::ir::PolicySpec>(
-            &name,
-            blk.body(),
-            &env,
-            &mut cfg,
-            for_each_expr,
-        )?;
+        execute_for_each::<ast::AstPolicy>(&name, blk.body(), &env, &mut cfg, for_each_expr)?;
     }
 
     for blk in body.blocks().filter(|b| b.identifier() == "function") {
@@ -526,13 +505,7 @@ fn load_file(
             .as_str()
             .to_string();
         let for_each_expr = find_attr(blk.body(), "for_each");
-        execute_for_each::<crate::ir::FunctionSpec>(
-            &name,
-            blk.body(),
-            &env,
-            &mut cfg,
-            for_each_expr,
-        )?;
+        execute_for_each::<ast::AstFunction>(&name, blk.body(), &env, &mut cfg, for_each_expr)?;
     }
 
     for blk in body.blocks().filter(|b| b.identifier() == "trigger") {
@@ -543,13 +516,7 @@ fn load_file(
             .as_str()
             .to_string();
         let for_each_expr = find_attr(blk.body(), "for_each");
-        execute_for_each::<crate::ir::TriggerSpec>(
-            &name,
-            blk.body(),
-            &env,
-            &mut cfg,
-            for_each_expr,
-        )?;
+        execute_for_each::<ast::AstTrigger>(&name, blk.body(), &env, &mut cfg, for_each_expr)?;
     }
 
     for blk in body.blocks().filter(|b| b.identifier() == "extension") {
@@ -560,13 +527,7 @@ fn load_file(
             .as_str()
             .to_string();
         let for_each_expr = find_attr(blk.body(), "for_each");
-        execute_for_each::<crate::ir::ExtensionSpec>(
-            &name,
-            blk.body(),
-            &env,
-            &mut cfg,
-            for_each_expr,
-        )?;
+        execute_for_each::<ast::AstExtension>(&name, blk.body(), &env, &mut cfg, for_each_expr)?;
     }
 
     for blk in body.blocks().filter(|b| b.identifier() == "enum") {
@@ -577,13 +538,7 @@ fn load_file(
             .as_str()
             .to_string();
         let for_each_expr = find_attr(blk.body(), "for_each");
-        execute_for_each::<crate::ir::EnumSpec>(
-            &name,
-            blk.body(),
-            &env,
-            &mut cfg,
-            for_each_expr,
-        )?;
+        execute_for_each::<ast::AstEnum>(&name, blk.body(), &env, &mut cfg, for_each_expr)?;
     }
 
     // Handle test blocks (these don't use for_each typically)
@@ -605,7 +560,7 @@ fn load_file(
             Some(attr) => expr_to_string_vec(attr.expr(), &env)?,
             None => Vec::new(),
         };
-        cfg.tests.push(crate::ir::TestSpec {
+        cfg.tests.push(ast::AstTest {
             name,
             setup,
             assert_sql,
