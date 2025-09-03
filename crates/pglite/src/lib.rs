@@ -6,9 +6,9 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use wasmer::{FunctionEnv, Instance, Memory, Module, Store, Table, TypedFunction};
 use wasmer_emscripten::{
-    generate_emscripten_env, is_emscripten_module, run_emscripten_instance, EmEnv,
-    EmscriptenGlobals,
+    generate_emscripten_env, run_emscripten_instance, EmEnv, EmscriptenGlobals,
 };
+use wasmer_wasix::WasiEnv;
 
 /// In-memory Postgres backend powered by the PGlite WASM build.
 ///
@@ -40,7 +40,6 @@ impl PGliteRuntime {
 
         let mut store = Store::default();
         let module = Module::new(&store, wasm_bytes)?;
-        anyhow::ensure!(is_emscripten_module(&module), "not an Emscripten module");
 
         let env = FunctionEnv::new(&mut store, EmEnv::new());
         let mut globals =
@@ -50,8 +49,13 @@ impl PGliteRuntime {
         mapped_dirs.insert(".".to_string(), pkg_dir.clone());
         env.as_ref(&store).set_data(&globals.data, mapped_dirs);
 
-        let import_object = generate_emscripten_env(&mut store, &env, &mut globals);
+        let mut wasi_env = WasiEnv::builder("pglite").finalize(&mut store)?;
+
+        let mut import_object = generate_emscripten_env(&mut store, &env, &mut globals);
+        let wasi_imports = wasi_env.import_object(&mut store, &module)?;
+        import_object.extend(&wasi_imports);
         let mut instance = Instance::new(&mut store, &module, &import_object)?;
+        wasi_env.initialize(&mut store, instance.clone())?;
 
         // Set up memory, function pointers and run constructors. Ignore the
         // error about missing main/entrypoint as the module exposes its own API.
