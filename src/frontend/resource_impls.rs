@@ -142,10 +142,27 @@ impl ForEachSupport for AstTable {
                 Some(attr) => expr_to_string_vec(attr.expr(), env)?,
                 None => bail!("index requires columns = [..]"),
             };
+            let exprs = match find_attr(ib, "expressions") {
+                Some(attr) => expr_to_string_vec(attr.expr(), env)?,
+                None => Vec::new(),
+            };
+            let where_clause = get_attr_string(ib, "where", env)?;
+            let orders = match find_attr(ib, "orders") {
+                Some(attr) => expr_to_string_vec(attr.expr(), env)?,
+                None => Vec::new(),
+            };
+            let operator_classes = match find_attr(ib, "operator_classes") {
+                Some(attr) => expr_to_string_vec(attr.expr(), env)?,
+                None => Vec::new(),
+            };
             let unique = get_attr_bool(ib, "unique", env)?.unwrap_or(false);
             indexes.push(AstIndex {
                 name: name_attr,
                 columns: cols,
+                expressions: exprs,
+                r#where: where_clause,
+                orders,
+                operator_classes,
                 unique,
             });
         }
@@ -156,9 +173,26 @@ impl ForEachSupport for AstTable {
                 Some(attr) => expr_to_string_vec(attr.expr(), env)?,
                 None => bail!("unique requires columns = [..]"),
             };
+            let exprs = match find_attr(ub, "expressions") {
+                Some(attr) => expr_to_string_vec(attr.expr(), env)?,
+                None => Vec::new(),
+            };
+            let where_clause = get_attr_string(ub, "where", env)?;
+            let orders = match find_attr(ub, "orders") {
+                Some(attr) => expr_to_string_vec(attr.expr(), env)?,
+                None => Vec::new(),
+            };
+            let operator_classes = match find_attr(ub, "operator_classes") {
+                Some(attr) => expr_to_string_vec(attr.expr(), env)?,
+                None => Vec::new(),
+            };
             indexes.push(AstIndex {
                 name: name_attr,
                 columns: cols,
+                expressions: exprs,
+                r#where: where_clause,
+                orders,
+                operator_classes,
                 unique: true,
             });
         }
@@ -699,12 +733,29 @@ impl ForEachSupport for AstStandaloneIndex {
             Some(attr) => expr_to_string_vec(attr.expr(), env)?,
             None => bail!("index requires columns = [..]"),
         };
+        let exprs = match find_attr(body, "expressions") {
+            Some(attr) => expr_to_string_vec(attr.expr(), env)?,
+            None => Vec::new(),
+        };
+        let where_clause = get_attr_string(body, "where", env)?;
+        let orders = match find_attr(body, "orders") {
+            Some(attr) => expr_to_string_vec(attr.expr(), env)?,
+            None => Vec::new(),
+        };
+        let operator_classes = match find_attr(body, "operator_classes") {
+            Some(attr) => expr_to_string_vec(attr.expr(), env)?,
+            None => Vec::new(),
+        };
         let unique = get_attr_bool(body, "unique", env)?.unwrap_or(false);
         Ok(AstStandaloneIndex {
             name: name.to_string(),
             table,
             schema,
             columns: cols,
+            expressions: exprs,
+            r#where: where_clause,
+            orders,
+            operator_classes,
             unique,
         })
     }

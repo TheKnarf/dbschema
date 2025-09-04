@@ -97,6 +97,10 @@ mod tests {
             indexes: vec![IndexSpec {
                 name: Some("idx".into()),
                 columns: vec!["id".into()],
+                expressions: vec![],
+                r#where: None,
+                orders: vec![],
+                operator_classes: vec![],
                 unique: true,
             }],
             checks: vec![],

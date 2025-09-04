@@ -269,6 +269,10 @@ pub struct CheckSpec {
 pub struct IndexSpec {
     pub name: Option<String>,
     pub columns: Vec<String>,
+    pub expressions: Vec<String>,
+    pub r#where: Option<String>,
+    pub orders: Vec<String>,
+    pub operator_classes: Vec<String>,
     pub unique: bool,
 }
 
@@ -290,6 +294,10 @@ pub struct StandaloneIndexSpec {
     pub table: String,
     pub schema: Option<String>,
     pub columns: Vec<String>,
+    pub expressions: Vec<String>,
+    pub r#where: Option<String>,
+    pub orders: Vec<String>,
+    pub operator_classes: Vec<String>,
     pub unique: bool,
 }
 
