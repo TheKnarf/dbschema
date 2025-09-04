@@ -5,10 +5,12 @@ use std::collections::HashMap;
 mod destructive_change;
 mod long_identifier;
 mod unused_index;
+mod sql_syntax;
 
 use destructive_change::DestructiveChange;
 use long_identifier::LongIdentifier;
 use unused_index::UnusedIndex;
+use sql_syntax::SqlSyntax;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -45,6 +47,7 @@ pub fn run(cfg: &Config, settings: &LintSettings) -> Vec<LintMessage> {
         Box::new(DestructiveChange),
         Box::new(UnusedIndex),
         Box::new(LongIdentifier),
+        Box::new(SqlSyntax),
     ];
     run_with_checks(cfg, checks, settings)
 }
