@@ -4,6 +4,7 @@ use serde::Serialize;
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct Config {
     pub functions: Vec<FunctionSpec>,
+    pub aggregates: Vec<AggregateSpec>,
     pub triggers: Vec<TriggerSpec>,
     pub event_triggers: Vec<EventTriggerSpec>,
     pub extensions: Vec<ExtensionSpec>,
@@ -37,6 +38,20 @@ pub struct FunctionSpec {
     pub security: Option<String>,
     pub cost: Option<f64>,
     pub body: String,
+    pub comment: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AggregateSpec {
+    pub name: String,
+    pub alt_name: Option<String>,
+    pub schema: Option<String>,
+    pub inputs: Vec<String>,
+    pub sfunc: String,
+    pub stype: String,
+    pub finalfunc: Option<String>,
+    pub initcond: Option<String>,
+    pub parallel: Option<String>,
     pub comment: Option<String>,
 }
 

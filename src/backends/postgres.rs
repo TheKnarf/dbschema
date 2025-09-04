@@ -215,6 +215,22 @@ fn to_sql(cfg: &Config) -> Result<String> {
         }
     }
 
+    for a in &cfg.aggregates {
+        out.push_str(&format!("{}\n\n", pg::Aggregate::from(a)));
+        if let Some(comment) = &a.comment {
+            let schema = a.schema.clone().unwrap_or_else(|| "public".to_string());
+            let name = a.alt_name.clone().unwrap_or_else(|| a.name.clone());
+            let inputs = a.inputs.join(", ");
+            out.push_str(&format!(
+                "COMMENT ON AGGREGATE {}.{}({}) IS {};\n\n",
+                pg::ident(&schema),
+                pg::ident(&name),
+                inputs,
+                pg::literal(comment)
+            ));
+        }
+    }
+
     for v in &cfg.views {
         out.push_str(&format!("{}\n\n", pg::View::from(v)));
         if let Some(comment) = &v.comment {

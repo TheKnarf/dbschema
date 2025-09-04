@@ -3,6 +3,7 @@ use hcl::{Expression, Value};
 #[derive(Debug, Clone, Default)]
 pub struct Config {
     pub functions: Vec<AstFunction>,
+    pub aggregates: Vec<AstAggregate>,
     pub triggers: Vec<AstTrigger>,
     pub event_triggers: Vec<AstEventTrigger>,
     pub extensions: Vec<AstExtension>,
@@ -36,6 +37,20 @@ pub struct AstFunction {
     pub security: Option<String>,
     pub cost: Option<f64>,
     pub body: String,
+    pub comment: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AstAggregate {
+    pub name: String,
+    pub alt_name: Option<String>,
+    pub schema: Option<String>,
+    pub inputs: Vec<String>,
+    pub sfunc: String,
+    pub stype: String,
+    pub finalfunc: Option<String>,
+    pub initcond: Option<String>,
+    pub parallel: Option<String>,
     pub comment: Option<String>,
 }
 

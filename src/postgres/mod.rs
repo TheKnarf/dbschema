@@ -332,6 +332,58 @@ pub struct Function {
     pub body: String,
 }
 
+#[derive(Debug, Clone)]
+pub struct Aggregate {
+    pub schema: String,
+    pub name: String,
+    pub inputs: Vec<String>,
+    pub sfunc: String,
+    pub stype: String,
+    pub finalfunc: Option<String>,
+    pub initcond: Option<String>,
+    pub parallel: Option<String>,
+}
+
+impl From<&crate::ir::AggregateSpec> for Aggregate {
+    fn from(a: &crate::ir::AggregateSpec) -> Self {
+        Self {
+            schema: a.schema.clone().unwrap_or_else(|| "public".to_string()),
+            name: a.alt_name.clone().unwrap_or_else(|| a.name.clone()),
+            inputs: a.inputs.clone(),
+            sfunc: a.sfunc.clone(),
+            stype: a.stype.clone(),
+            finalfunc: a.finalfunc.clone(),
+            initcond: a.initcond.clone(),
+            parallel: a.parallel.clone(),
+        }
+    }
+}
+
+impl fmt::Display for Aggregate {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let inputs = self.inputs.join(", ");
+        write!(
+            f,
+            "CREATE AGGREGATE {schema}.{name} ({inputs}) (SFUNC = {sfunc}, STYPE = {stype}",
+            schema = ident(&self.schema),
+            name = ident(&self.name),
+            inputs = inputs,
+            sfunc = self.sfunc,
+            stype = self.stype,
+        )?;
+        if let Some(ff) = &self.finalfunc {
+            write!(f, ", FINALFUNC = {ff}")?;
+        }
+        if let Some(init) = &self.initcond {
+            write!(f, ", INITCOND = {}", literal(init))?;
+        }
+        if let Some(p) = &self.parallel {
+            write!(f, ", PARALLEL = {}", p.to_uppercase())?;
+        }
+        write!(f, ");")
+    }
+}
+
 impl From<&crate::ir::FunctionSpec> for Function {
     fn from(f: &crate::ir::FunctionSpec) -> Self {
         Self {

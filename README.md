@@ -21,6 +21,7 @@ Prisma ORM support custom migrations, so you can use this tool to generate an SQ
 - [view](docs/postgres/view.md)
 - [materialized view](docs/postgres/materialized.md)
 - [function](docs/postgres/function.md)
+- [aggregate](docs/postgres/aggregate.md)
 - [trigger](docs/postgres/trigger.md)
 - [event trigger](docs/postgres/event_trigger.md)
 - [extension](docs/postgres/extension.md)
