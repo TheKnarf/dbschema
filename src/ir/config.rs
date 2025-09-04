@@ -5,6 +5,7 @@ use serde::Serialize;
 pub struct Config {
     pub functions: Vec<FunctionSpec>,
     pub triggers: Vec<TriggerSpec>,
+    pub event_triggers: Vec<EventTriggerSpec>,
     pub extensions: Vec<ExtensionSpec>,
     pub sequences: Vec<SequenceSpec>,
     pub schemas: Vec<SchemaSpec>,
@@ -46,6 +47,17 @@ pub struct TriggerSpec {
     pub function: String,    // function name (unqualified)
     pub function_schema: Option<String>,
     pub when: Option<String>, // optional condition, raw SQL
+    pub comment: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct EventTriggerSpec {
+    pub name: String,
+    pub alt_name: Option<String>,
+    pub event: String,
+    pub tags: Vec<String>,
+    pub function: String,
+    pub function_schema: Option<String>,
     pub comment: Option<String>,
 }
 

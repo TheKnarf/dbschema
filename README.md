@@ -89,6 +89,7 @@ test_backend = "pglite"
 - Lint schema: `./target/release/dbschema --input examples/main.hcl lint`
 - Variables: `--var schema=public` or `--var-file .env.hcl`
 - Using config file: `dbschema --config` or `dbschema --config --target <target_name>`
+- Event triggers: see `examples/event_trigger.hcl`
 
 
 ## Linting
@@ -345,7 +346,7 @@ module "<name>" {
 - Control which resources are included per run:
   - `--include tables --include functions` (repeatable)
   - `--exclude tables` (repeatable)
-  - Resource kinds: `schemas, sequences, enums, tables, views, materialized, functions, triggers, extensions, policies, tests`
+  - Resource kinds: `schemas, sequences, enums, tables, views, materialized, functions, triggers, event_triggers, extensions, policies, tests`
 - Example split-output workflow:
   - Prisma models for tables: `dbschema --backend prisma --include tables --input examples/main.hcl create-migration --out-dir prisma --name schema`
   - SQL for everything else: `dbschema --backend postgres --exclude tables --input examples/main.hcl create-migration --out-dir migrations --name non_tables`

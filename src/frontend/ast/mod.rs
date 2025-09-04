@@ -4,6 +4,7 @@ use hcl::{Expression, Value};
 pub struct Config {
     pub functions: Vec<AstFunction>,
     pub triggers: Vec<AstTrigger>,
+    pub event_triggers: Vec<AstEventTrigger>,
     pub extensions: Vec<AstExtension>,
     pub sequences: Vec<AstSequence>,
     pub schemas: Vec<AstSchema>,
@@ -45,6 +46,17 @@ pub struct AstTrigger {
     pub function: String,
     pub function_schema: Option<String>,
     pub when: Option<String>,
+    pub comment: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AstEventTrigger {
+    pub name: String,
+    pub alt_name: Option<String>,
+    pub event: String,
+    pub tags: Vec<String>,
+    pub function: String,
+    pub function_schema: Option<String>,
     pub comment: Option<String>,
 }
 

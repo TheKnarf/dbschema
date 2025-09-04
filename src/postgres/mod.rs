@@ -754,6 +754,57 @@ impl fmt::Display for Trigger {
 }
 
 #[derive(Debug, Clone)]
+pub struct EventTrigger {
+    pub name: String,
+    pub event: String,
+    pub tags: Vec<String>,
+    pub function: String,
+    pub function_schema: String,
+}
+
+impl From<&crate::ir::EventTriggerSpec> for EventTrigger {
+    fn from(t: &crate::ir::EventTriggerSpec) -> Self {
+        Self {
+            name: t.alt_name.clone().unwrap_or_else(|| t.name.clone()),
+            event: t.event.clone(),
+            tags: t.tags.clone(),
+            function: t.function.clone(),
+            function_schema: t
+                .function_schema
+                .clone()
+                .unwrap_or_else(|| "public".to_string()),
+        }
+    }
+}
+
+impl fmt::Display for EventTrigger {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let tags = if self.tags.is_empty() {
+            String::new()
+        } else {
+            format!(
+                "\n    WHEN TAG IN ({})",
+                self.tags
+                    .iter()
+                    .map(|t| literal(t))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        };
+        write!(
+            f,
+            "DO $$\nBEGIN\n  IF NOT EXISTS (SELECT 1 FROM pg_event_trigger WHERE evtname = {name_lit}) THEN\n    CREATE EVENT TRIGGER {name_ident}\n    ON {event}{tags}\n    EXECUTE FUNCTION {fn_schema}.{fn_name}();\n  END IF;\nEND$$;",
+            name_lit = literal(&self.name),
+            name_ident = ident(&self.name),
+            event = self.event.to_uppercase(),
+            tags = tags,
+            fn_schema = ident(&self.function_schema),
+            fn_name = ident(&self.function),
+        )
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct Policy {
     pub schema: String,
     pub table: String,

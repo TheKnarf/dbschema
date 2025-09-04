@@ -21,6 +21,24 @@ pub fn validate(cfg: &Config, strict: bool) -> Result<()> {
         }
     }
 
+    for t in &cfg.event_triggers {
+        let fqn = format!(
+            "{}.{}",
+            t.function_schema.as_deref().unwrap_or("public"),
+            t.function
+        );
+        let found = cfg.functions.iter().any(|f| {
+            let fs = f.schema.as_deref().unwrap_or("public");
+            f.name == t.function && (t.function_schema.as_deref().unwrap_or(fs) == fs)
+        });
+        if !found {
+            bail!(
+                "event trigger '{}' references missing function '{}': ensure function exists or set function_schema",
+                t.name, fqn
+            );
+        }
+    }
+
     if strict {
         for table in &cfg.tables {
             for column in &table.columns {
