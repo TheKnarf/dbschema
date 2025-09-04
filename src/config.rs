@@ -84,6 +84,7 @@ pub enum ResourceKind {
     Tables,
     Views,
     Materialized,
+    Aggregates,
     Functions,
     Triggers,
     EventTriggers,
@@ -105,6 +106,7 @@ impl fmt::Display for ResourceKind {
             ResourceKind::Tables => "tables",
             ResourceKind::Views => "views",
             ResourceKind::Materialized => "materialized",
+            ResourceKind::Aggregates => "aggregates",
             ResourceKind::Functions => "functions",
             ResourceKind::Triggers => "triggers",
             ResourceKind::EventTriggers => "event_triggers",
@@ -131,6 +133,7 @@ impl std::str::FromStr for ResourceKind {
             "tables" => Ok(ResourceKind::Tables),
             "views" => Ok(ResourceKind::Views),
             "materialized" => Ok(ResourceKind::Materialized),
+            "aggregates" => Ok(ResourceKind::Aggregates),
             "functions" => Ok(ResourceKind::Functions),
             "triggers" => Ok(ResourceKind::Triggers),
             "event_triggers" => Ok(ResourceKind::EventTriggers),
@@ -158,6 +161,7 @@ impl TargetConfig {
                 ResourceKind::Tables,
                 ResourceKind::Views,
                 ResourceKind::Materialized,
+                ResourceKind::Aggregates,
                 ResourceKind::Functions,
                 ResourceKind::Triggers,
                 ResourceKind::EventTriggers,
@@ -232,7 +236,8 @@ mod tests {
         assert!(include_set.contains(&ResourceKind::Tables));
         assert!(include_set.contains(&ResourceKind::Enums));
         assert!(include_set.contains(&ResourceKind::EventTriggers));
-        assert_eq!(include_set.len(), 16); // All resource types
+        assert!(include_set.contains(&ResourceKind::Aggregates));
+        assert_eq!(include_set.len(), 17); // All resource types
     }
 
     #[test]

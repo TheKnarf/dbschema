@@ -378,6 +378,44 @@ impl ForEachSupport for AstFunction {
     }
 }
 
+// Aggregate implementation
+impl ForEachSupport for AstAggregate {
+    type Item = Self;
+
+    fn parse_one(name: &str, body: &Body, env: &EnvVars) -> Result<Self::Item> {
+        let alt_name = get_attr_string(body, "name", env)?;
+        let schema = get_attr_string(body, "schema", env)?;
+        let inputs = match find_attr(body, "inputs") {
+            Some(attr) => expr_to_string_vec(attr.expr(), env)?,
+            None => Vec::new(),
+        };
+        let sfunc = get_attr_string(body, "sfunc", env)?
+            .context("aggregate 'sfunc' is required")?;
+        let stype = get_attr_string(body, "stype", env)?
+            .context("aggregate 'stype' is required")?;
+        let finalfunc = get_attr_string(body, "finalfunc", env)?;
+        let initcond = get_attr_string(body, "initcond", env)?;
+        let parallel = get_attr_string(body, "parallel", env)?;
+        let comment = get_attr_string(body, "comment", env)?;
+        Ok(AstAggregate {
+            name: name.to_string(),
+            alt_name,
+            schema,
+            inputs,
+            sfunc,
+            stype,
+            finalfunc,
+            initcond,
+            parallel,
+            comment,
+        })
+    }
+
+    fn add_to_config(item: Self::Item, config: &mut Config) {
+        config.aggregates.push(item);
+    }
+}
+
 // Trigger implementation
 impl ForEachSupport for AstTrigger {
     type Item = Self;

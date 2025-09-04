@@ -4,6 +4,7 @@ use crate::ir;
 pub fn lower_config(ast: ast::Config) -> ir::Config {
     ir::Config {
         functions: ast.functions.into_iter().map(Into::into).collect(),
+        aggregates: ast.aggregates.into_iter().map(Into::into).collect(),
         triggers: ast.triggers.into_iter().map(Into::into).collect(),
         event_triggers: ast.event_triggers.into_iter().map(Into::into).collect(),
         extensions: ast.extensions.into_iter().map(Into::into).collect(),
@@ -40,6 +41,23 @@ impl From<ast::AstFunction> for ir::FunctionSpec {
             cost: f.cost,
             body: f.body,
             comment: f.comment,
+        }
+    }
+}
+
+impl From<ast::AstAggregate> for ir::AggregateSpec {
+    fn from(a: ast::AstAggregate) -> Self {
+        Self {
+            name: a.name,
+            alt_name: a.alt_name,
+            schema: a.schema,
+            inputs: a.inputs,
+            sfunc: a.sfunc,
+            stype: a.stype,
+            finalfunc: a.finalfunc,
+            initcond: a.initcond,
+            parallel: a.parallel,
+            comment: a.comment,
         }
     }
 }
