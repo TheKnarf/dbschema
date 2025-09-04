@@ -1,7 +1,13 @@
 table "orders" {
   schema = "public"
-  column "id" { type = "serial" nullable = false }
-  column "updated_at" { type = "timestamptz" nullable = true }
+  column "id" {
+    type = "serial"
+    nullable = false
+  }
+  column "updated_at" {
+    type = "timestamptz"
+    nullable = true
+  }
   primary_key { columns = ["id"] }
 }
 

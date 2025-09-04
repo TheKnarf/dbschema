@@ -1,7 +1,13 @@
 table "users" {
   schema = "public"
-  column "id" { type = "serial" nullable = false }
-  column "email" { type = "text" nullable = false }
+  column "id" {
+    type = "serial"
+    nullable = false
+  }
+  column "email" {
+    type = "text"
+    nullable = false
+  }
   primary_key { columns = ["id"] }
 }
 

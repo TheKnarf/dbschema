@@ -4,7 +4,10 @@ locals {
 
 table "users" {
   schema = local.schema
-  column "id" { type = "serial" nullable = false }
+  column "id" {
+    type = "serial"
+    nullable = false
+  }
 }
 
 test "local_schema" {
