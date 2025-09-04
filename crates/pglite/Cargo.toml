@@ -11,3 +11,6 @@ postgres-protocol = "0.6"
 wasmer = "5.0.0-rc.1"
 wasmer-emscripten = "5.0.0-rc.1"
 wasmer-wasix = { version = "0.29.0", default-features = false, features = ["sys-default"] }
+
+[dev-dependencies]
+wasmparser = "0.216"

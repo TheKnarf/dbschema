@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use hcl::Value;
+use std::collections::HashMap;
 
 use super::ast::VarValidation;
 

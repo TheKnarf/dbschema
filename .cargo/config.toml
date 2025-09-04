@@ -1,0 +1,9 @@
+[env]
+# Ensure build scripts (cc/clang) and dependencies use a consistent macOS
+# deployment target to avoid version-mismatch warnings during linking.
+MACOSX_DEPLOYMENT_TARGET = "15.5"
+
+[target.x86_64-apple-darwin]
+# Match the linker minimum macOS version with the environment above.
+rustflags = ["-C", "link-arg=-mmacosx-version-min=15.5"]
+
