@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use crate::frontend::ast;
 use crate::frontend::ast::VarValidation;
 use crate::frontend::builtins;
-use crate::frontend::env::{EnvVars, VarSpec};
+use crate::frontend::env::{EnvVars, VarSpec, VarType};
 use crate::frontend::for_each::execute_for_each;
 use crate::frontend::lower;
 use crate::ir;
@@ -609,22 +609,62 @@ fn value_kind(v: &Value) -> &'static str {
     }
 }
 
-fn check_var_type(name: &str, v: &Value, expected: &str) -> Result<()> {
-    let ok = match expected {
-        "string" => matches!(v, Value::String(_)),
-        "number" => matches!(v, Value::Number(_)),
-        "bool" | "boolean" => matches!(v, Value::Bool(_)),
-        "array" | "list" => matches!(v, Value::Array(_)),
-        "object" | "map" => matches!(v, Value::Object(_)),
-        _ => bail!("unknown variable type '{expected}' for '{name}'"),
-    };
-    if ok {
-        Ok(())
-    } else {
-        bail!(
-            "variable '{name}' expected type {expected}, got {}",
-            value_kind(v)
-        );
+fn check_var_type(name: &str, v: &Value, expected: &VarType) -> Result<()> {
+    match expected {
+        VarType::String => {
+            if matches!(v, Value::String(_)) {
+                Ok(())
+            } else {
+                bail!(
+                    "variable '{name}' expected type string, got {}",
+                    value_kind(v)
+                )
+            }
+        }
+        VarType::Number => {
+            if matches!(v, Value::Number(_)) {
+                Ok(())
+            } else {
+                bail!(
+                    "variable '{name}' expected type number, got {}",
+                    value_kind(v)
+                )
+            }
+        }
+        VarType::Bool => {
+            if matches!(v, Value::Bool(_)) {
+                Ok(())
+            } else {
+                bail!(
+                    "variable '{name}' expected type bool, got {}",
+                    value_kind(v)
+                )
+            }
+        }
+        VarType::List(inner) => match v {
+            Value::Array(arr) => {
+                for (i, item) in arr.iter().enumerate() {
+                    check_var_type(&format!("{name}[{i}]"), item, inner)?;
+                }
+                Ok(())
+            }
+            _ => bail!(
+                "variable '{name}' expected type {expected}, got {}",
+                value_kind(v)
+            ),
+        },
+        VarType::Map(inner) => match v {
+            Value::Object(map) => {
+                for (k, item) in map.iter() {
+                    check_var_type(&format!("{name}.{k}"), item, inner)?;
+                }
+                Ok(())
+            }
+            _ => bail!(
+                "variable '{name}' expected type {expected}, got {}",
+                value_kind(v)
+            ),
+        },
     }
 }
 
@@ -668,7 +708,10 @@ fn load_file(
         if let Some(attr) = find_attr(blk.body(), "type") {
             let t = expr_to_string(attr.expr(), parent_env)
                 .with_context(|| format!("evaluating type for variable '{}')", name))?;
-            spec.r#type = Some(t);
+            spec.r#type = Some(
+                t.parse()
+                    .with_context(|| format!("parsing type for variable '{name}'"))?,
+            );
         }
         if let Some(vblk) = blk.body().blocks().find(|b| b.identifier() == "validation") {
             let cond_attr = find_attr(vblk.body(), "condition")
@@ -1240,8 +1283,7 @@ fn load_file(
                 Ok(v) => v,
                 Err(_) => {
                     // Fallback: try single string
-                    vec![get_attr_string(b, "assert", &env)?
-                        .context("test 'assert' is required")?]
+                    vec![get_attr_string(b, "assert", &env)?.context("test 'assert' is required")?]
                 }
             },
             None => Vec::new(),

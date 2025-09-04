@@ -1,3 +1,4 @@
+use anyhow::{bail, Result};
 use hcl::Value;
 use std::collections::HashMap;
 
@@ -41,9 +42,56 @@ pub struct EnvVars {
     pub count: Option<usize>,
 }
 
-#[derive(Default, Clone)]
+#[derive(Clone, Debug)]
+pub enum VarType {
+    String,
+    Number,
+    Bool,
+    List(Box<VarType>),
+    Map(Box<VarType>),
+}
+
+impl std::fmt::Display for VarType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            VarType::String => write!(f, "string"),
+            VarType::Number => write!(f, "number"),
+            VarType::Bool => write!(f, "bool"),
+            VarType::List(inner) => write!(f, "list({inner})"),
+            VarType::Map(inner) => write!(f, "map({inner})"),
+        }
+    }
+}
+
+impl std::str::FromStr for VarType {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self> {
+        let s = s.trim();
+        if let Some(inner) = s.strip_prefix("list(").and_then(|v| v.strip_suffix(')')) {
+            return Ok(VarType::List(Box::new(inner.parse()?)));
+        }
+        if let Some(inner) = s.strip_prefix("array(").and_then(|v| v.strip_suffix(')')) {
+            return Ok(VarType::List(Box::new(inner.parse()?)));
+        }
+        if let Some(inner) = s.strip_prefix("map(").and_then(|v| v.strip_suffix(')')) {
+            return Ok(VarType::Map(Box::new(inner.parse()?)));
+        }
+        if let Some(inner) = s.strip_prefix("object(").and_then(|v| v.strip_suffix(')')) {
+            return Ok(VarType::Map(Box::new(inner.parse()?)));
+        }
+        match s {
+            "string" => Ok(VarType::String),
+            "number" => Ok(VarType::Number),
+            "bool" | "boolean" => Ok(VarType::Bool),
+            _ => bail!("unknown type '{s}'"),
+        }
+    }
+}
+
+#[derive(Default, Clone, Debug)]
 pub struct VarSpec {
     pub default: Option<Value>,
-    pub r#type: Option<String>,
+    pub r#type: Option<VarType>,
     pub validation: Option<VarValidation>,
 }

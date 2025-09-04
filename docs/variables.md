@@ -13,6 +13,20 @@ variable "schema" {
 }
 ```
 
+### Typed variables
+
+Variables may declare complex types to ensure the provided values match expectations:
+
+```hcl
+variable "ids" {
+  type = "list(number)"
+}
+
+variable "labels" {
+  type = "map(string)"
+}
+```
+
 ### `for_each` and `count`
 
 Blocks can be repeated dynamically using `for_each` over a list or object, or a numeric `count`:
