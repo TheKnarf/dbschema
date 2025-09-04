@@ -10,6 +10,10 @@ var_files = ["vars.tfvars"]
 # Environment variables to set
 env = { DATABASE_URL = "postgres://localhost:5432/mydb" }
 
+[settings.lint.severity]
+missing-index = "warn"
+forbid-serial = "error"
+
 # Target definitions
 [[targets]]
 name = "postgres_schema"
