@@ -237,6 +237,12 @@ impl From<ast::AstRole> for ir::RoleSpec {
             name: r.name,
             alt_name: r.alt_name,
             login: r.login,
+            superuser: r.superuser,
+            createdb: r.createdb,
+            createrole: r.createrole,
+            replication: r.replication,
+            password: r.password,
+            in_role: r.in_role,
             comment: r.comment,
         }
     }
@@ -251,6 +257,8 @@ impl From<ast::AstGrant> for ir::GrantSpec {
             schema: g.schema,
             table: g.table,
             function: g.function,
+            database: g.database,
+            sequence: g.sequence,
         }
     }
 }

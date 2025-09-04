@@ -14,6 +14,12 @@ pub fn literal(s: &str) -> String {
 pub struct Role {
     pub name: String,
     pub login: bool,
+    pub superuser: bool,
+    pub createdb: bool,
+    pub createrole: bool,
+    pub replication: bool,
+    pub password: Option<String>,
+    pub in_role: Vec<String>,
 }
 
 impl From<&crate::ir::RoleSpec> for Role {
@@ -21,19 +27,57 @@ impl From<&crate::ir::RoleSpec> for Role {
         Self {
             name: r.alt_name.clone().unwrap_or_else(|| r.name.clone()),
             login: r.login,
+            superuser: r.superuser,
+            createdb: r.createdb,
+            createrole: r.createrole,
+            replication: r.replication,
+            password: r.password.clone(),
+            in_role: r.in_role.clone(),
         }
     }
 }
 
 impl fmt::Display for Role {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let login = if self.login { " LOGIN" } else { "" };
+        let mut parts = Vec::new();
+        if self.login {
+            parts.push("LOGIN".to_string());
+        }
+        if self.superuser {
+            parts.push("SUPERUSER".to_string());
+        }
+        if self.createdb {
+            parts.push("CREATEDB".to_string());
+        }
+        if self.createrole {
+            parts.push("CREATEROLE".to_string());
+        }
+        if self.replication {
+            parts.push("REPLICATION".to_string());
+        }
+        if let Some(pw) = &self.password {
+            parts.push(format!("PASSWORD {}", literal(pw)));
+        }
+        if !self.in_role.is_empty() {
+            let roles = self
+                .in_role
+                .iter()
+                .map(|r| ident(r))
+                .collect::<Vec<_>>()
+                .join(", ");
+            parts.push(format!("IN ROLE {}", roles));
+        }
+        let attrs = if parts.is_empty() {
+            String::new()
+        } else {
+            format!(" {}", parts.join(" "))
+        };
         write!(
             f,
-            "DO $$\nBEGIN\n  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = {name_lit}) THEN\n    CREATE ROLE {name_ident}{login};\n  END IF;\nEND$$;",
+            "DO $$\nBEGIN\n  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = {name_lit}) THEN\n    CREATE ROLE {name_ident}{attrs};\n  END IF;\nEND$$;",
             name_lit = literal(&self.name),
             name_ident = ident(&self.name),
-            login = login,
+            attrs = attrs,
         )
     }
 }
@@ -1062,6 +1106,8 @@ pub struct Grant {
     pub schema: Option<String>,
     pub table: Option<String>,
     pub function: Option<String>,
+    pub database: Option<String>,
+    pub sequence: Option<String>,
 }
 
 impl From<&crate::ir::GrantSpec> for Grant {
@@ -1072,18 +1118,24 @@ impl From<&crate::ir::GrantSpec> for Grant {
             schema: g.schema.clone(),
             table: g.table.clone(),
             function: g.function.clone(),
+            database: g.database.clone(),
+            sequence: g.sequence.clone(),
         }
     }
 }
 
 impl fmt::Display for Grant {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let privs = self
-            .privileges
-            .iter()
-            .map(|p| p.to_uppercase())
-            .collect::<Vec<_>>()
-            .join(", ");
+        let privs = if self.privileges.len() == 1 && self.privileges[0].eq_ignore_ascii_case("all")
+        {
+            "ALL PRIVILEGES".to_string()
+        } else {
+            self.privileges
+                .iter()
+                .map(|p| p.to_uppercase())
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
         let role = ident(&self.role);
         if let Some(table) = &self.table {
             let schema = self.schema.clone().unwrap_or_else(|| "public".to_string());
@@ -1105,12 +1157,30 @@ impl fmt::Display for Grant {
                 fn_ident = ident(function),
                 role = role,
             )
+        } else if let Some(sequence) = &self.sequence {
+            let schema = self.schema.clone().unwrap_or_else(|| "public".to_string());
+            write!(
+                f,
+                "GRANT {privs} ON SEQUENCE {schema_ident}.{seq_ident} TO {role};",
+                privs = privs,
+                schema_ident = ident(&schema),
+                seq_ident = ident(sequence),
+                role = role,
+            )
         } else if let Some(schema) = &self.schema {
             write!(
                 f,
                 "GRANT {privs} ON SCHEMA {schema_ident} TO {role};",
                 privs = privs,
                 schema_ident = ident(schema),
+                role = role,
+            )
+        } else if let Some(database) = &self.database {
+            write!(
+                f,
+                "GRANT {privs} ON DATABASE {db_ident} TO {role};",
+                privs = privs,
+                db_ident = ident(database),
                 role = role,
             )
         } else {
@@ -1159,5 +1229,59 @@ mod tests {
         let sql = table.to_string();
         assert!(sql.contains("PARTITION BY RANGE (\"id\")"));
         assert!(sql.contains("CREATE TABLE \"public\".\"t_p1\" PARTITION OF \"public\".\"t\" FOR VALUES FROM (0) TO (10);"));
+    }
+
+    #[test]
+    fn role_sql_with_flags() {
+        let rspec = crate::ir::RoleSpec {
+            name: "r".into(),
+            alt_name: None,
+            login: true,
+            superuser: true,
+            createdb: true,
+            createrole: true,
+            replication: false,
+            password: Some("secret".into()),
+            in_role: vec!["base".into()],
+            comment: None,
+        };
+        let role = Role::from(&rspec);
+        let sql = role.to_string();
+        assert!(sql.contains("CREATE ROLE \"r\" LOGIN SUPERUSER CREATEDB CREATEROLE PASSWORD 'secret' IN ROLE \"base\";"));
+    }
+
+    #[test]
+    fn grant_sql_all_database_and_sequence() {
+        let gdb = crate::ir::GrantSpec {
+            name: "gdb".into(),
+            role: "r".into(),
+            privileges: vec!["ALL".into()],
+            schema: None,
+            table: None,
+            function: None,
+            database: Some("appdb".into()),
+            sequence: None,
+        };
+        let grant_db = Grant::from(&gdb);
+        assert_eq!(
+            grant_db.to_string(),
+            "GRANT ALL PRIVILEGES ON DATABASE \"appdb\" TO \"r\";"
+        );
+
+        let gseq = crate::ir::GrantSpec {
+            name: "gseq".into(),
+            role: "r".into(),
+            privileges: vec!["USAGE".into()],
+            schema: Some("public".into()),
+            table: None,
+            function: None,
+            database: None,
+            sequence: Some("s".into()),
+        };
+        let grant_seq = Grant::from(&gseq);
+        assert_eq!(
+            grant_seq.to_string(),
+            "GRANT USAGE ON SEQUENCE \"public\".\"s\" TO \"r\";"
+        );
     }
 }

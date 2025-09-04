@@ -705,4 +705,31 @@ mod tests {
         assert_eq!(filtered.functions.len(), 0);
         assert_eq!(filtered.tables.len(), 1);
     }
+
+    #[test]
+    fn parse_role_and_grant() {
+        let mut files = HashMap::new();
+        files.insert(
+            p("/root/main.hcl"),
+            r#"
+            role "app" {
+              login    = true
+              createdb = true
+            }
+            grant "g" {
+              role       = "app"
+              privileges = ["ALL"]
+              database   = "appdb"
+            }
+            "#
+            .to_string(),
+        );
+        let loader = MapLoader { files };
+        let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
+        assert_eq!(cfg.roles.len(), 1);
+        assert_eq!(cfg.grants.len(), 1);
+        let sql = generate_with_backend("postgres", &cfg, false).unwrap();
+        assert!(sql.contains("CREATE ROLE \"app\" LOGIN CREATEDB;"));
+        assert!(sql.contains("GRANT ALL PRIVILEGES ON DATABASE \"appdb\" TO \"app\";"));
+    }
 }

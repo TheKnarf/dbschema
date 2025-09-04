@@ -3,11 +3,17 @@
 Grants privileges to a role on database objects.
 
 ```hcl
-grant "app_user_tables" {
+grant "app_user_db" {
   role       = "app_user"
-  privileges = ["SELECT"]
+  privileges = ["ALL"]
+  database   = "appdb"
+}
+
+grant "app_user_seq" {
+  role       = "app_user"
+  privileges = ["USAGE"]
   schema     = "public"
-  table      = "users"
+  sequence   = "user_id_seq"
 }
 ```
 
@@ -18,3 +24,6 @@ grant "app_user_tables" {
 - `schema` (string, optional): schema containing the object.
 - `table` (string, optional): table name.
 - `function` (string, optional): function name.
+- `database` (string, optional): database name.
+- `sequence` (string, optional): sequence name.
+- `privileges = ["ALL"]` grants all privileges.
