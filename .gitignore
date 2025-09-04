@@ -1,4 +1,4 @@
-tmp_mig*
+tmp_*
 vendor/pglite/
 node_modules/
 

@@ -20,7 +20,7 @@ policy "user_select" {
   schema  = "public"
   table   = "users"
   command = "select"
-  roles   = ["app_user"]
+  roles   = ["postgres"]
   using   = "true"
 }
 
