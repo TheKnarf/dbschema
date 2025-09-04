@@ -343,6 +343,14 @@ fn main() -> Result<()> {
                 } else {
                     Some(names.into_iter().collect())
                 };
+                #[cfg(feature = "pglite")]
+                let summary = if matches!(backend, TestBackendKind::Pglite) {
+                    tokio::runtime::Runtime::new()?
+                        .block_on(async { runner.run(&config, &dsn, only.as_ref()) })?
+                } else {
+                    runner.run(&config, &dsn, only.as_ref())?
+                };
+                #[cfg(not(feature = "pglite"))]
                 let summary = runner.run(&config, &dsn, only.as_ref())?;
                 for r in summary.results {
                     if r.passed {
@@ -368,51 +376,56 @@ fn main() -> Result<()> {
             #[cfg(feature = "pglite")]
             Commands::Pglite {} => {
                 use std::io::{self, Write};
-                let mut rt = dbschema::test_runner::pglite::PGliteRuntime::new()?;
-                rt.startup()?;
-                let stdin = io::stdin();
-                let mut line = String::new();
-                loop {
-                    print!("pglite=> ");
-                    io::stdout().flush()?;
-                    line.clear();
-                    if stdin.read_line(&mut line)? == 0 {
-                        break;
-                    }
-                    let sql = line.trim();
-                    if sql.eq_ignore_ascii_case("\\q") {
-                        break;
-                    }
-                    match rt.simple_query(sql) {
-                        Ok(msgs) => {
-                            for m in msgs {
-                                if let backend::Message::DataRow(row) = m {
-                                    let buf = row.buffer();
-                                    let mut fields = row.ranges();
-                                    let mut out = Vec::new();
-                                    while let Some(res) = fields.next()? {
-                                        match res {
-                                            Some(range) => {
-                                                let val = &buf[range];
-                                                out.push(String::from_utf8_lossy(val).to_string());
+                tokio::runtime::Runtime::new()?.block_on(async {
+                    let mut pg = dbschema::test_runner::pglite::PGliteRuntime::new()?;
+                    pg.startup()?;
+                    let stdin = io::stdin();
+                    let mut line = String::new();
+                    loop {
+                        print!("pglite=> ");
+                        io::stdout().flush()?;
+                        line.clear();
+                        if stdin.read_line(&mut line)? == 0 {
+                            break;
+                        }
+                        let sql = line.trim();
+                        if sql.eq_ignore_ascii_case("\\q") {
+                            break;
+                        }
+                        match pg.simple_query(sql) {
+                            Ok(msgs) => {
+                                for m in msgs {
+                                    if let backend::Message::DataRow(row) = m {
+                                        let buf = row.buffer();
+                                        let mut fields = row.ranges();
+                                        let mut out = Vec::new();
+                                        while let Some(res) = fields.next()? {
+                                            match res {
+                                                Some(range) => {
+                                                    let val = &buf[range];
+                                                    out.push(
+                                                        String::from_utf8_lossy(val).to_string(),
+                                                    );
+                                                }
+                                                None => out.push("NULL".into()),
                                             }
-                                            None => out.push("NULL".into()),
                                         }
-                                    }
-                                    println!("{}", out.join(" | "));
-                                } else if let backend::Message::CommandComplete(c) = m {
-                                    if let Ok(tag) = c.tag() {
-                                        println!("{}", tag);
-                                    } else {
-                                        println!("<command complete>");
+                                        println!("{}", out.join(" | "));
+                                    } else if let backend::Message::CommandComplete(c) = m {
+                                        if let Ok(tag) = c.tag() {
+                                            println!("{}", tag);
+                                        } else {
+                                            println!("<command complete>");
+                                        }
                                     }
                                 }
                             }
+                            Err(e) => eprintln!("error: {e}"),
                         }
-                        Err(e) => eprintln!("error: {e}"),
                     }
-                }
-                rt.shutdown()?;
+                    pg.shutdown()?;
+                    Ok::<(), anyhow::Error>(())
+                })?;
             }
         }
     }
