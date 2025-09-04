@@ -16,6 +16,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
+use postgres::{Client, NoTls};
 
 #[derive(Parser)]
 #[command(name = "dbschema")]
@@ -100,6 +101,9 @@ enum Commands {
         /// Names of tests to run (repeatable). If omitted, runs all.
         #[arg(long = "name")]
         names: Vec<String>,
+        /// Generate and apply migrations before running tests (postgres only)
+        #[arg(long)]
+        apply: bool,
     },
     /// Start an in-memory PGlite database REPL
     #[cfg(feature = "pglite")]
@@ -267,6 +271,7 @@ fn main() -> Result<()> {
                 dsn,
                 names,
                 backend,
+                apply,
             } => {
                 let (dsn, backend, config) = if cli.config {
                     let dbschema_config = config::load_config()
@@ -338,6 +343,28 @@ fn main() -> Result<()> {
                     #[cfg(feature = "pglite")]
                     TestBackendKind::Pglite => dsn.unwrap_or_else(|| "pglite".to_string()),
                 };
+                // Optionally generate and apply migrations for Postgres
+                if apply {
+                    match backend {
+                        TestBackendKind::Postgres => {
+                            dbschema::validate(&config, cli.strict)?;
+                            let artifact =
+                                dbschema::generate_with_backend("postgres", &config, cli.strict)?;
+                            let mut client =
+                                Client::connect(&dsn, NoTls).with_context(|| {
+                                    format!("connecting to database: {}", &dsn)
+                                })?;
+                            client
+                                .batch_execute(&artifact)
+                                .with_context(|| "applying generated migration to database")?;
+                        }
+                        #[cfg(feature = "pglite")]
+                        TestBackendKind::Pglite => {
+                            info!("--apply ignored for pglite backend");
+                        }
+                    }
+                }
+
                 let runner: Box<dyn TestBackend> = match backend {
                     TestBackendKind::Postgres => {
                         Box::new(dbschema::test_runner::postgres::PostgresTestBackend)

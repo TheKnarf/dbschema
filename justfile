@@ -46,22 +46,8 @@ example-test file='examples/table.hcl' dsn-prefix='postgres://postgres:postgres@
   just docker-up
   # Recreate DB
   docker compose exec -T db psql -U postgres -d postgres -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS \"${db}\";" -c "CREATE DATABASE \"${db}\";"
-  # Generate migration
-  tmpdir="tmp_mig_${name}"; rm -rf "$tmpdir"; mkdir -p "$tmpdir"
-  if ! cargo run -- --input "{{file}}" create-migration --out-dir "$tmpdir" --name "$name" >/dev/null; then
-    echo -e "${RED}❌ generate failed${NC}"; docker compose exec -T db psql -U postgres -d postgres -c "DROP DATABASE IF EXISTS \"${db}\";" >/dev/null; exit 1
-  fi
-  # Apply migration(s)
-  ok=1
-  for sql in "$tmpdir"/*.sql; do
-    if ! docker compose exec -T db psql -U postgres -d "$db" -v ON_ERROR_STOP=1 -f "/dev/stdin" < "$sql" >/dev/null; then ok=0; break; fi
-  done
-  rm -rf "$tmpdir"
-  if [ "$ok" -ne 1 ]; then
-    echo -e "${RED}❌ apply failed${NC}"; docker compose exec -T db psql -U postgres -d postgres -c "DROP DATABASE IF EXISTS \"${db}\";" >/dev/null; exit 1
-  fi
-  # Run tests
-  if cargo run -- --input "{{file}}" test --dsn "$dsn" >/dev/null; then
+  # Apply migrations and run tests
+  if cargo run -- --input "{{file}}" test --dsn "$dsn" --apply >/dev/null; then
     echo -e "${GREEN}✅ ${name} ok${NC}"
     rc=0
   else
@@ -101,22 +87,8 @@ examples-test dsn-prefix='postgres://postgres:postgres@localhost:5432':
     if ! docker compose exec -T db psql -U postgres -d postgres -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS \"${db}\";" -c "CREATE DATABASE \"${db}\";" >/dev/null; then
       echo -e "${RED}❌ ${name} failed (create db)${NC}"; failed=$((failed+1)); continue
     fi
-    # Generate migration
-    tmpdir="tmp_mig_${name}"; rm -rf "$tmpdir"; mkdir -p "$tmpdir"
-    if ! cargo run -- --input "$example" create-migration --out-dir "$tmpdir" --name "$name" >/dev/null; then
-      echo -e "${RED}❌ ${name} failed (generate)${NC}"; failed=$((failed+1)); docker compose exec -T db psql -U postgres -d postgres -c "DROP DATABASE IF EXISTS \"${db}\";" >/dev/null; rm -rf "$tmpdir"; continue
-    fi
-    # Apply migration(s)
-    ok=1
-    for sql in "$tmpdir"/*.sql; do
-      if ! docker compose exec -T db psql -U postgres -d "$db" -v ON_ERROR_STOP=1 -f "/dev/stdin" < "$sql" >/dev/null; then ok=0; break; fi
-    done
-    rm -rf "$tmpdir"
-    if [ "$ok" -ne 1 ]; then
-      echo -e "${RED}❌ ${name} failed (apply)${NC}"; failed=$((failed+1)); docker compose exec -T db psql -U postgres -d postgres -c "DROP DATABASE IF EXISTS \"${db}\";" >/dev/null; continue
-    fi
-    # Run tests
-    if cargo run -- --input "$example" test --dsn "$dsn" >/dev/null; then
+    # Apply migrations and run tests
+    if cargo run -- --input "$example" test --dsn "$dsn" --apply >/dev/null; then
       echo -e "${GREEN}✅ ${name} ok${NC}"; passed=$((passed+1))
     else
       echo -e "${RED}❌ ${name} failed (tests)${NC}"; failed=$((failed+1))
