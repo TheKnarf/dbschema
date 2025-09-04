@@ -304,6 +304,10 @@ impl From<ast::AstIndex> for ir::IndexSpec {
         Self {
             name: i.name,
             columns: i.columns,
+            expressions: i.expressions,
+            r#where: i.r#where,
+            orders: i.orders,
+            operator_classes: i.operator_classes,
             unique: i.unique,
         }
     }
@@ -358,6 +362,10 @@ impl From<ast::AstStandaloneIndex> for ir::StandaloneIndexSpec {
             table: i.table,
             schema: i.schema,
             columns: i.columns,
+            expressions: i.expressions,
+            r#where: i.r#where,
+            orders: i.orders,
+            operator_classes: i.operator_classes,
             unique: i.unique,
         }
     }

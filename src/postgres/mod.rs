@@ -756,6 +756,10 @@ pub struct Index {
     pub table_name: String,
     pub name: Option<String>,
     pub columns: Vec<String>,
+    pub expressions: Vec<String>,
+    pub r#where: Option<String>,
+    pub orders: Vec<String>,
+    pub operator_classes: Vec<String>,
     pub unique: bool,
 }
 
@@ -769,6 +773,10 @@ impl Index {
                 .unwrap_or_else(|| table.name.clone()),
             name: idx.name.clone(),
             columns: idx.columns.clone(),
+            expressions: idx.expressions.clone(),
+            r#where: idx.r#where.clone(),
+            orders: idx.orders.clone(),
+            operator_classes: idx.operator_classes.clone(),
             unique: idx.unique,
         }
     }
@@ -779,6 +787,10 @@ impl Index {
             table_name: idx.table.clone(),
             name: Some(idx.name.clone()),
             columns: idx.columns.clone(),
+            expressions: idx.expressions.clone(),
+            r#where: idx.r#where.clone(),
+            orders: idx.orders.clone(),
+            operator_classes: idx.operator_classes.clone(),
             unique: idx.unique,
         }
     }
@@ -789,7 +801,36 @@ impl fmt::Display for Index {
         let cols = self
             .columns
             .iter()
-            .map(|c| ident(c))
+            .enumerate()
+            .map(|(i, c)| {
+                let mut seg = ident(c);
+                if let Some(ord) = self.orders.get(i) {
+                    if !ord.is_empty() {
+                        seg = format!("{seg} {ord}");
+                    }
+                }
+                if let Some(opc) = self.operator_classes.get(i) {
+                    if !opc.is_empty() {
+                        seg = format!("{seg} {opc}");
+                    }
+                }
+                seg
+            })
+            .chain(self.expressions.iter().enumerate().map(|(j, e)| {
+                let mut seg = format!("({e})");
+                let idx = self.columns.len() + j;
+                if let Some(ord) = self.orders.get(idx) {
+                    if !ord.is_empty() {
+                        seg = format!("{seg} {ord}");
+                    }
+                }
+                if let Some(opc) = self.operator_classes.get(idx) {
+                    if !opc.is_empty() {
+                        seg = format!("{seg} {opc}");
+                    }
+                }
+                seg
+            }))
             .collect::<Vec<_>>()
             .join(", ");
         let unique = if self.unique { "UNIQUE " } else { "" };
@@ -806,14 +847,19 @@ impl fmt::Display for Index {
                 ident(&n)
             }
         };
+        let where_clause = match &self.r#where {
+            Some(w) => format!(" WHERE {w}"),
+            None => String::new(),
+        };
         write!(
             f,
-            "CREATE {unique}INDEX IF NOT EXISTS {name} ON {schema}.{table} ({cols});",
+            "CREATE {unique}INDEX IF NOT EXISTS {name} ON {schema}.{table} ({cols}){where_clause};",
             unique = unique,
             name = name,
             schema = ident(&self.table_schema),
             table = ident(&self.table_name),
             cols = cols,
+            where_clause = where_clause,
         )
     }
 }
