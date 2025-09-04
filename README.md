@@ -98,6 +98,9 @@ test_backend = "pglite"
 - `naming-convention`: table and column names must be `snake_case`.
 - `missing-index`: tables should define at least one index or primary key.
 
+- `forbid-serial`: disallow use of `serial`/`bigserial` column types.
+- `primary-key-not-null`: columns in a primary key must be `NOT NULL`.
+
 Suppress a rule for a specific table or column with `lint_ignore`:
 
 ```hcl
@@ -110,6 +113,16 @@ table "users" {
   }
 }
 ```
+
+Configure rule severity globally in `dbschema.toml`:
+
+```toml
+[settings.lint.severity]
+missing-index = "warn"
+forbid-serial = "error"
+```
+
+Setting a rule's severity to `allow` suppresses it entirely.
 
 ## Logging
 

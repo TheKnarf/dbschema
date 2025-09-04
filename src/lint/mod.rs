@@ -1,9 +1,26 @@
 use crate::ir::Config;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LintSeverity {
+    Allow,
+    Warn,
+    Error,
+}
 
 #[derive(Debug)]
 pub struct LintMessage {
     pub check: &'static str,
     pub message: String,
+    pub severity: LintSeverity,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct LintSettings {
+    #[serde(default)]
+    pub severity: HashMap<String, LintSeverity>,
 }
 
 pub trait LintCheck {
@@ -11,18 +28,35 @@ pub trait LintCheck {
     fn run(&self, cfg: &Config) -> Vec<LintMessage>;
 }
 
-pub fn run(cfg: &Config) -> Vec<LintMessage> {
+pub fn run(cfg: &Config, settings: &LintSettings) -> Vec<LintMessage> {
     let checks: Vec<Box<dyn LintCheck>> = vec![
         Box::new(NamingConvention),
         Box::new(MissingIndex),
+        Box::new(ForbidSerial),
+        Box::new(PrimaryKeyNotNull),
     ];
-    run_with_checks(cfg, checks)
+    run_with_checks(cfg, checks, settings)
 }
 
-pub fn run_with_checks(cfg: &Config, checks: Vec<Box<dyn LintCheck>>) -> Vec<LintMessage> {
+pub fn run_with_checks(
+    cfg: &Config,
+    checks: Vec<Box<dyn LintCheck>>,
+    settings: &LintSettings,
+) -> Vec<LintMessage> {
     let mut messages = Vec::new();
     for check in checks {
-        messages.extend(check.run(cfg));
+        let severity = settings
+            .severity
+            .get(check.name())
+            .copied()
+            .unwrap_or(LintSeverity::Error);
+        if severity == LintSeverity::Allow {
+            continue;
+        }
+        for mut msg in check.run(cfg) {
+            msg.severity = severity;
+            messages.push(msg);
+        }
     }
     messages
 }
@@ -59,6 +93,7 @@ impl LintCheck for NamingConvention {
                 msgs.push(LintMessage {
                     check: self.name(),
                     message: format!("table '{}' should be snake_case", table.name),
+                    severity: LintSeverity::Error,
                 });
             }
             for col in &table.columns {
@@ -74,6 +109,7 @@ impl LintCheck for NamingConvention {
                             "column '{}.{}' should be snake_case",
                             table.name, col.name
                         ),
+                        severity: LintSeverity::Error,
                     });
                 }
             }
@@ -105,7 +141,165 @@ impl LintCheck for MissingIndex {
                 msgs.push(LintMessage {
                     check: self.name(),
                     message: format!("table '{}' has no indexes", table.name),
+                    severity: LintSeverity::Error,
                 });
+            }
+        }
+        msgs
+    }
+}
+
+struct ForbidSerial;
+
+impl ForbidSerial {
+    fn ignored(ignores: &[String], rule: &str) -> bool {
+        ignores.iter().any(|i| i == rule)
+    }
+}
+
+impl LintCheck for ForbidSerial {
+    fn name(&self) -> &'static str {
+        "forbid-serial"
+    }
+
+    fn run(&self, cfg: &Config) -> Vec<LintMessage> {
+        let mut msgs = Vec::new();
+        for table in &cfg.tables {
+            if Self::ignored(&table.lint_ignore, self.name()) {
+                continue;
+            }
+            for col in &table.columns {
+                if Self::ignored(&col.lint_ignore, self.name())
+                    || Self::ignored(&table.lint_ignore, self.name())
+                {
+                    continue;
+                }
+                if col.r#type.to_lowercase().contains("serial") {
+                    msgs.push(LintMessage {
+                        check: self.name(),
+                        message: format!("column '{}.{}' uses serial type", table.name, col.name),
+                        severity: LintSeverity::Error,
+                    });
+                }
+            }
+        }
+        msgs
+    }
+}
+
+struct PrimaryKeyNotNull;
+
+impl PrimaryKeyNotNull {
+    fn ignored(ignores: &[String], rule: &str) -> bool {
+        ignores.iter().any(|i| i == rule)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ir::{ColumnSpec, Config, PrimaryKeySpec, TableSpec};
+
+    fn base_table() -> Config {
+        let table = TableSpec {
+            name: "t".into(),
+            table_name: None,
+            schema: None,
+            if_not_exists: false,
+            columns: vec![ColumnSpec {
+                name: "id".into(),
+                r#type: "serial".into(),
+                nullable: false,
+                default: None,
+                db_type: None,
+                lint_ignore: vec![],
+                comment: None,
+            }],
+            primary_key: Some(PrimaryKeySpec {
+                name: None,
+                columns: vec!["id".into()],
+            }),
+            indexes: vec![],
+            foreign_keys: vec![],
+            back_references: vec![],
+            lint_ignore: vec![],
+            comment: None,
+        };
+        Config {
+            tables: vec![table],
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn forbid_serial_detected() {
+        let cfg = base_table();
+        let msgs = run(&cfg, &LintSettings::default());
+        assert!(msgs.iter().any(|m| m.check == "forbid-serial"));
+    }
+
+    #[test]
+    fn lint_ignore_suppresses_rule() {
+        let mut cfg = base_table();
+        cfg.tables[0].columns[0]
+            .lint_ignore
+            .push("forbid-serial".into());
+        let msgs = run(&cfg, &LintSettings::default());
+        assert!(msgs.iter().all(|m| m.check != "forbid-serial"));
+    }
+
+    #[test]
+    fn severity_allow_suppresses_rule() {
+        let cfg = base_table();
+        let mut settings = LintSettings::default();
+        settings
+            .severity
+            .insert("forbid-serial".into(), LintSeverity::Allow);
+        let msgs = run(&cfg, &settings);
+        assert!(msgs.is_empty());
+    }
+
+    #[test]
+    fn primary_key_columns_must_be_not_null() {
+        let mut cfg = base_table();
+        cfg.tables[0].columns[0].nullable = true;
+        let msgs = run(&cfg, &LintSettings::default());
+        assert!(msgs.iter().any(|m| m.check == "primary-key-not-null"));
+    }
+}
+
+impl LintCheck for PrimaryKeyNotNull {
+    fn name(&self) -> &'static str {
+        "primary-key-not-null"
+    }
+
+    fn run(&self, cfg: &Config) -> Vec<LintMessage> {
+        let mut msgs = Vec::new();
+        for table in &cfg.tables {
+            let Some(pk) = &table.primary_key else {
+                continue;
+            };
+            if Self::ignored(&table.lint_ignore, self.name()) {
+                continue;
+            }
+            for col_name in &pk.columns {
+                if let Some(col) = table.columns.iter().find(|c| &c.name == col_name) {
+                    if Self::ignored(&col.lint_ignore, self.name())
+                        || Self::ignored(&table.lint_ignore, self.name())
+                    {
+                        continue;
+                    }
+                    if col.nullable {
+                        msgs.push(LintMessage {
+                            check: self.name(),
+                            message: format!(
+                                "column '{}.{}' in primary key must be NOT NULL",
+                                table.name, col.name
+                            ),
+                            severity: LintSeverity::Error,
+                        });
+                    }
+                }
             }
         }
         msgs

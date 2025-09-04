@@ -197,14 +197,23 @@ fn main() -> Result<()> {
                     cli_filter_sets(&cli.backend, &cli.include_resources, &cli.exclude_resources);
                 let filtered = apply_filters(&config, &include_set, &exclude_set);
 
-                let lints = dbschema::lint::run(&filtered);
+                let lint_settings = config::load_config()?
+                    .map(|c| c.settings.lint)
+                    .unwrap_or_default();
+                let lints = dbschema::lint::run(&filtered, &lint_settings);
                 if lints.is_empty() {
                     info!("No lint issues found");
                 } else {
-                    for l in lints {
-                        println!("[{}] {}", l.check, l.message);
+                    let mut has_error = false;
+                    for l in &lints {
+                        println!("[{:?}] [{}] {}", l.severity, l.check, l.message);
+                        if l.severity == dbschema::lint::LintSeverity::Error {
+                            has_error = true;
+                        }
                     }
-                    std::process::exit(1);
+                    if has_error {
+                        std::process::exit(1);
+                    }
                 }
             }
             Commands::Fmt { paths } => {

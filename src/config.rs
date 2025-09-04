@@ -1,3 +1,4 @@
+use crate::lint::LintSettings;
 use anyhow::Result;
 use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
@@ -22,6 +23,9 @@ pub struct Settings {
     /// Default DSN for `dbschema test`
     #[serde(default)]
     pub test_dsn: Option<String>,
+    /// Lint configuration
+    #[serde(default)]
+    pub lint: LintSettings,
 }
 
 /// Configuration for a single target output
