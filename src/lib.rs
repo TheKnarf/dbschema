@@ -19,9 +19,9 @@ use std::path::Path;
 // Public re-exports
 use crate::frontend::env::EnvVars;
 pub use ir::{
-    AggregateSpec, CompositeTypeSpec, Config, DomainSpec, EnumSpec, EventTriggerSpec, ExtensionSpec,
-    FunctionSpec, GrantSpec, MaterializedViewSpec, OutputSpec, PolicySpec, RoleSpec, SchemaSpec,
-    SequenceSpec, TableSpec, TriggerSpec, ViewSpec,
+    AggregateSpec, CompositeTypeSpec, Config, DomainSpec, EnumSpec, EventTriggerSpec,
+    ExtensionSpec, FunctionSpec, GrantSpec, MaterializedViewSpec, OutputSpec, PolicySpec, RoleSpec,
+    SchemaSpec, SequenceSpec, TableSpec, TriggerSpec, ViewSpec,
 };
 
 // Loader abstraction: lets callers control how files are read.
@@ -646,6 +646,8 @@ mod tests {
                 indexes: vec![],
                 checks: vec![],
                 foreign_keys: vec![],
+                partition_by: None,
+                partitions: vec![],
                 back_references: vec![],
                 lint_ignore: vec![],
                 comment: None,
@@ -690,6 +692,8 @@ mod tests {
                 indexes: vec![],
                 checks: vec![],
                 foreign_keys: vec![],
+                partition_by: None,
+                partitions: vec![],
                 back_references: vec![],
                 lint_ignore: vec![],
                 comment: None,

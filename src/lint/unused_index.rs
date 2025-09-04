@@ -101,6 +101,8 @@ mod tests {
             }],
             checks: vec![],
             foreign_keys: vec![],
+            partition_by: None,
+            partitions: vec![],
             back_references: vec![],
             lint_ignore: vec![],
             comment: None,

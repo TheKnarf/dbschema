@@ -4,13 +4,13 @@ use std::collections::HashMap;
 
 mod destructive_change;
 mod long_identifier;
-mod unused_index;
 mod sql_syntax;
+mod unused_index;
 
 use destructive_change::DestructiveChange;
 use long_identifier::LongIdentifier;
-use unused_index::UnusedIndex;
 use sql_syntax::SqlSyntax;
+use unused_index::UnusedIndex;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -242,6 +242,8 @@ mod tests {
             indexes: vec![],
             checks: vec![],
             foreign_keys: vec![],
+            partition_by: None,
+            partitions: vec![],
             back_references: vec![],
             lint_ignore: vec![],
             comment: None,
