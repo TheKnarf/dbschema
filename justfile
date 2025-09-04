@@ -34,23 +34,42 @@ docker-up:
 #   just example-test file=examples/table.hcl
 #   just example-test file=examples/trigger.hcl dsn=postgres://...
 
-example-test file='examples/table.hcl' dsn-prefix='postgres://postgres:postgres@localhost:5432':
+example-test hcl='examples/table.hcl' dsn_prefix='postgres://postgres:postgres@localhost:5432' verbose='0':
   #!/usr/bin/env bash
   set -euo pipefail
-  name=$(basename "{{file}}" .hcl)
+  # Normalize parameter in case it was passed as `hcl=...`
+  hcl_param="{{hcl}}"; hcl_file="${hcl_param#hcl=}"
+  name=$(basename "$hcl_file" .hcl)
   db="dbschema_ex_${name}"
-  dsn="{{dsn-prefix}}/${db}"
+  # Normalize dsn_prefix in case it was passed incorrectly
+  dsn_prefix_raw="{{dsn_prefix}}"; dsn_prefix_val="${dsn_prefix_raw#dsn_prefix=}"
+  if [[ "$dsn_prefix_val" != postgres://* && "$dsn_prefix_val" != postgresql://* ]]; then
+    dsn_prefix_val='postgres://postgres:postgres@localhost:5432'
+  fi
+  dsn="${dsn_prefix_val}/${db}"
   GREEN='\033[0;32m'; RED='\033[0;31m'; YELLOW='\033[0;33m'; BLUE='\033[0;34m'; NC='\033[0m'
   echo -e "${BLUE}⏳ Running example: ${name}${NC}"
   # Ensure Docker is up
   just docker-up
+  # Optional verbose flag
+  extra=""; if [ "{{verbose}}" = "1" ]; then extra="--verbose"; fi
   # Apply migrations and run tests; create and drop DB automatically
-  if cargo run -q -- --input "{{file}}" test --dsn "$dsn" --apply --create-db "$db" >/dev/null; then
-    echo -e "${GREEN}✅ ${name} ok${NC}"
-    rc=0
+  if [ "{{verbose}}" = "1" ]; then
+    if cargo run -- --input "$hcl_file" test --dsn "$dsn" --apply --create-db "$db" $extra; then
+      echo -e "${GREEN}✅ ${name} ok${NC}"
+      rc=0
+    else
+      echo -e "${RED}❌ ${name} failed${NC}"
+      rc=1
+    fi
   else
-    echo -e "${RED}❌ ${name} failed${NC}"
-    rc=1
+    if cargo run -q -- --input "$hcl_file" test --dsn "$dsn" --apply --create-db "$db" $extra >/dev/null; then
+      echo -e "${GREEN}✅ ${name} ok${NC}"
+      rc=0
+    else
+      echo -e "${RED}❌ ${name} failed${NC}"
+      rc=1
+    fi
   fi
   exit $rc
 
@@ -68,7 +87,7 @@ examples-create-migration:
   done
 
 # Run tests for all example HCL files against local Postgres (Docker)
-examples-test dsn-prefix='postgres://postgres:postgres@localhost:5432':
+examples-test dsn_prefix='postgres://postgres:postgres@localhost:5432' verbose='0':
   #!/usr/bin/env bash
   set -euo pipefail
   just docker-up
@@ -77,13 +96,27 @@ examples-test dsn-prefix='postgres://postgres:postgres@localhost:5432':
   for example in examples/*.hcl; do
     name=$(basename "$example" .hcl)
     db="dbschema_ex_${name}"
-    dsn="{{dsn-prefix}}/${db}"
+    dsn_prefix_raw="{{dsn_prefix}}"; dsn_prefix_val="${dsn_prefix_raw#dsn_prefix=}"
+    if [[ "$dsn_prefix_val" != postgres://* && "$dsn_prefix_val" != postgresql://* ]]; then
+      dsn_prefix_val='postgres://postgres:postgres@localhost:5432'
+    fi
+    dsn="${dsn_prefix_val}/${db}"
     echo -e "${BLUE}⏳ Running example: ${name}${NC}"
+    # Optional verbose flag
+    extra=""; if [ "{{verbose}}" = "1" ]; then extra="--verbose"; fi
     # Apply migrations, create DB automatically, and run tests
-    if cargo run -q -- --input "$example" test --dsn "$dsn" --apply --create-db "$db" >/dev/null; then
-      echo -e "${GREEN}✅ ${name} ok${NC}"; passed=$((passed+1))
+    if [ "{{verbose}}" = "1" ]; then
+      if cargo run -- --input "$example" test --dsn "$dsn" --apply --create-db "$db" $extra; then
+        echo -e "${GREEN}✅ ${name} ok${NC}"; passed=$((passed+1))
+      else
+        echo -e "${RED}❌ ${name} failed (tests)${NC}"; failed=$((failed+1))
+      fi
     else
-      echo -e "${RED}❌ ${name} failed (tests)${NC}"; failed=$((failed+1))
+      if cargo run -q -- --input "$example" test --dsn "$dsn" --apply --create-db "$db" $extra >/dev/null; then
+        echo -e "${GREEN}✅ ${name} ok${NC}"; passed=$((passed+1))
+      else
+        echo -e "${RED}❌ ${name} failed (tests)${NC}"; failed=$((failed+1))
+      fi
     fi
   done
   echo -e "${YELLOW}Summary: ${passed} passed, ${failed} failed${NC}"

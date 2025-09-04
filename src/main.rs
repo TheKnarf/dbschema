@@ -110,6 +110,9 @@ enum Commands {
         /// Keep the database created via --create-db after tests finish (postgres only)
         #[arg(long = "keep-db")]
         keep_db: bool,
+        /// Verbose: print SQL being executed (apply + test phases)
+        #[arg(long)]
+        verbose: bool,
     },
     /// Start an in-memory PGlite database REPL
     #[cfg(feature = "pglite")]
@@ -280,6 +283,7 @@ fn main() -> Result<()> {
                 apply,
                 create_db,
                 keep_db,
+                verbose,
             } => {
                 let (dsn, backend, config) = if cli.config {
                     let dbschema_config = config::load_config()
@@ -362,9 +366,11 @@ fn main() -> Result<()> {
                     let mut admin = Client::connect(&admin_dsn, NoTls)
                         .with_context(|| format!("connecting to admin database: {}", admin_dsn))?;
                     // Drop and recreate the test database
+                    if verbose { info!("-- admin: DROP DATABASE IF EXISTS \"{}\";", dbname); }
                     admin
                         .simple_query(&format!("DROP DATABASE IF EXISTS \"{}\";", dbname))
                         .with_context(|| format!("dropping database '{}'", dbname))?;
+                    if verbose { info!("-- admin: CREATE DATABASE \"{}\";", dbname); }
                     admin
                         .simple_query(&format!("CREATE DATABASE \"{}\";", dbname))
                         .with_context(|| format!("creating database '{}'", dbname))?;
@@ -379,6 +385,7 @@ fn main() -> Result<()> {
                             dbschema::validate(&config, cli.strict)?;
                             let artifact =
                                 dbschema::generate_with_backend("postgres", &config, cli.strict)?;
+                            if verbose { info!("-- applying migration --\n{}", artifact); }
                             let mut client =
                                 Client::connect(&dsn, NoTls).with_context(|| {
                                     format!("connecting to database: {}", &dsn)
@@ -394,6 +401,7 @@ fn main() -> Result<()> {
                     }
                 }
 
+                dbschema::test_runner::set_verbose(verbose);
                 let runner: Box<dyn TestBackend> = match backend {
                     TestBackendKind::Postgres => {
                         Box::new(dbschema::test_runner::postgres::PostgresTestBackend)
@@ -445,6 +453,7 @@ fn main() -> Result<()> {
                             base.set_path("/postgres");
                             let admin_dsn = base.as_str().to_string();
                             if let Ok(mut admin) = Client::connect(&admin_dsn, NoTls) {
+                                if verbose { info!("-- admin: DROP DATABASE IF EXISTS \"{}\";", dbname); }
                                 let _ = admin
                                     .simple_query(&format!("DROP DATABASE IF EXISTS \"{}\";", dbname));
                             }
