@@ -219,7 +219,11 @@ function "<name>" {
   language = "plpgsql"         # required (default plpgsql)
   returns  = "trigger"         # optional (default trigger)
   replace  = true               # optional (default true)
-  security_definer = false      # optional
+  parameters = ["arg1 int"]   # optional
+  volatility = "volatile"     # optional
+  strict     = false           # optional
+  security   = "invoker"      # optional
+  cost       = 100             # optional
   body     = <<-SQL
     BEGIN
       NEW.updated_at = now();

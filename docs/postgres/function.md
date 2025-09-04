@@ -4,11 +4,16 @@ Creates a user-defined function.
 
 ```hcl
 function "now_utc" {
-  schema   = "public"
-  language = "sql"
-  returns  = "timestamptz"
-  replace  = true
-  body     = "SELECT now()"
+  schema      = "public"
+  language    = "sql"
+  parameters  = ["arg1 int"]
+  returns     = "timestamptz"
+  replace     = true
+  volatility  = "immutable"
+  strict      = true
+  security    = "definer"
+  cost        = 100
+  body        = "SELECT now()"
 }
 ```
 
@@ -16,8 +21,12 @@ function "now_utc" {
 - `name` (label): function name.
 - `schema` (string, optional): schema for the function. Defaults to `public`.
 - `language` (string): implementation language.
+- `parameters` (list of strings, optional): function parameters.
 - `returns` (string): return type.
 - `replace` (bool, optional): use `CREATE OR REPLACE`.
-- `security_definer` (bool, optional): run as definer instead of invoker.
+- `volatility` (string, optional): `immutable`, `stable`, or `volatile`.
+- `strict` (bool, optional): use `STRICT` (defaults to `CALLED ON NULL INPUT`).
+- `security` (string, optional): `definer` or `invoker`.
+- `cost` (number, optional): estimated execution cost.
 - `body` (string): function body.
 - `comment` (string, optional): documentation comment.

@@ -340,17 +340,34 @@ impl ForEachSupport for AstFunction {
         let returns =
             get_attr_string(body, "returns", env)?.unwrap_or_else(|| "trigger".to_string());
         let schema = get_attr_string(body, "schema", env)?;
+        let parameters = match find_attr(body, "parameters") {
+            Some(attr) => expr_to_string_vec(attr.expr(), env)?,
+            None => Vec::new(),
+        };
         let replace = get_attr_bool(body, "replace", env)?.unwrap_or(true);
-        let security_definer = get_attr_bool(body, "security_definer", env)?.unwrap_or(false);
+        let volatility = get_attr_string(body, "volatility", env)?;
+        let strict = get_attr_bool(body, "strict", env)?.unwrap_or(false);
+        let security = get_attr_string(body, "security", env)?;
+        let cost = match get_attr_string(body, "cost", env)? {
+            Some(s) => Some(
+                s.parse::<f64>()
+                    .context("function 'cost' must be a number")?,
+            ),
+            None => None,
+        };
         let comment = get_attr_string(body, "comment", env)?;
         Ok(AstFunction {
             name: name.to_string(),
             alt_name,
             schema,
             language,
+            parameters,
             returns,
             replace,
-            security_definer,
+            volatility,
+            strict,
+            security,
+            cost,
             body: body_sql,
             comment,
         })
