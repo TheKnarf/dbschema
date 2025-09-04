@@ -110,6 +110,9 @@ test_backend = "pglite"
 
 - `forbid-serial`: disallow use of `serial`/`bigserial` column types.
 - `primary-key-not-null`: columns in a primary key must be `NOT NULL`.
+- `destructive-change`: foreign keys using `ON DELETE`/`ON UPDATE CASCADE`.
+- `unused-index`: indexes that duplicate a table's primary key.
+- `long-identifier`: table, column, or index names longer than 63 characters.
 
 Suppress a rule for a specific table or column with `lint_ignore`:
 
@@ -133,6 +136,12 @@ forbid-serial = "error"
 ```
 
 Setting a rule's severity to `allow` suppresses it entirely.
+Severity can also be overridden on the command line using `--allow`,
+`--warn`, or `--error` flags:
+
+```sh
+dbschema lint --warn missing-index --allow long-identifier
+```
 
 ## Logging
 

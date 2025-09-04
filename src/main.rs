@@ -10,13 +10,13 @@ use dbschema::{
 #[cfg(feature = "pglite")]
 use fallible_iterator::FallibleIterator;
 use log::{error, info};
+use postgres::{Client, NoTls};
 #[cfg(feature = "pglite")]
 use postgres_protocol::message::backend;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
-use postgres::{Client, NoTls};
 
 #[derive(Parser)]
 #[command(name = "dbschema")]
@@ -74,7 +74,17 @@ enum Commands {
     /// Validate HCL and print a summary
     Validate {},
     /// Lint schema and report potential issues
-    Lint {},
+    Lint {
+        /// Lint rules to allow (suppress)
+        #[arg(long = "allow")]
+        allow: Vec<String>,
+        /// Lint rules to warn on
+        #[arg(long = "warn")]
+        warn: Vec<String>,
+        /// Lint rules to treat as errors
+        #[arg(long = "error")]
+        error: Vec<String>,
+    },
     /// Format HCL files in place
     Fmt {
         /// Files or directories to format (defaults to current directory)
@@ -184,7 +194,7 @@ fn main() -> Result<()> {
                 );
                 print_outputs(&filtered.outputs);
             }
-            Commands::Lint {} => {
+            Commands::Lint { allow, warn, error } => {
                 let mut vars: HashMap<String, hcl::Value> = HashMap::new();
                 for vf in &cli.var_file {
                     let loaded = load_var_file(vf)
@@ -210,9 +220,24 @@ fn main() -> Result<()> {
                     cli_filter_sets(&cli.backend, &cli.include_resources, &cli.exclude_resources);
                 let filtered = apply_filters(&config, &include_set, &exclude_set);
 
-                let lint_settings = config::load_config()?
+                let mut lint_settings = config::load_config()?
                     .map(|c| c.settings.lint)
                     .unwrap_or_default();
+                for rule in allow {
+                    lint_settings
+                        .severity
+                        .insert(rule, dbschema::lint::LintSeverity::Allow);
+                }
+                for rule in warn {
+                    lint_settings
+                        .severity
+                        .insert(rule, dbschema::lint::LintSeverity::Warn);
+                }
+                for rule in error {
+                    lint_settings
+                        .severity
+                        .insert(rule, dbschema::lint::LintSeverity::Error);
+                }
                 let lints = dbschema::lint::run(&filtered, &lint_settings);
                 if lints.is_empty() {
                     info!("No lint issues found");
@@ -366,11 +391,15 @@ fn main() -> Result<()> {
                     let mut admin = Client::connect(&admin_dsn, NoTls)
                         .with_context(|| format!("connecting to admin database: {}", admin_dsn))?;
                     // Drop and recreate the test database
-                    if verbose { info!("-- admin: DROP DATABASE IF EXISTS \"{}\";", dbname); }
+                    if verbose {
+                        info!("-- admin: DROP DATABASE IF EXISTS \"{}\";", dbname);
+                    }
                     admin
                         .simple_query(&format!("DROP DATABASE IF EXISTS \"{}\";", dbname))
                         .with_context(|| format!("dropping database '{}'", dbname))?;
-                    if verbose { info!("-- admin: CREATE DATABASE \"{}\";", dbname); }
+                    if verbose {
+                        info!("-- admin: CREATE DATABASE \"{}\";", dbname);
+                    }
                     admin
                         .simple_query(&format!("CREATE DATABASE \"{}\";", dbname))
                         .with_context(|| format!("creating database '{}'", dbname))?;
@@ -385,11 +414,11 @@ fn main() -> Result<()> {
                             dbschema::validate(&config, cli.strict)?;
                             let artifact =
                                 dbschema::generate_with_backend("postgres", &config, cli.strict)?;
-                            if verbose { info!("-- applying migration --\n{}", artifact); }
-                            let mut client =
-                                Client::connect(&dsn, NoTls).with_context(|| {
-                                    format!("connecting to database: {}", &dsn)
-                                })?;
+                            if verbose {
+                                info!("-- applying migration --\n{}", artifact);
+                            }
+                            let mut client = Client::connect(&dsn, NoTls)
+                                .with_context(|| format!("connecting to database: {}", &dsn))?;
                             client
                                 .batch_execute(&artifact)
                                 .with_context(|| "applying generated migration to database")?;
@@ -453,9 +482,13 @@ fn main() -> Result<()> {
                             base.set_path("/postgres");
                             let admin_dsn = base.as_str().to_string();
                             if let Ok(mut admin) = Client::connect(&admin_dsn, NoTls) {
-                                if verbose { info!("-- admin: DROP DATABASE IF EXISTS \"{}\";", dbname); }
-                                let _ = admin
-                                    .simple_query(&format!("DROP DATABASE IF EXISTS \"{}\";", dbname));
+                                if verbose {
+                                    info!("-- admin: DROP DATABASE IF EXISTS \"{}\";", dbname);
+                                }
+                                let _ = admin.simple_query(&format!(
+                                    "DROP DATABASE IF EXISTS \"{}\";",
+                                    dbname
+                                ));
                             }
                         }
                     }

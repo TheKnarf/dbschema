@@ -2,6 +2,14 @@ use crate::ir::Config;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+mod destructive_change;
+mod long_identifier;
+mod unused_index;
+
+use destructive_change::DestructiveChange;
+use long_identifier::LongIdentifier;
+use unused_index::UnusedIndex;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum LintSeverity {
@@ -34,6 +42,9 @@ pub fn run(cfg: &Config, settings: &LintSettings) -> Vec<LintMessage> {
         Box::new(MissingIndex),
         Box::new(ForbidSerial),
         Box::new(PrimaryKeyNotNull),
+        Box::new(DestructiveChange),
+        Box::new(UnusedIndex),
+        Box::new(LongIdentifier),
     ];
     run_with_checks(cfg, checks, settings)
 }
