@@ -11,6 +11,11 @@ table "users" {
   primary_key { columns = ["id"] }
 }
 
+# Ensure the role referenced by the policy exists
+role "app_user" {
+  login = false
+}
+
 policy "user_select" {
   schema  = "public"
   table   = "users"

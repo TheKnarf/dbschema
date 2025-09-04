@@ -1,3 +1,12 @@
+table "users" {
+  schema = "public"
+  column "id" {
+    type = "bigserial"
+    nullable = false
+  }
+  primary_key { columns = ["id"] }
+}
+
 sequence "user_id_seq" {
   schema = "public"
   as = "bigint"
