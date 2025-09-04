@@ -677,11 +677,26 @@ impl ForEachSupport for AstRole {
     fn parse_one(name: &str, body: &Body, env: &EnvVars) -> Result<Self::Item> {
         let alt_name = get_attr_string(body, "name", env)?;
         let login = get_attr_bool(body, "login", env)?.unwrap_or(false);
+        let superuser = get_attr_bool(body, "superuser", env)?.unwrap_or(false);
+        let createdb = get_attr_bool(body, "createdb", env)?.unwrap_or(false);
+        let createrole = get_attr_bool(body, "createrole", env)?.unwrap_or(false);
+        let replication = get_attr_bool(body, "replication", env)?.unwrap_or(false);
+        let password = get_attr_string(body, "password", env)?;
+        let in_role = match find_attr(body, "in_role") {
+            Some(attr) => expr_to_string_vec(attr.expr(), env)?,
+            None => Vec::new(),
+        };
         let comment = get_attr_string(body, "comment", env)?;
         Ok(AstRole {
             name: name.to_string(),
             alt_name,
             login,
+            superuser,
+            createdb,
+            createrole,
+            replication,
+            password,
+            in_role,
             comment,
         })
     }
@@ -704,8 +719,15 @@ impl ForEachSupport for AstGrant {
         let schema = get_attr_string(body, "schema", env)?;
         let table = get_attr_string(body, "table", env)?;
         let function = get_attr_string(body, "function", env)?;
-        if table.is_none() && function.is_none() && schema.is_none() {
-            bail!("grant requires table, schema, or function");
+        let database = get_attr_string(body, "database", env)?;
+        let sequence = get_attr_string(body, "sequence", env)?;
+        if table.is_none()
+            && function.is_none()
+            && schema.is_none()
+            && database.is_none()
+            && sequence.is_none()
+        {
+            bail!("grant requires table, schema, function, database, or sequence");
         }
         Ok(AstGrant {
             name: name.to_string(),
@@ -714,6 +736,8 @@ impl ForEachSupport for AstGrant {
             schema,
             table,
             function,
+            database,
+            sequence,
         })
     }
 

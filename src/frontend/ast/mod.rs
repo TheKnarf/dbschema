@@ -192,6 +192,12 @@ pub struct AstRole {
     pub name: String,
     pub alt_name: Option<String>,
     pub login: bool,
+    pub superuser: bool,
+    pub createdb: bool,
+    pub createrole: bool,
+    pub replication: bool,
+    pub password: Option<String>,
+    pub in_role: Vec<String>,
     pub comment: Option<String>,
 }
 
@@ -203,6 +209,8 @@ pub struct AstGrant {
     pub schema: Option<String>,
     pub table: Option<String>,
     pub function: Option<String>,
+    pub database: Option<String>,
+    pub sequence: Option<String>,
 }
 
 #[derive(Debug, Clone)]
