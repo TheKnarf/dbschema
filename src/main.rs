@@ -104,6 +104,12 @@ enum Commands {
         /// Generate and apply migrations before running tests (postgres only)
         #[arg(long)]
         apply: bool,
+        /// Create a temporary database with this name, run tests against it, then drop it (postgres only)
+        #[arg(long = "create-db")]
+        create_db: Option<String>,
+        /// Keep the database created via --create-db after tests finish (postgres only)
+        #[arg(long = "keep-db")]
+        keep_db: bool,
     },
     /// Start an in-memory PGlite database REPL
     #[cfg(feature = "pglite")]
@@ -272,6 +278,8 @@ fn main() -> Result<()> {
                 names,
                 backend,
                 apply,
+                create_db,
+                keep_db,
             } => {
                 let (dsn, backend, config) = if cli.config {
                     let dbschema_config = config::load_config()
@@ -336,13 +344,34 @@ fn main() -> Result<()> {
                         .with_context(|| format!("loading root HCL {}", cli.input.display()))?;
                     (dsn, backend, cfg)
                 };
-                let dsn = match backend {
+                let mut dsn = match backend {
                     TestBackendKind::Postgres => dsn
                         .or_else(|| std::env::var("DATABASE_URL").ok())
                         .ok_or_else(|| anyhow!("missing DSN: pass --dsn or set DATABASE_URL"))?,
                     #[cfg(feature = "pglite")]
                     TestBackendKind::Pglite => dsn.unwrap_or_else(|| "pglite".to_string()),
                 };
+
+                // Optionally create and later drop a temporary database for Postgres
+                if let (TestBackendKind::Postgres, Some(dbname)) = (backend, create_db.clone()) {
+                    let mut base = url::Url::parse(&dsn)
+                        .with_context(|| format!("parsing DSN as URL: {}", &dsn))?;
+                    // Derive admin connection to the 'postgres' database
+                    base.set_path("/postgres");
+                    let admin_dsn = base.as_str().to_string();
+                    let mut admin = Client::connect(&admin_dsn, NoTls)
+                        .with_context(|| format!("connecting to admin database: {}", admin_dsn))?;
+                    // Drop and recreate the test database
+                    admin
+                        .simple_query(&format!("DROP DATABASE IF EXISTS \"{}\";", dbname))
+                        .with_context(|| format!("dropping database '{}'", dbname))?;
+                    admin
+                        .simple_query(&format!("CREATE DATABASE \"{}\";", dbname))
+                        .with_context(|| format!("creating database '{}'", dbname))?;
+                    // Update DSN to point at the created database
+                    base.set_path(&format!("/{}", dbname));
+                    dsn = base.as_str().to_string();
+                }
                 // Optionally generate and apply migrations for Postgres
                 if apply {
                     match backend {
@@ -408,6 +437,20 @@ fn main() -> Result<()> {
                     );
                 }
                 print_outputs(&config.outputs);
+
+                // Optionally drop the created database after tests complete
+                if let (TestBackendKind::Postgres, Some(dbname)) = (backend, create_db) {
+                    if !keep_db {
+                        if let Ok(mut base) = url::Url::parse(&dsn) {
+                            base.set_path("/postgres");
+                            let admin_dsn = base.as_str().to_string();
+                            if let Ok(mut admin) = Client::connect(&admin_dsn, NoTls) {
+                                let _ = admin
+                                    .simple_query(&format!("DROP DATABASE IF EXISTS \"{}\";", dbname));
+                            }
+                        }
+                    }
+                }
             }
             #[cfg(feature = "pglite")]
             Commands::Pglite {} => {

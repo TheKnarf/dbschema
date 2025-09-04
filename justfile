@@ -44,18 +44,14 @@ example-test file='examples/table.hcl' dsn-prefix='postgres://postgres:postgres@
   echo -e "${BLUE}⏳ Running example: ${name}${NC}"
   # Ensure Docker is up
   just docker-up
-  # Recreate DB
-  docker compose exec -T db psql -U postgres -d postgres -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS \"${db}\";" -c "CREATE DATABASE \"${db}\";"
-  # Apply migrations and run tests
-  if cargo run -- --input "{{file}}" test --dsn "$dsn" --apply >/dev/null; then
+  # Apply migrations and run tests; create and drop DB automatically
+  if cargo run -q -- --input "{{file}}" test --dsn "$dsn" --apply --create-db "$db" >/dev/null; then
     echo -e "${GREEN}✅ ${name} ok${NC}"
     rc=0
   else
     echo -e "${RED}❌ ${name} failed${NC}"
     rc=1
   fi
-  # Drop DB
-  docker compose exec -T db psql -U postgres -d postgres -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS \"${db}\";" >/dev/null || true
   exit $rc
 
 # Run create-migration for all example HCL files
@@ -83,18 +79,12 @@ examples-test dsn-prefix='postgres://postgres:postgres@localhost:5432':
     db="dbschema_ex_${name}"
     dsn="{{dsn-prefix}}/${db}"
     echo -e "${BLUE}⏳ Running example: ${name}${NC}"
-    # Recreate DB
-    if ! docker compose exec -T db psql -U postgres -d postgres -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS \"${db}\";" -c "CREATE DATABASE \"${db}\";" >/dev/null; then
-      echo -e "${RED}❌ ${name} failed (create db)${NC}"; failed=$((failed+1)); continue
-    fi
-    # Apply migrations and run tests
-    if cargo run -- --input "$example" test --dsn "$dsn" --apply >/dev/null; then
+    # Apply migrations, create DB automatically, and run tests
+    if cargo run -q -- --input "$example" test --dsn "$dsn" --apply --create-db "$db" >/dev/null; then
       echo -e "${GREEN}✅ ${name} ok${NC}"; passed=$((passed+1))
     else
       echo -e "${RED}❌ ${name} failed (tests)${NC}"; failed=$((failed+1))
     fi
-    # Drop DB
-    docker compose exec -T db psql -U postgres -d postgres -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS \"${db}\";" >/dev/null || true
   done
   echo -e "${YELLOW}Summary: ${passed} passed, ${failed} failed${NC}"
 
