@@ -322,9 +322,13 @@ pub struct Function {
     pub schema: String,
     pub name: String,
     pub language: String,
+    pub parameters: Vec<String>,
     pub returns: String,
     pub replace: bool,
-    pub security_definer: bool,
+    pub volatility: Option<String>,
+    pub strict: bool,
+    pub security: Option<String>,
+    pub cost: Option<f64>,
     pub body: String,
 }
 
@@ -334,9 +338,13 @@ impl From<&crate::ir::FunctionSpec> for Function {
             schema: f.schema.clone().unwrap_or_else(|| "public".to_string()),
             name: f.alt_name.clone().unwrap_or_else(|| f.name.clone()),
             language: f.language.clone(),
+            parameters: f.parameters.clone(),
             returns: f.returns.clone(),
             replace: f.replace,
-            security_definer: f.security_definer,
+            volatility: f.volatility.clone(),
+            strict: f.strict,
+            security: f.security.clone(),
+            cost: f.cost,
             body: f.body.clone(),
         }
     }
@@ -344,21 +352,36 @@ impl From<&crate::ir::FunctionSpec> for Function {
 
 impl fmt::Display for Function {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let definer = if self.security_definer {
-            " SECURITY DEFINER"
-        } else {
-            ""
-        };
+        let params = self.parameters.join(", ");
+        let security = self
+            .security
+            .as_ref()
+            .map(|s| format!(" SECURITY {}", s.to_uppercase()))
+            .unwrap_or_default();
+        let volatility = self
+            .volatility
+            .as_ref()
+            .map(|v| format!(" {}", v.to_uppercase()))
+            .unwrap_or_default();
+        let strict = if self.strict { " STRICT" } else { "" };
+        let cost = self
+            .cost
+            .map(|c| format!(" COST {}", c))
+            .unwrap_or_default();
         let or_replace = if self.replace { "OR REPLACE " } else { "" };
         write!(
             f,
-            "CREATE {or_replace}FUNCTION {schema}.{name}() RETURNS {returns} LANGUAGE {lang}{definer} AS $$\n{body}\n$$;",
+            "CREATE {or_replace}FUNCTION {schema}.{name}({params}) RETURNS {returns} LANGUAGE {lang}{security}{volatility}{strict}{cost} AS $$\n{body}\n$$;",
             or_replace = or_replace,
             schema = ident(&self.schema),
             name = ident(&self.name),
+            params = params,
             returns = self.returns,
             lang = self.language.to_lowercase(),
-            definer = definer,
+            security = security,
+            volatility = volatility,
+            strict = strict,
+            cost = cost,
             body = self.body,
         )
     }
