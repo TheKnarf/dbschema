@@ -637,6 +637,36 @@ impl fmt::Display for ForeignKey {
 }
 
 #[derive(Debug, Clone)]
+pub struct PartitionBy {
+    pub strategy: String,
+    pub columns: Vec<String>,
+}
+
+impl From<&crate::ir::PartitionBySpec> for PartitionBy {
+    fn from(p: &crate::ir::PartitionBySpec) -> Self {
+        Self {
+            strategy: p.strategy.clone(),
+            columns: p.columns.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Partition {
+    pub name: String,
+    pub values: String,
+}
+
+impl From<&crate::ir::PartitionSpec> for Partition {
+    fn from(p: &crate::ir::PartitionSpec) -> Self {
+        Self {
+            name: p.name.clone(),
+            values: p.values.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct Table {
     pub schema: String,
     pub name: String,
@@ -644,6 +674,8 @@ pub struct Table {
     pub columns: Vec<Column>,
     pub primary_key: Option<PrimaryKey>,
     pub foreign_keys: Vec<ForeignKey>,
+    pub partition_by: Option<PartitionBy>,
+    pub partitions: Vec<Partition>,
 }
 
 impl From<&crate::ir::TableSpec> for Table {
@@ -655,6 +687,8 @@ impl From<&crate::ir::TableSpec> for Table {
             columns: t.columns.iter().map(Column::from).collect(),
             primary_key: t.primary_key.as_ref().map(PrimaryKey::from),
             foreign_keys: t.foreign_keys.iter().map(ForeignKey::from).collect(),
+            partition_by: t.partition_by.as_ref().map(PartitionBy::from),
+            partitions: t.partitions.iter().map(Partition::from).collect(),
         }
     }
 }
@@ -680,12 +714,39 @@ impl fmt::Display for Table {
         };
         write!(
             f,
-            "CREATE TABLE{ine} {schema}.{name} (\n{body}\n);",
+            "CREATE TABLE{ine} {schema}.{name} (\n{body}\n)",
             ine = ine,
             schema = ident(&self.schema),
             name = ident(&self.name),
             body = body,
-        )
+        )?;
+        if let Some(pb) = &self.partition_by {
+            let cols = pb
+                .columns
+                .iter()
+                .map(|c| ident(c))
+                .collect::<Vec<_>>()
+                .join(", ");
+            write!(
+                f,
+                " PARTITION BY {strategy} ({cols});",
+                strategy = pb.strategy,
+                cols = cols
+            )?;
+        } else {
+            write!(f, ";")?;
+        }
+        for p in &self.partitions {
+            write!(
+                f,
+                "\nCREATE TABLE {schema}.{pname} PARTITION OF {schema}.{name} FOR VALUES {values};",
+                schema = ident(&self.schema),
+                pname = ident(&p.name),
+                name = ident(&self.name),
+                values = p.values,
+            )?;
+        }
+        Ok(())
     }
 }
 
@@ -1009,5 +1070,48 @@ impl fmt::Display for Grant {
         } else {
             Ok(())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn partitioned_table_sql() {
+        let tspec = crate::ir::TableSpec {
+            name: "t".into(),
+            table_name: None,
+            schema: None,
+            if_not_exists: false,
+            columns: vec![crate::ir::ColumnSpec {
+                name: "id".into(),
+                r#type: "int".into(),
+                nullable: false,
+                default: None,
+                db_type: None,
+                lint_ignore: vec![],
+                comment: None,
+            }],
+            primary_key: None,
+            indexes: vec![],
+            checks: vec![],
+            foreign_keys: vec![],
+            partition_by: Some(crate::ir::PartitionBySpec {
+                strategy: "RANGE".into(),
+                columns: vec!["id".into()],
+            }),
+            partitions: vec![crate::ir::PartitionSpec {
+                name: "t_p1".into(),
+                values: "FROM (0) TO (10)".into(),
+            }],
+            back_references: vec![],
+            lint_ignore: vec![],
+            comment: None,
+        };
+        let table = Table::from(&tspec);
+        let sql = table.to_string();
+        assert!(sql.contains("PARTITION BY RANGE (\"id\")"));
+        assert!(sql.contains("CREATE TABLE \"public\".\"t_p1\" PARTITION OF \"public\".\"t\" FOR VALUES FROM (0) TO (10);"));
     }
 }

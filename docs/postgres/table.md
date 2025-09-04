@@ -17,6 +17,12 @@ table "users" {
     nullable = false
   }
 
+  partition_by {
+    strategy = "RANGE"
+    columns  = ["id"]
+  }
+  partition "users_1" { values = "FROM (1) TO (100)" }
+
   primary_key { columns = ["id"] }
   check "email_not_empty" { expression = "email <> ''" }
 }
@@ -31,6 +37,8 @@ table "users" {
 - `check` blocks: named check constraints with an `expression`.
 - `index` blocks: inline index definitions (`columns`, `unique`).
 - `foreign_key` blocks: reference other tables with `columns`, `ref_schema`, `ref_table`, `ref_columns`, `on_delete`, `on_update`.
+- `partition_by` block: define partitioning `strategy` (`RANGE`, `LIST`, `HASH`) and `columns`.
+- `partition` blocks: create child partitions with a name and `values` bounds string.
 - `back_reference` blocks: create foreign keys on another table.
 - `lint_ignore` (array of strings, optional): suppress lint rules.
 - `comment` (string, optional): documentation comment.

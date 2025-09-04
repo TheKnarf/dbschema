@@ -267,6 +267,8 @@ impl From<ast::AstTable> for ir::TableSpec {
             indexes: t.indexes.into_iter().map(Into::into).collect(),
             checks: t.checks.into_iter().map(Into::into).collect(),
             foreign_keys: t.foreign_keys.into_iter().map(Into::into).collect(),
+            partition_by: t.partition_by.map(Into::into),
+            partitions: t.partitions.into_iter().map(Into::into).collect(),
             back_references: t.back_references.into_iter().map(Into::into).collect(),
             lint_ignore: t.lint_ignore,
             comment: t.comment,
@@ -327,6 +329,24 @@ impl From<ast::AstForeignKey> for ir::ForeignKeySpec {
             on_delete: fk.on_delete,
             on_update: fk.on_update,
             back_reference_name: fk.back_reference_name,
+        }
+    }
+}
+
+impl From<ast::AstPartitionBy> for ir::PartitionBySpec {
+    fn from(p: ast::AstPartitionBy) -> Self {
+        Self {
+            strategy: p.strategy,
+            columns: p.columns,
+        }
+    }
+}
+
+impl From<ast::AstPartition> for ir::PartitionSpec {
+    fn from(p: ast::AstPartition) -> Self {
+        Self {
+            name: p.name,
+            values: p.values,
         }
     }
 }

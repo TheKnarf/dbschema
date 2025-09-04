@@ -215,6 +215,32 @@ impl ForEachSupport for AstTable {
             });
         }
 
+        // partitioning
+        let mut partition_by = None;
+        for pblk in body.blocks().filter(|bb| bb.identifier() == "partition_by") {
+            let pb = pblk.body();
+            let strategy =
+                get_attr_string(pb, "strategy", env)?.context("partition_by requires strategy")?;
+            let columns = match find_attr(pb, "columns") {
+                Some(attr) => expr_to_string_vec(attr.expr(), env)?,
+                None => bail!("partition_by requires columns = [..]"),
+            };
+            partition_by = Some(AstPartitionBy { strategy, columns });
+        }
+
+        let mut partitions = Vec::new();
+        for pblk in body.blocks().filter(|bb| bb.identifier() == "partition") {
+            let name = pblk
+                .labels()
+                .get(0)
+                .map(|s| s.as_str().to_string())
+                .context("partition requires a name")?;
+            let pb = pblk.body();
+            let values =
+                get_attr_string(pb, "values", env)?.context("partition requires values")?;
+            partitions.push(AstPartition { name, values });
+        }
+
         let lint_ignore = match find_attr(body, "lint_ignore") {
             Some(attr) => expr_to_string_vec(attr.expr(), env)?,
             None => Vec::new(),
@@ -230,6 +256,8 @@ impl ForEachSupport for AstTable {
             indexes,
             checks,
             foreign_keys: fks,
+            partition_by,
+            partitions,
             back_references: Vec::new(),
             lint_ignore,
             comment,
@@ -389,10 +417,10 @@ impl ForEachSupport for AstAggregate {
             Some(attr) => expr_to_string_vec(attr.expr(), env)?,
             None => Vec::new(),
         };
-        let sfunc = get_attr_string(body, "sfunc", env)?
-            .context("aggregate 'sfunc' is required")?;
-        let stype = get_attr_string(body, "stype", env)?
-            .context("aggregate 'stype' is required")?;
+        let sfunc =
+            get_attr_string(body, "sfunc", env)?.context("aggregate 'sfunc' is required")?;
+        let stype =
+            get_attr_string(body, "stype", env)?.context("aggregate 'stype' is required")?;
         let finalfunc = get_attr_string(body, "finalfunc", env)?;
         let initcond = get_attr_string(body, "initcond", env)?;
         let parallel = get_attr_string(body, "parallel", env)?;

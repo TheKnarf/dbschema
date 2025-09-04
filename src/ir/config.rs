@@ -217,9 +217,23 @@ pub struct TableSpec {
     pub indexes: Vec<IndexSpec>,
     pub checks: Vec<CheckSpec>,
     pub foreign_keys: Vec<ForeignKeySpec>,
+    pub partition_by: Option<PartitionBySpec>,
+    pub partitions: Vec<PartitionSpec>,
     pub back_references: Vec<BackReferenceSpec>,
     pub lint_ignore: Vec<String>,
     pub comment: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PartitionBySpec {
+    pub strategy: String,
+    pub columns: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PartitionSpec {
+    pub name: String,
+    pub values: String,
 }
 
 #[derive(Debug, Clone, Serialize)]

@@ -216,9 +216,23 @@ pub struct AstTable {
     pub indexes: Vec<AstIndex>,
     pub checks: Vec<AstCheck>,
     pub foreign_keys: Vec<AstForeignKey>,
+    pub partition_by: Option<AstPartitionBy>,
+    pub partitions: Vec<AstPartition>,
     pub back_references: Vec<AstBackReference>,
     pub lint_ignore: Vec<String>,
     pub comment: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AstPartitionBy {
+    pub strategy: String,
+    pub columns: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AstPartition {
+    pub name: String,
+    pub values: String,
 }
 
 #[derive(Debug, Clone)]
