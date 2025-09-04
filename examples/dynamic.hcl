@@ -17,5 +17,10 @@ table "users" {
 }
 
 test "dynamic_columns" {
-  assert = "SELECT COUNT(*) = 2 FROM information_schema.columns WHERE table_schema='public' AND table_name='users'"
+  assert = [
+    "SELECT COUNT(*) = 2 FROM information_schema.columns WHERE table_schema='public' AND table_name='users'"
+  ]
+  assert_fail = [
+    "INSERT INTO public.users(id) VALUES (NULL)"
+  ]
 }

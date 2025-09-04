@@ -4,5 +4,10 @@ domain "email" {
 }
 
 test "email_domain" {
-  assert = "SELECT 'user@example.com'::email IS NOT NULL"
+  assert = [
+    "SELECT 'user@example.com'::email IS NOT NULL"
+  ]
+  assert_fail = [
+    "SELECT 'not-an-email'::email"
+  ]
 }

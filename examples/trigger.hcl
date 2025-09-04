@@ -34,5 +34,17 @@ trigger "users_updated_at" {
 }
 
 test "trigger" {
-  assert = "SELECT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'users_updated_at')"
+  assert = [
+    "SELECT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'users_updated_at')"
+  ]
+}
+
+test "trigger_behavior" {
+  setup = [
+    "INSERT INTO public.users DEFAULT VALUES",
+    "UPDATE public.users SET updated_at = updated_at"
+  ]
+  assert = [
+    "SELECT COUNT(*) = 1 FROM public.users WHERE updated_at IS NOT NULL"
+  ]
 }

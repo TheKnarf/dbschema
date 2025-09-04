@@ -43,5 +43,20 @@ trigger "upd" {
 }
 
 test "for_each_triggers" {
-  assert = "SELECT COUNT(*) = 2 FROM pg_trigger WHERE tgname IN ('set_updated_at_users','set_updated_at_orders')"
+  assert = [
+    "SELECT COUNT(*) = 2 FROM pg_trigger WHERE tgname IN ('set_updated_at_users','set_updated_at_orders')"
+  ]
+}
+
+test "for_each_behavior" {
+  setup = [
+    "INSERT INTO public.users DEFAULT VALUES",
+    "UPDATE public.users SET updated_at = updated_at",
+    "INSERT INTO public.orders DEFAULT VALUES",
+    "UPDATE public.orders SET updated_at = updated_at"
+  ]
+  assert = [
+    "SELECT COUNT(*) = 1 FROM public.users WHERE updated_at IS NOT NULL",
+    "SELECT COUNT(*) = 1 FROM public.orders WHERE updated_at IS NOT NULL"
+  ]
 }

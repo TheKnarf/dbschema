@@ -4,5 +4,11 @@ enum "status" {
 }
 
 test "status_enum" {
-  assert = "SELECT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'status')"
+  assert = [
+    "SELECT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'status')",
+    "SELECT 'active'::status IS NOT NULL"
+  ]
+  assert_fail = [
+    "SELECT 'unknown'::status"
+  ]
 }

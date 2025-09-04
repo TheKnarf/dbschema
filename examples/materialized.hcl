@@ -7,5 +7,10 @@ materialized "user_counts" {
 }
 
 test "materialized_view" {
-  assert = "SELECT id = 1 FROM public.user_counts"
+  setup = [
+    "REFRESH MATERIALIZED VIEW public.user_counts"
+  ]
+  assert = [
+    "SELECT id = 1 FROM public.user_counts"
+  ]
 }

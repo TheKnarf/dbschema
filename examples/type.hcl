@@ -4,5 +4,10 @@ type "address" {
 }
 
 test "address_type" {
-  assert = "SELECT ROW('road',12345)::address IS NOT NULL"
+  assert = [
+    "SELECT ROW('road',12345)::address IS NOT NULL"
+  ]
+  assert_fail = [
+    "SELECT ROW('main', 'not-a-number')::address"
+  ]
 }

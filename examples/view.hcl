@@ -21,5 +21,10 @@ view "active_users" {
 
 test "view" {
   setup = ["INSERT INTO public.users (email) VALUES ('test@example.com')"]
-  assert = "SELECT COUNT(*) = 1 FROM public.active_users WHERE email = 'test@example.com'"
+  assert = [
+    "SELECT COUNT(*) = 1 FROM public.active_users WHERE email = 'test@example.com'"
+  ]
+  assert_fail = [
+    "INSERT INTO public.active_users (email) VALUES (NULL)"
+  ]
 }
