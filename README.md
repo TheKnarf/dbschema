@@ -9,31 +9,33 @@ Prisma ORM support custom migrations, so you can use this tool to generate an SQ
 
 ## Features
 
-- HCL blocks:
-   - `variable`
-   - `locals`
-   - `schema`
-   - `enum`
-   - `domain`
-   - `type`
-   - `sequence`
-   - `table`
-   - `view`
-   - `materialized`
-   - `function`
-   - `trigger`
-   - `extension`
-   - `policy`
-   - `role`
-   - `grant`
-   - `module`
-   - `output`
-   - `test`
+### Postgres resources
 
-- Variables via `--var key=value` and `--var-file`, with optional type and validation blocks (`validation { condition = ... error_message = ... }`).
-- Block repetition with `for_each` (arrays/objects) or numeric `count`.
-- Dynamic blocks: replicate nested blocks with `dynamic "name" { for_each = ... content { ... } }`.
-- Modules: `module "name" { source = "./path" ... }`.
+- [schema](docs/postgres/schema.md)
+- [enum](docs/postgres/enum.md)
+- [domain](docs/postgres/domain.md)
+- [type](docs/postgres/type.md)
+- [sequence](docs/postgres/sequence.md)
+- [table](docs/postgres/table.md)
+- [index](docs/postgres/index.md)
+- [view](docs/postgres/view.md)
+- [materialized view](docs/postgres/materialized.md)
+- [function](docs/postgres/function.md)
+- [trigger](docs/postgres/trigger.md)
+- [event trigger](docs/postgres/event_trigger.md)
+- [extension](docs/postgres/extension.md)
+- [policy](docs/postgres/policy.md)
+- [role](docs/postgres/role.md)
+- [grant](docs/postgres/grant.md)
+
+### Generic HCL
+
+- [variables and repetition](docs/variables.md)
+- [locals](docs/locals.md)
+- [modules](docs/modules.md)
+- [output](docs/output.md)
+- [tests](docs/tests.md)
+
 - Full HCL expression support: numbers, booleans, arrays, objects, traversals (`var.*`, `local.*`), function calls, and `${...}` templates.
 - Validate config, then generate SQL with safe `CREATE OR REPLACE FUNCTION` and idempotent guards for triggers/enums/materialized views.
 
@@ -378,7 +380,6 @@ module "<name>" {
 - Example split-output workflow:
   - Prisma models for tables: `dbschema --backend prisma --include tables --input path/to/schema.hcl create-migration --out-dir prisma --name schema`
   - SQL for everything else: `dbschema --backend postgres --exclude tables --input path/to/schema.hcl create-migration --out-dir migrations --name non_tables`
-- Variables can be arrays/objects; use `for_each` on blocks and `each.value` inside.
 - Tests can run against a real Postgres server or the in-memory PGlite backend; each test executes inside a transaction and is rolled back when using Postgres.
   - Assertion queries may return `bool`, any signed or unsigned integer (non-zero is treated as `true`), or text values `"t"`/`"true"` (case-insensitive).
 
@@ -386,80 +387,3 @@ module "<name>" {
 
  dbschema evaluates HCL expressions with support for strings, numbers, booleans, arrays, objects, function calls, traversals like `var.*` and `local.*`, `${...}` string templates, list comprehensions (`[for x in list : expr]`), and conditional expressions (`a ? b : c`).
 
-## Variables, for_each, dynamic blocks, and each.value
-
-- Variables can be strings, numbers, booleans, arrays, or objects.
-- Use `variable "name" { default = [...] }` or provide via `--var-file`.
-- Optional `type` ("string", "number", "bool", "array", "object") and
-  nested `validation` blocks:
-
-```hcl
-variable "count" {
-  type = "number"
-  validation {
-    condition     = var.count > 0
-    error_message = "count must be positive"
-  }
-}
-```
-
-- dbschema enforces the declared type and runs the `validation` condition,
-  returning the custom `error_message` when it fails.
-- Replicate blocks with `for_each` on the block (arrays or objects):
-  - Arrays: `each.key` is the index (number), `each.value` is the element.
-  - Objects: `each.key` is the object key (string), `each.value` is the value.
-- Repeat blocks with a numeric `count` on the block; reference the index via `count.index`.
-- Generate nested blocks with Terraform-style `dynamic` blocks:
-  - Set `labels` to populate block labels when needed.
-- Example:
-
-```hcl
-variable "tables" { default = ["users", "orders"] }
-
-trigger "upd" {
-  schema   = "public"
-  for_each = var.tables       # will create two triggers
-  table    = each.value       # "users" then "orders"
-  timing   = "BEFORE"
-  events   = ["UPDATE"]
-  level    = "ROW"
-  function = "set_updated_at"
-}
-```
-
-Using `count` to repeat a block a fixed number of times:
-
-```hcl
-trigger "upd" {
-  count    = 2
-  name     = "set_updated_at_${count.index}"
-  schema   = "public"
-  table    = "users"
-  timing   = "BEFORE"
-  events   = ["UPDATE"]
-  level    = "ROW"
-  function = "set_updated_at"
-}
-```
-
-Dynamic blocks allow repeated nested blocks. This example builds columns from a map:
-
-```hcl
-variable "cols" {
-  default = {
-    id   = { type = "serial", nullable = false }
-    name = { type = "text",   nullable = true }
-  }
-}
-
-table "users" {
-  dynamic "column" {
-    for_each = var.cols
-    labels   = [each.key]
-    content {
-      type     = each.value.type
-      nullable = each.value.nullable
-    }
-  }
-}
-```
