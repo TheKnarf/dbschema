@@ -82,6 +82,7 @@ pub enum ResourceKind {
     Materialized,
     Functions,
     Triggers,
+    EventTriggers,
     Extensions,
     Sequences,
     Policies,
@@ -102,6 +103,7 @@ impl fmt::Display for ResourceKind {
             ResourceKind::Materialized => "materialized",
             ResourceKind::Functions => "functions",
             ResourceKind::Triggers => "triggers",
+            ResourceKind::EventTriggers => "event_triggers",
             ResourceKind::Extensions => "extensions",
             ResourceKind::Sequences => "sequences",
             ResourceKind::Policies => "policies",
@@ -127,6 +129,7 @@ impl std::str::FromStr for ResourceKind {
             "materialized" => Ok(ResourceKind::Materialized),
             "functions" => Ok(ResourceKind::Functions),
             "triggers" => Ok(ResourceKind::Triggers),
+            "event_triggers" => Ok(ResourceKind::EventTriggers),
             "extensions" => Ok(ResourceKind::Extensions),
             "sequences" => Ok(ResourceKind::Sequences),
             "policies" => Ok(ResourceKind::Policies),
@@ -153,6 +156,7 @@ impl TargetConfig {
                 ResourceKind::Materialized,
                 ResourceKind::Functions,
                 ResourceKind::Triggers,
+                ResourceKind::EventTriggers,
                 ResourceKind::Extensions,
                 ResourceKind::Sequences,
                 ResourceKind::Policies,
@@ -223,7 +227,8 @@ mod tests {
         let include_set = target.get_include_set();
         assert!(include_set.contains(&ResourceKind::Tables));
         assert!(include_set.contains(&ResourceKind::Enums));
-        assert_eq!(include_set.len(), 15); // All resource types
+        assert!(include_set.contains(&ResourceKind::EventTriggers));
+        assert_eq!(include_set.len(), 16); // All resource types
     }
 
     #[test]
@@ -268,5 +273,6 @@ mod tests {
         assert!(!exclude_set.contains(&ResourceKind::Tables));
         assert!(exclude_set.contains(&ResourceKind::Functions));
         assert!(exclude_set.contains(&ResourceKind::Triggers));
+        assert!(!exclude_set.contains(&ResourceKind::EventTriggers));
     }
 }

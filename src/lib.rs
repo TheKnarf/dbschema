@@ -19,9 +19,9 @@ use std::path::Path;
 // Public re-exports
 use crate::frontend::env::EnvVars;
 pub use ir::{
-    CompositeTypeSpec, Config, DomainSpec, EnumSpec, ExtensionSpec, FunctionSpec, GrantSpec,
-    MaterializedViewSpec, OutputSpec, PolicySpec, RoleSpec, SchemaSpec, SequenceSpec, TableSpec,
-    TriggerSpec, ViewSpec,
+    CompositeTypeSpec, Config, DomainSpec, EnumSpec, EventTriggerSpec, ExtensionSpec, FunctionSpec,
+    GrantSpec, MaterializedViewSpec, OutputSpec, PolicySpec, RoleSpec, SchemaSpec, SequenceSpec,
+    TableSpec, TriggerSpec, ViewSpec,
 };
 
 // Loader abstraction: lets callers control how files are read.
@@ -56,6 +56,7 @@ where
     Config {
         functions: maybe!(Functions, functions),
         triggers: maybe!(Triggers, triggers),
+        event_triggers: maybe!(EventTriggers, event_triggers),
         extensions: maybe!(Extensions, extensions),
         sequences: maybe!(Sequences, sequences),
         schemas: maybe!(Schemas, schemas),
@@ -172,6 +173,33 @@ mod tests {
         let sql = generate_with_backend("postgres", &cfg, false).unwrap();
         assert!(sql.contains("CREATE OR REPLACE FUNCTION \"public\".\"set_updated_at\""));
         assert!(sql.contains("CREATE TRIGGER \"users_upd\""));
+    }
+
+    #[test]
+    fn parse_simple_event_trigger() {
+        let mut files = HashMap::new();
+        files.insert(
+            p("/root/main.hcl"),
+            r#"
+            function "ddl_logger" {
+              language = "plpgsql"
+              returns = "event_trigger"
+              body = "BEGIN END;"
+            }
+            event_trigger "log_ddl" {
+              event = "ddl_command_start"
+              function = "ddl_logger"
+            }
+            "#
+            .to_string(),
+        );
+
+        let loader = MapLoader { files };
+        let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
+        assert_eq!(cfg.event_triggers.len(), 1);
+        validate(&cfg, false).unwrap();
+        let sql = generate_with_backend("postgres", &cfg, false).unwrap();
+        assert!(sql.contains("CREATE EVENT TRIGGER"));
     }
 
     #[test]

@@ -386,6 +386,38 @@ impl ForEachSupport for AstTrigger {
     }
 }
 
+// EventTrigger implementation
+impl ForEachSupport for AstEventTrigger {
+    type Item = Self;
+
+    fn parse_one(name: &str, body: &Body, env: &EnvVars) -> Result<Self::Item> {
+        let alt_name = get_attr_string(body, "name", env)?;
+        let event =
+            get_attr_string(body, "event", env)?.context("event_trigger 'event' is required")?;
+        let tags = match find_attr(body, "tags") {
+            Some(attr) => expr_to_string_vec(attr.expr(), env)?,
+            None => Vec::new(),
+        };
+        let function = get_attr_string(body, "function", env)?
+            .context("event_trigger 'function' is required")?;
+        let function_schema = get_attr_string(body, "function_schema", env)?;
+        let comment = get_attr_string(body, "comment", env)?;
+        Ok(AstEventTrigger {
+            name: name.to_string(),
+            alt_name,
+            event,
+            tags,
+            function,
+            function_schema,
+            comment,
+        })
+    }
+
+    fn add_to_config(item: Self::Item, config: &mut Config) {
+        config.event_triggers.push(item);
+    }
+}
+
 // Extension implementation
 impl ForEachSupport for AstExtension {
     type Item = Self;

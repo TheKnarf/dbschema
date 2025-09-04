@@ -196,6 +196,18 @@ fn to_sql(cfg: &Config) -> Result<String> {
         }
     }
 
+    for e in &cfg.event_triggers {
+        out.push_str(&format!("{}\n\n", pg::EventTrigger::from(e)));
+        if let Some(comment) = &e.comment {
+            let name = e.alt_name.clone().unwrap_or_else(|| e.name.clone());
+            out.push_str(&format!(
+                "COMMENT ON EVENT TRIGGER {} IS {};\n\n",
+                pg::ident(&name),
+                pg::literal(comment)
+            ));
+        }
+    }
+
     for t in &cfg.triggers {
         out.push_str(&format!("{}\n\n", pg::Trigger::from(t)));
         if let Some(comment) = &t.comment {

@@ -10,9 +10,9 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crate::frontend::ast;
+use crate::frontend::ast::VarValidation;
 use crate::frontend::builtins;
 use crate::frontend::env::{EnvVars, VarSpec};
-use crate::frontend::ast::VarValidation;
 use crate::frontend::for_each::execute_for_each;
 use crate::frontend::lower;
 use crate::ir;
@@ -598,7 +598,6 @@ fn populate_back_references(cfg: &mut ir::Config) -> Result<()> {
     Ok(())
 }
 
-
 fn value_kind(v: &Value) -> &'static str {
     match v {
         Value::String(_) => "string",
@@ -671,11 +670,7 @@ fn load_file(
                 .with_context(|| format!("evaluating type for variable '{}')", name))?;
             spec.r#type = Some(t);
         }
-        if let Some(vblk) = blk
-            .body()
-            .blocks()
-            .find(|b| b.identifier() == "validation")
-        {
+        if let Some(vblk) = blk.body().blocks().find(|b| b.identifier() == "validation") {
             let cond_attr = find_attr(vblk.body(), "condition")
                 .ok_or_else(|| anyhow::anyhow!("validation block missing 'condition'"))?;
             let err_attr = find_attr(vblk.body(), "error_message")
@@ -719,8 +714,8 @@ fn load_file(
                 match v {
                     Value::Bool(true) => {}
                     Value::Bool(false) => {
-                        let msg = expr_to_string(&vspec.error_message, &env)
-                            .with_context(|| {
+                        let msg =
+                            expr_to_string(&vspec.error_message, &env).with_context(|| {
                                 format!(
                                     "evaluating validation error_message for variable '{}')",
                                     name
@@ -1065,6 +1060,25 @@ fn load_file(
         let for_each_expr = find_attr(blk.body(), "for_each");
         let count_expr = find_attr(blk.body(), "count");
         execute_for_each::<ast::AstTrigger>(
+            &name,
+            blk.body(),
+            &env,
+            &mut cfg,
+            for_each_expr,
+            count_expr,
+        )?;
+    }
+
+    for blk in body.blocks().filter(|b| b.identifier() == "event_trigger") {
+        let name = blk
+            .labels()
+            .get(0)
+            .ok_or_else(|| anyhow::anyhow!("event_trigger block missing name label"))?
+            .as_str()
+            .to_string();
+        let for_each_expr = find_attr(blk.body(), "for_each");
+        let count_expr = find_attr(blk.body(), "count");
+        execute_for_each::<ast::AstEventTrigger>(
             &name,
             blk.body(),
             &env,

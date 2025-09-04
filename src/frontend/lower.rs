@@ -5,6 +5,7 @@ pub fn lower_config(ast: ast::Config) -> ir::Config {
     ir::Config {
         functions: ast.functions.into_iter().map(Into::into).collect(),
         triggers: ast.triggers.into_iter().map(Into::into).collect(),
+        event_triggers: ast.event_triggers.into_iter().map(Into::into).collect(),
         extensions: ast.extensions.into_iter().map(Into::into).collect(),
         sequences: ast.sequences.into_iter().map(Into::into).collect(),
         schemas: ast.schemas.into_iter().map(Into::into).collect(),
@@ -51,6 +52,20 @@ impl From<ast::AstTrigger> for ir::TriggerSpec {
             function: t.function,
             function_schema: t.function_schema,
             when: t.when,
+            comment: t.comment,
+        }
+    }
+}
+
+impl From<ast::AstEventTrigger> for ir::EventTriggerSpec {
+    fn from(t: ast::AstEventTrigger) -> Self {
+        Self {
+            name: t.name,
+            alt_name: t.alt_name,
+            event: t.event,
+            tags: t.tags,
+            function: t.function,
+            function_schema: t.function_schema,
             comment: t.comment,
         }
     }
