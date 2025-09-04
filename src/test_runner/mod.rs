@@ -1,6 +1,6 @@
 use anyhow::Result;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::collections::HashSet;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::ir::Config;
 

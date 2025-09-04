@@ -2,13 +2,16 @@ use anyhow::{anyhow, Result};
 use bytes::BytesMut;
 use fallible_iterator::FallibleIterator;
 use postgres_protocol::message::{backend, frontend};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
-use wasmer::{FunctionEnv, Instance, Memory, Module, Store, Table, TypedFunction};
+use wasmer::{
+    AsStoreMut, Exports, Function, FunctionEnv, FunctionEnvMut, Global, Imports, Instance, Memory,
+    Module, Store, Table, TypedFunction, Value,
+};
 use wasmer_emscripten::{
     generate_emscripten_env, run_emscripten_instance, EmEnv, EmscriptenGlobals,
 };
-use wasmer_wasix::WasiEnv;
+use wasmer_wasi::WasiEnv;
 
 /// In-memory Postgres backend powered by the PGlite WASM build.
 ///
@@ -47,26 +50,1369 @@ impl PGliteRuntime {
         let mut mapped_dirs = HashMap::new();
         mapped_dirs.insert("/tmp/pglite".to_string(), pkg_dir.clone());
         mapped_dirs.insert(".".to_string(), pkg_dir.clone());
-        env.as_ref(&store).set_data(&globals.data, mapped_dirs);
+        env.as_mut(&mut store).set_data(&globals.data, mapped_dirs);
 
-        let mut wasi_env = WasiEnv::builder("pglite").finalize(&mut store)?;
+        // Build a minimal WASI environment (wasmer-wasi v3 API)
+        let mut wasi_env = wasmer_wasi::WasiState::new("pglite").finalize(&mut store)?;
 
         let mut import_object = generate_emscripten_env(&mut store, &env, &mut globals);
         let wasi_imports = wasi_env.import_object(&mut store, &module)?;
         import_object.extend(&wasi_imports);
-        let mut instance = Instance::new(&mut store, &module, &import_object)?;
-        wasi_env.initialize(&mut store, instance.clone())?;
 
-        // Set up memory, function pointers and run constructors. Ignore the
-        // error about missing main/entrypoint as the module exposes its own API.
-        let _ = run_emscripten_instance(
-            &mut instance,
-            env.clone().into_mut(&mut store),
-            &mut globals,
-            "",
-            vec![],
-            None,
+        // Shim missing Emscripten invoke thunk expected by the module.
+        // Provide env.invoke_vji: (i32 func_idx, i64, i32) -> () that
+        // performs an indirect call through the module's function table.
+        // This approximates Emscripten's invoke_* helpers.
+        #[derive(Clone)]
+        struct InvokeEnv {
+            table: Table,
+            memory: Memory,
+            next_fd: i32,
+            pipes: HashMap<i32, i32>, // fd -> peer fd (loopback pipe pair)
+            pipe_bufs: HashMap<i32, VecDeque<u8>>, // readable buffers per fd
+            sockets: HashMap<i32, VecDeque<u8>>, // simple loopback socket queues
+        }
+        let invoke_env = FunctionEnv::new(
+            &mut store,
+            InvokeEnv {
+                table: globals.table.clone(),
+                memory: globals.memory.clone(),
+                next_fd: 3,
+                pipes: HashMap::new(),
+                pipe_bufs: HashMap::new(),
+                sockets: HashMap::new(),
+            },
         );
+        let mut shim_imports = Imports::new();
+        let mut env_ns = Exports::new();
+        let invoke_vji = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut env: FunctionEnvMut<InvokeEnv>, fidx: i32, a1: i64, a2: i32| {
+                if fidx < 0 {
+                    return;
+                }
+                let idx = fidx as u32;
+                let table = env.data().table.clone();
+                let mut store_mut = env.as_store_mut();
+                if let Some(wasmer::Value::FuncRef(Some(func))) = table.get(&mut store_mut, idx) {
+                    if let Ok(typed) = func.typed::<(i64, i32), ()>(&store_mut) {
+                        let _ = typed.call(&mut store_mut, a1, a2);
+                    }
+                }
+            },
+        );
+        env_ns.insert("invoke_vji", invoke_vji);
+        // Emscripten inline asm const shim: return 0 by default.
+        let asm_const_int =
+            Function::new_typed(&mut store, |_code: i32, _sig: i32, _argv: i32| -> i32 { 0 });
+        env_ns.insert("emscripten_asm_const_int", asm_const_int);
+        // Force-exit shim: ignore requested exit code.
+        let force_exit = Function::new_typed(&mut store, |_code: i32| {});
+        env_ns.insert("emscripten_force_exit", force_exit);
+        // Additional invoke thunk returning i64 with nine i32 args.
+        let invoke_jiiiiiiiii = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut env: FunctionEnvMut<InvokeEnv>,
+             fidx: i32,
+             a1: i32,
+             a2: i32,
+             a3: i32,
+             a4: i32,
+             a5: i32,
+             a6: i32,
+             a7: i32,
+             a8: i32,
+             a9: i32|
+             -> i64 {
+                if fidx < 0 {
+                    return 0;
+                }
+                let idx = fidx as u32;
+                let table = env.data().table.clone();
+                let mut store_mut = env.as_store_mut();
+                if let Some(wasmer::Value::FuncRef(Some(func))) = table.get(&mut store_mut, idx) {
+                    if let Ok(typed) =
+                        func.typed::<(i32, i32, i32, i32, i32, i32, i32, i32, i32), i64>(&store_mut)
+                    {
+                        if let Ok(ret) =
+                            typed.call(&mut store_mut, a1, a2, a3, a4, a5, a6, a7, a8, a9)
+                        {
+                            return ret;
+                        }
+                    }
+                }
+                0
+            },
+        );
+        env_ns.insert("invoke_jiiiiiiiii", invoke_jiiiiiiiii);
+        // Additional invoke thunk returning i64 with six i32 args.
+        let invoke_jiiiiii = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut env: FunctionEnvMut<InvokeEnv>,
+             fidx: i32,
+             a1: i32,
+             a2: i32,
+             a3: i32,
+             a4: i32,
+             a5: i32,
+             a6: i32|
+             -> i64 {
+                if fidx < 0 {
+                    return 0;
+                }
+                let idx = fidx as u32;
+                let table = env.data().table.clone();
+                let mut store_mut = env.as_store_mut();
+                if let Some(wasmer::Value::FuncRef(Some(func))) = table.get(&mut store_mut, idx) {
+                    if let Ok(typed) = func.typed::<(i32, i32, i32, i32, i32, i32), i64>(&store_mut)
+                    {
+                        if let Ok(ret) = typed.call(&mut store_mut, a1, a2, a3, a4, a5, a6) {
+                            return ret;
+                        }
+                    }
+                }
+                0
+            },
+        );
+        env_ns.insert("invoke_jiiiiii", invoke_jiiiiii);
+        // invoke_iiiiiiiiiiiiii: returns i32, takes 13 i32 args (plus func index)
+        let invoke_iiiiiiiiiiiiii = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut env: FunctionEnvMut<InvokeEnv>,
+             fidx: i32,
+             a1: i32,
+             a2: i32,
+             a3: i32,
+             a4: i32,
+             a5: i32,
+             a6: i32,
+             a7: i32,
+             a8: i32,
+             a9: i32,
+             a10: i32,
+             a11: i32,
+             a12: i32,
+             a13: i32|
+             -> i32 {
+                if fidx < 0 {
+                    return 0;
+                }
+                let idx = fidx as u32;
+                let table = env.data().table.clone();
+                let mut store_mut = env.as_store_mut();
+                if let Some(wasmer::Value::FuncRef(Some(func))) = table.get(&mut store_mut, idx) {
+                    if let Ok(typed) = func.typed::<(
+                        i32,
+                        i32,
+                        i32,
+                        i32,
+                        i32,
+                        i32,
+                        i32,
+                        i32,
+                        i32,
+                        i32,
+                        i32,
+                        i32,
+                        i32,
+                    ), i32>(&store_mut)
+                    {
+                        if let Ok(ret) = typed.call(
+                            &mut store_mut,
+                            a1,
+                            a2,
+                            a3,
+                            a4,
+                            a5,
+                            a6,
+                            a7,
+                            a8,
+                            a9,
+                            a10,
+                            a11,
+                            a12,
+                            a13,
+                        ) {
+                            return ret;
+                        }
+                    }
+                }
+                0
+            },
+        );
+        env_ns.insert("invoke_iiiiiiiiiiiiii", invoke_iiiiiiiiiiiiii);
+        // invoke_iiiijii: returns i32, args: i32, i32, i32, i64, i32, i32
+        let invoke_iiiijii = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut env: FunctionEnvMut<InvokeEnv>,
+             fidx: i32,
+             a1: i32,
+             a2: i32,
+             a3: i32,
+             a4: i64,
+             a5: i32,
+             a6: i32|
+             -> i32 {
+                if fidx < 0 {
+                    return 0;
+                }
+                let idx = fidx as u32;
+                let table = env.data().table.clone();
+                let mut store_mut = env.as_store_mut();
+                if let Some(wasmer::Value::FuncRef(Some(func))) = table.get(&mut store_mut, idx) {
+                    if let Ok(typed) = func.typed::<(i32, i32, i32, i64, i32, i32), i32>(&store_mut)
+                    {
+                        if let Ok(ret) = typed.call(&mut store_mut, a1, a2, a3, a4, a5, a6) {
+                            return ret;
+                        }
+                    }
+                }
+                0
+            },
+        );
+        env_ns.insert("invoke_iiiijii", invoke_iiiijii);
+        // invoke_vijiji: returns void, args: i32, i64, i32, i64, i32
+        let invoke_vijiji = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut env: FunctionEnvMut<InvokeEnv>,
+             fidx: i32,
+             a1: i32,
+             a2: i64,
+             a3: i32,
+             a4: i64,
+             a5: i32| {
+                if fidx < 0 {
+                    return;
+                }
+                let idx = fidx as u32;
+                let table = env.data().table.clone();
+                let mut store_mut = env.as_store_mut();
+                if let Some(wasmer::Value::FuncRef(Some(func))) = table.get(&mut store_mut, idx) {
+                    if let Ok(typed) = func.typed::<(i32, i64, i32, i64, i32), ()>(&store_mut) {
+                        let _ = typed.call(&mut store_mut, a1, a2, a3, a4, a5);
+                    }
+                }
+            },
+        );
+        env_ns.insert("invoke_vijiji", invoke_vijiji);
+        // invoke_iiiiiiiiiiiiiiiiii: return i32, 17 x i32 args
+        let invoke_iiiiiiiiiiiiiiiiii = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut env: FunctionEnvMut<InvokeEnv>,
+             fidx: i32,
+             a1: i32,
+             a2: i32,
+             a3: i32,
+             a4: i32,
+             a5: i32,
+             a6: i32,
+             a7: i32,
+             a8: i32,
+             a9: i32,
+             a10: i32,
+             a11: i32,
+             a12: i32,
+             a13: i32,
+             a14: i32,
+             a15: i32,
+             a16: i32,
+             a17: i32|
+             -> i32 {
+                if fidx < 0 {
+                    return 0;
+                }
+                let idx = fidx as u32;
+                let table = env.data().table.clone();
+                let mut store_mut = env.as_store_mut();
+                if let Some(wasmer::Value::FuncRef(Some(func))) = table.get(&mut store_mut, idx) {
+                    if let Ok(typed) = func.typed::<(
+                        i32,
+                        i32,
+                        i32,
+                        i32,
+                        i32,
+                        i32,
+                        i32,
+                        i32,
+                        i32,
+                        i32,
+                        i32,
+                        i32,
+                        i32,
+                        i32,
+                        i32,
+                        i32,
+                        i32,
+                    ), i32>(&store_mut)
+                    {
+                        if let Ok(ret) = typed.call(
+                            &mut store_mut,
+                            a1,
+                            a2,
+                            a3,
+                            a4,
+                            a5,
+                            a6,
+                            a7,
+                            a8,
+                            a9,
+                            a10,
+                            a11,
+                            a12,
+                            a13,
+                            a14,
+                            a15,
+                            a16,
+                            a17,
+                        ) {
+                            return ret;
+                        }
+                    }
+                }
+                0
+            },
+        );
+        env_ns.insert("invoke_iiiiiiiiiiiiiiiiii", invoke_iiiiiiiiiiiiiiiiii);
+        // invoke_iiiij: return i32, args: i32, i32, i32, i64
+        let invoke_iiiij = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut env: FunctionEnvMut<InvokeEnv>,
+             fidx: i32,
+             a1: i32,
+             a2: i32,
+             a3: i32,
+             a4: i64|
+             -> i32 {
+                if fidx < 0 {
+                    return 0;
+                }
+                let idx = fidx as u32;
+                let table = env.data().table.clone();
+                let mut store_mut = env.as_store_mut();
+                if let Some(wasmer::Value::FuncRef(Some(func))) = table.get(&mut store_mut, idx) {
+                    if let Ok(typed) = func.typed::<(i32, i32, i32, i64), i32>(&store_mut) {
+                        if let Ok(ret) = typed.call(&mut store_mut, a1, a2, a3, a4) {
+                            return ret;
+                        }
+                    }
+                }
+                0
+            },
+        );
+        env_ns.insert("invoke_iiiij", invoke_iiiij);
+        // invoke_viiiji: return void, args: i32, i32, i32, i64, i32
+        let invoke_viiiji = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut env: FunctionEnvMut<InvokeEnv>,
+             fidx: i32,
+             a1: i32,
+             a2: i32,
+             a3: i32,
+             a4: i64,
+             a5: i32| {
+                if fidx < 0 {
+                    return;
+                }
+                let idx = fidx as u32;
+                let table = env.data().table.clone();
+                let mut store_mut = env.as_store_mut();
+                if let Some(wasmer::Value::FuncRef(Some(func))) = table.get(&mut store_mut, idx) {
+                    if let Ok(typed) = func.typed::<(i32, i32, i32, i64, i32), ()>(&store_mut) {
+                        let _ = typed.call(&mut store_mut, a1, a2, a3, a4, a5);
+                    }
+                }
+            },
+        );
+        env_ns.insert("invoke_viiiji", invoke_viiiji);
+        // invoke_iiij: return i32, args: i32, i64
+        let invoke_iiij = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut env: FunctionEnvMut<InvokeEnv>, fidx: i32, a1: i32, a2: i32, a3: i64| -> i32 {
+                if fidx < 0 {
+                    return 0;
+                }
+                let idx = fidx as u32;
+                let table = env.data().table.clone();
+                let mut store_mut = env.as_store_mut();
+                if let Some(wasmer::Value::FuncRef(Some(func))) = table.get(&mut store_mut, idx) {
+                    if let Ok(typed) = func.typed::<(i32, i32, i64), i32>(&store_mut) {
+                        if let Ok(ret) = typed.call(&mut store_mut, a1, a2, a3) {
+                            return ret;
+                        }
+                    }
+                }
+                0
+            },
+        );
+        env_ns.insert("invoke_iiij", invoke_iiij);
+        // invoke_vid: return void, args: i32, f64
+        let invoke_vid = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut env: FunctionEnvMut<InvokeEnv>, fidx: i32, a1: i32, a2: f64| {
+                if fidx < 0 {
+                    return;
+                }
+                let idx = fidx as u32;
+                let table = env.data().table.clone();
+                let mut store_mut = env.as_store_mut();
+                if let Some(wasmer::Value::FuncRef(Some(func))) = table.get(&mut store_mut, idx) {
+                    if let Ok(typed) = func.typed::<(i32, f64), ()>(&store_mut) {
+                        let _ = typed.call(&mut store_mut, a1, a2);
+                    }
+                }
+            },
+        );
+        env_ns.insert("invoke_vid", invoke_vid);
+        // invoke_ijiiiiii: return i32, args: i64, i32, i32, i32, i32, i32, i32
+        let invoke_ijiiiiii = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut env: FunctionEnvMut<InvokeEnv>,
+             fidx: i32,
+             a1: i64,
+             a2: i32,
+             a3: i32,
+             a4: i32,
+             a5: i32,
+             a6: i32,
+             a7: i32|
+             -> i32 {
+                if fidx < 0 {
+                    return 0;
+                }
+                let idx = fidx as u32;
+                let table = env.data().table.clone();
+                let mut store_mut = env.as_store_mut();
+                if let Some(wasmer::Value::FuncRef(Some(func))) = table.get(&mut store_mut, idx) {
+                    if let Ok(typed) =
+                        func.typed::<(i64, i32, i32, i32, i32, i32, i32), i32>(&store_mut)
+                    {
+                        if let Ok(ret) = typed.call(&mut store_mut, a1, a2, a3, a4, a5, a6, a7) {
+                            return ret;
+                        }
+                    }
+                }
+                0
+            },
+        );
+        env_ns.insert("invoke_ijiiiiii", invoke_ijiiiiii);
+        // invoke_viijii: return void, args: i32, i32, i64, i32, i32
+        let invoke_viijii = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut env: FunctionEnvMut<InvokeEnv>,
+             fidx: i32,
+             a1: i32,
+             a2: i32,
+             a3: i64,
+             a4: i32,
+             a5: i32| {
+                if fidx < 0 {
+                    return;
+                }
+                let idx = fidx as u32;
+                let table = env.data().table.clone();
+                let mut store_mut = env.as_store_mut();
+                if let Some(wasmer::Value::FuncRef(Some(func))) = table.get(&mut store_mut, idx) {
+                    if let Ok(typed) = func.typed::<(i32, i32, i64, i32, i32), ()>(&store_mut) {
+                        let _ = typed.call(&mut store_mut, a1, a2, a3, a4, a5);
+                    }
+                }
+            },
+        );
+        env_ns.insert("invoke_viijii", invoke_viijii);
+        // invoke_iiiiiji: return i32, args: i32, i32, i32, i32, i64, i32
+        let invoke_iiiiiji = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut env: FunctionEnvMut<InvokeEnv>,
+             fidx: i32,
+             a1: i32,
+             a2: i32,
+             a3: i32,
+             a4: i32,
+             a5: i64,
+             a6: i32|
+             -> i32 {
+                if fidx < 0 {
+                    return 0;
+                }
+                let idx = fidx as u32;
+                let table = env.data().table.clone();
+                let mut store_mut = env.as_store_mut();
+                if let Some(wasmer::Value::FuncRef(Some(func))) = table.get(&mut store_mut, idx) {
+                    if let Ok(typed) = func.typed::<(i32, i32, i32, i32, i64, i32), i32>(&store_mut)
+                    {
+                        if let Ok(ret) = typed.call(&mut store_mut, a1, a2, a3, a4, a5, a6) {
+                            return ret;
+                        }
+                    }
+                }
+                0
+            },
+        );
+        env_ns.insert("invoke_iiiiiji", invoke_iiiiiji);
+        // invoke_viijiiii: return void, args: i32, i32, i64, i32, i32, i32, i32
+        let invoke_viijiiii = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut env: FunctionEnvMut<InvokeEnv>,
+             fidx: i32,
+             a1: i32,
+             a2: i32,
+             a3: i64,
+             a4: i32,
+             a5: i32,
+             a6: i32,
+             a7: i32| {
+                if fidx < 0 {
+                    return;
+                }
+                let idx = fidx as u32;
+                let table = env.data().table.clone();
+                let mut store_mut = env.as_store_mut();
+                if let Some(wasmer::Value::FuncRef(Some(func))) = table.get(&mut store_mut, idx) {
+                    if let Ok(typed) =
+                        func.typed::<(i32, i32, i64, i32, i32, i32, i32), ()>(&store_mut)
+                    {
+                        let _ = typed.call(&mut store_mut, a1, a2, a3, a4, a5, a6, a7);
+                    }
+                }
+            },
+        );
+        env_ns.insert("invoke_viijiiii", invoke_viijiiii);
+        // invoke_jiiii: return i64, args: i32, i32, i32, i32
+        let invoke_jiiii = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut env: FunctionEnvMut<InvokeEnv>,
+             fidx: i32,
+             a1: i32,
+             a2: i32,
+             a3: i32,
+             a4: i32|
+             -> i64 {
+                if fidx < 0 {
+                    return 0;
+                }
+                let idx = fidx as u32;
+                let table = env.data().table.clone();
+                let mut store_mut = env.as_store_mut();
+                if let Some(wasmer::Value::FuncRef(Some(func))) = table.get(&mut store_mut, idx) {
+                    if let Ok(typed) = func.typed::<(i32, i32, i32, i32), i64>(&store_mut) {
+                        if let Ok(ret) = typed.call(&mut store_mut, a1, a2, a3, a4) {
+                            return ret;
+                        }
+                    }
+                }
+                0
+            },
+        );
+        env_ns.insert("invoke_jiiii", invoke_jiiii);
+        // invoke_viiiiiiiiiiii: return void, args: 12 x i32
+        let invoke_viiiiiiiiiiii = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut env: FunctionEnvMut<InvokeEnv>,
+             fidx: i32,
+             a1: i32,
+             a2: i32,
+             a3: i32,
+             a4: i32,
+             a5: i32,
+             a6: i32,
+             a7: i32,
+             a8: i32,
+             a9: i32,
+             a10: i32,
+             a11: i32,
+             a12: i32| {
+                if fidx < 0 {
+                    return;
+                }
+                let idx = fidx as u32;
+                let table = env.data().table.clone();
+                let mut store_mut = env.as_store_mut();
+                if let Some(wasmer::Value::FuncRef(Some(func))) = table.get(&mut store_mut, idx) {
+                    if let Ok(typed) = func.typed::<(
+                        i32,
+                        i32,
+                        i32,
+                        i32,
+                        i32,
+                        i32,
+                        i32,
+                        i32,
+                        i32,
+                        i32,
+                        i32,
+                        i32,
+                    ), ()>(&store_mut)
+                    {
+                        let _ = typed.call(
+                            &mut store_mut,
+                            a1,
+                            a2,
+                            a3,
+                            a4,
+                            a5,
+                            a6,
+                            a7,
+                            a8,
+                            a9,
+                            a10,
+                            a11,
+                            a12,
+                        );
+                    }
+                }
+            },
+        );
+        env_ns.insert("invoke_viiiiiiiiiiii", invoke_viiiiiiiiiiii);
+        // invoke_di: return f64, args: i32
+        let invoke_di = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut env: FunctionEnvMut<InvokeEnv>, fidx: i32, a1: i32| -> f64 {
+                if fidx < 0 {
+                    return 0.0;
+                }
+                let idx = fidx as u32;
+                let table = env.data().table.clone();
+                let mut store_mut = env.as_store_mut();
+                if let Some(wasmer::Value::FuncRef(Some(func))) = table.get(&mut store_mut, idx) {
+                    if let Ok(typed) = func.typed::<(i32), f64>(&store_mut) {
+                        if let Ok(ret) = typed.call(&mut store_mut, a1) {
+                            return ret;
+                        }
+                    }
+                }
+                0.0
+            },
+        );
+        env_ns.insert("invoke_di", invoke_di);
+        // invoke_id: return i32, args: f64
+        let invoke_id = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut env: FunctionEnvMut<InvokeEnv>, fidx: i32, a1: f64| -> i32 {
+                if fidx < 0 {
+                    return 0;
+                }
+                let idx = fidx as u32;
+                let table = env.data().table.clone();
+                let mut store_mut = env.as_store_mut();
+                if let Some(wasmer::Value::FuncRef(Some(func))) = table.get(&mut store_mut, idx) {
+                    if let Ok(typed) = func.typed::<(f64), i32>(&store_mut) {
+                        if let Ok(ret) = typed.call(&mut store_mut, a1) {
+                            return ret;
+                        }
+                    }
+                }
+                0
+            },
+        );
+        env_ns.insert("invoke_id", invoke_id);
+        // invoke_ijiiiii: return i32, args: i64, i32, i32, i32, i32, i32
+        let invoke_ijiiiii = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut env: FunctionEnvMut<InvokeEnv>,
+             fidx: i32,
+             a1: i64,
+             a2: i32,
+             a3: i32,
+             a4: i32,
+             a5: i32,
+             a6: i32|
+             -> i32 {
+                if fidx < 0 {
+                    return 0;
+                }
+                let idx = fidx as u32;
+                let table = env.data().table.clone();
+                let mut store_mut = env.as_store_mut();
+                if let Some(wasmer::Value::FuncRef(Some(func))) = table.get(&mut store_mut, idx) {
+                    if let Ok(typed) = func.typed::<(i64, i32, i32, i32, i32, i32), i32>(&store_mut)
+                    {
+                        if let Ok(ret) = typed.call(&mut store_mut, a1, a2, a3, a4, a5, a6) {
+                            return ret;
+                        }
+                    }
+                }
+                0
+            },
+        );
+        env_ns.insert("invoke_ijiiiii", invoke_ijiiiii);
+        // Minimal syscall stubs expected by emscripten
+        let syscall_fcntl64 =
+            Function::new_typed(&mut store, |_a: i32, _b: i32, _c: i32| -> i32 { 0 });
+        env_ns.insert("__syscall_fcntl64", syscall_fcntl64);
+        let syscall_ioctl =
+            Function::new_typed(&mut store, |_a: i32, _b: i32, _c: i32| -> i32 { 0 });
+        env_ns.insert("__syscall_ioctl", syscall_ioctl);
+        let syscall_openat =
+            Function::new_typed(&mut store, |_a: i32, _b: i32, _c: i32, _d: i32| -> i32 {
+                0
+            });
+        env_ns.insert("__syscall_openat", syscall_openat);
+        let tzset_js = Function::new_typed(&mut store, |_a: i32, _b: i32, _c: i32, _d: i32| {});
+        env_ns.insert("_tzset_js", tzset_js);
+        let abort_js = Function::new_typed(&mut store, || {});
+        env_ns.insert("_abort_js", abort_js);
+        let syscall_faccessat =
+            Function::new_typed(&mut store, |_a: i32, _b: i32, _c: i32, _d: i32| -> i32 {
+                0
+            });
+        env_ns.insert("__syscall_faccessat", syscall_faccessat);
+        let syscall_chdir = Function::new_typed(&mut store, |_a: i32| -> i32 { 0 });
+        env_ns.insert("__syscall_chdir", syscall_chdir);
+        let syscall_chmod = Function::new_typed(&mut store, |_a: i32, _b: i32| -> i32 { 0 });
+        env_ns.insert("__syscall_chmod", syscall_chmod);
+        let syscall_dup = Function::new_typed(&mut store, |a: i32| -> i32 { a });
+        env_ns.insert("__syscall_dup", syscall_dup);
+        let syscall_dup3 = Function::new_typed(&mut store, |a: i32, _b: i32, _c: i32| -> i32 { a });
+        env_ns.insert("__syscall_dup3", syscall_dup3);
+        let dlopen_js = Function::new_typed(&mut store, |_a: i32| -> i32 { 0 });
+        env_ns.insert("_dlopen_js", dlopen_js);
+        let dlsym_js = Function::new_typed(&mut store, |_a: i32, _b: i32, _c: i32| -> i32 { 0 });
+        env_ns.insert("_dlsym_js", dlsym_js);
+        // Implement memcpy using the module memory (defensive bounds checks)
+        let memcpy_js = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut env: FunctionEnvMut<InvokeEnv>, dest: i32, src: i32, n: i32| {
+                if n <= 0 {
+                    return;
+                }
+                if dest <= 0 || src <= 0 {
+                    return;
+                }
+                let len = n as usize;
+                let memory = env.data().memory.clone();
+                let mut store_mut = env.as_store_mut();
+                let view = memory.view(&store_mut);
+                let mem_len = view.data_size();
+                let src_off = src as u64;
+                let dst_off = dest as u64;
+                if src_off + len as u64 > mem_len as u64 {
+                    return;
+                }
+                if dst_off + len as u64 > mem_len as u64 {
+                    return;
+                }
+                if len <= 4096 {
+                    let mut tmp = [0u8; 4096];
+                    let _ = view.read(src_off, &mut tmp[..len]);
+                    let _ = view.write(dst_off, &tmp[..len]);
+                } else {
+                    let mut buf = vec![0u8; len];
+                    let _ = view.read(src_off, &mut buf);
+                    let _ = view.write(dst_off, &buf);
+                }
+            },
+        );
+        env_ns.insert("_emscripten_memcpy_js", memcpy_js);
+        let munmap_js = Function::new_typed(
+            &mut store,
+            |_a: i32, _b: i32, _c: i32, _d: i32, _e: i32, _f: i64| -> i32 { 0 },
+        );
+        env_ns.insert("_munmap_js", munmap_js);
+        let mmap_js = Function::new_typed(
+            &mut store,
+            |_a: i32, _b: i32, _c: i32, _d: i32, _e: i64, _f: i32, _g: i32| -> i32 { 0 },
+        );
+        env_ns.insert("_mmap_js", mmap_js);
+        let date_now = Function::new_typed(&mut store, || -> f64 {
+            use std::time::{SystemTime, UNIX_EPOCH};
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default();
+            now.as_secs_f64() * 1000.0
+        });
+        env_ns.insert("emscripten_date_now", date_now);
+        let syscall_fdatasync = Function::new_typed(&mut store, |_a: i32| -> i32 { 0 });
+        env_ns.insert("__syscall_fdatasync", syscall_fdatasync);
+        let syscall_fstat64 = Function::new_typed(&mut store, |_a: i32, _b: i32| -> i32 { 0 });
+        env_ns.insert("__syscall_fstat64", syscall_fstat64);
+        let syscall_stat64 = Function::new_typed(&mut store, |_a: i32, _b: i32| -> i32 { 0 });
+        env_ns.insert("__syscall_stat64", syscall_stat64);
+        let syscall_newfstatat =
+            Function::new_typed(&mut store, |_a: i32, _b: i32, _c: i32, _d: i32| -> i32 {
+                0
+            });
+        env_ns.insert("__syscall_newfstatat", syscall_newfstatat);
+        let syscall_lstat64 = Function::new_typed(&mut store, |_a: i32, _b: i32| -> i32 { 0 });
+        env_ns.insert("__syscall_lstat64", syscall_lstat64);
+        let syscall_ftruncate64 = Function::new_typed(&mut store, |_a: i32, _b: i64| -> i32 { 0 });
+        env_ns.insert("__syscall_ftruncate64", syscall_ftruncate64);
+        let syscall_getcwd = Function::new_typed(&mut store, |_a: i32, _b: i32| -> i32 { 0 });
+        env_ns.insert("__syscall_getcwd", syscall_getcwd);
+        let syscall_getdents64 =
+            Function::new_typed(&mut store, |_a: i32, _b: i32, _c: i32| -> i32 { 0 });
+        env_ns.insert("__syscall_getdents64", syscall_getdents64);
+        let get_now = Function::new_typed(&mut store, || -> f64 {
+            use std::time::{SystemTime, UNIX_EPOCH};
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default();
+            now.as_secs_f64() * 1000.0
+        });
+        env_ns.insert("emscripten_get_now", get_now);
+        let em_lookup_name = Function::new_typed(&mut store, |_a: i32| -> i32 { 0 });
+        env_ns.insert("_emscripten_lookup_name", em_lookup_name);
+        let syscall_mkdirat =
+            Function::new_typed(&mut store, |_a: i32, _b: i32, _c: i32| -> i32 { 0 });
+        env_ns.insert("__syscall_mkdirat", syscall_mkdirat);
+        let localtime_js = Function::new_typed(&mut store, |_a: i64, _b: i32| {});
+        env_ns.insert("_localtime_js", localtime_js);
+        let gmtime_js = Function::new_typed(&mut store, |_a: i64, _b: i32| {});
+        env_ns.insert("_gmtime_js", gmtime_js);
+        let syscall_pipe = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut env: FunctionEnvMut<InvokeEnv>, ptr: i32| -> i32 {
+                // allocate two new fds
+                let a;
+                let b;
+                {
+                    a = env.data().next_fd;
+                    env.data_mut().next_fd += 1;
+                    b = env.data().next_fd;
+                    env.data_mut().next_fd += 1;
+                    env.data_mut().pipes.insert(a, b);
+                    env.data_mut().pipes.insert(b, a);
+                    env.data_mut()
+                        .pipe_bufs
+                        .entry(a)
+                        .or_insert_with(VecDeque::new);
+                    env.data_mut()
+                        .pipe_bufs
+                        .entry(b)
+                        .or_insert_with(VecDeque::new);
+                }
+                let memory = env.data().memory.clone();
+                let store_mut = env.as_store_mut();
+                let view = memory.view(&store_mut);
+                let mut buf = [0u8; 8];
+                buf[..4].copy_from_slice(&a.to_le_bytes());
+                buf[4..].copy_from_slice(&b.to_le_bytes());
+                let _ = view.write(ptr as u64, &buf);
+                0
+            },
+        );
+        env_ns.insert("__syscall_pipe", syscall_pipe);
+        // read(fd, buf, count)
+        let syscall_read = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut env: FunctionEnvMut<InvokeEnv>, fd: i32, buf_ptr: i32, count: i32| -> i32 {
+                if count <= 0 {
+                    return 0;
+                }
+                let len = count as usize;
+                let mut out: Vec<u8> = Vec::new();
+                let mut n = 0usize;
+                if let Some(q) = env.data_mut().pipe_bufs.get_mut(&fd) {
+                    out.resize(len, 0);
+                    while n < len {
+                        if let Some(b) = q.pop_front() {
+                            out[n] = b;
+                            n += 1;
+                        } else {
+                            break;
+                        }
+                    }
+                } else if let Some(q) = env.data_mut().sockets.get_mut(&fd) {
+                    out.resize(len, 0);
+                    while n < len {
+                        if let Some(b) = q.pop_front() {
+                            out[n] = b;
+                            n += 1;
+                        } else {
+                            break;
+                        }
+                    }
+                }
+                if n > 0 {
+                    let memory = env.data().memory.clone();
+                    let store_mut = env.as_store_mut();
+                    let view = memory.view(&store_mut);
+                    let _ = view.write(buf_ptr as u64, &out[..n]);
+                    return n as i32;
+                }
+                // stdout/stderr: no-op
+                0
+            },
+        );
+        env_ns.insert("__syscall_read", syscall_read);
+        // write(fd, buf, count)
+        let syscall_write = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut env: FunctionEnvMut<InvokeEnv>, fd: i32, buf_ptr: i32, count: i32| -> i32 {
+                if count <= 0 {
+                    return 0;
+                }
+                let len = count as usize;
+                let mut tmp = vec![0u8; len];
+                {
+                    let memory = env.data().memory.clone();
+                    let store_mut = env.as_store_mut();
+                    let view = memory.view(&store_mut);
+                    let _ = view.read(buf_ptr as u64, &mut tmp);
+                }
+                // pipe write: push to peer queue
+                if let Some(&peer) = env.data().pipes.get(&fd) {
+                    if let Some(q) = env.data_mut().pipe_bufs.get_mut(&peer) {
+                        for b in &tmp {
+                            q.push_back(*b);
+                        }
+                        return count;
+                    }
+                }
+                // socket write: push back into the same socket queue (loopback)
+                if let Some(q) = env.data_mut().sockets.get_mut(&fd) {
+                    for b in &tmp {
+                        q.push_back(*b);
+                    }
+                    return count;
+                }
+                // stdout/stderr: drop
+                count
+            },
+        );
+        env_ns.insert("__syscall_write", syscall_write);
+        let syscall_close = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut env: FunctionEnvMut<InvokeEnv>, fd: i32| -> i32 {
+                env.data_mut().pipes.remove(&fd);
+                env.data_mut().pipe_bufs.remove(&fd);
+                env.data_mut().sockets.remove(&fd);
+                0
+            },
+        );
+        env_ns.insert("__syscall_close", syscall_close);
+        // socket(domain, type, protocol)
+        let syscall_socket = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut env: FunctionEnvMut<InvokeEnv>,
+             _a: i32,
+             _b: i32,
+             _c: i32,
+             _d: i32,
+             _e: i32,
+             _f: i32|
+             -> i32 {
+                let fd = env.data().next_fd;
+                env.data_mut().next_fd += 1;
+                env.data_mut()
+                    .sockets
+                    .entry(fd)
+                    .or_insert_with(VecDeque::new);
+                fd
+            },
+        );
+        env_ns.insert("__syscall_socket", syscall_socket);
+        let syscall_connect = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut _env: FunctionEnvMut<InvokeEnv>,
+             _fd: i32,
+             _a: i32,
+             _b: i32,
+             _c: i32,
+             _d: i32,
+             _e: i32|
+             -> i32 { 0 },
+        );
+        env_ns.insert("__syscall_connect", syscall_connect);
+        let syscall_listen = Function::new_typed(
+            &mut store,
+            |_a: i32, _b: i32, _c: i32, _d: i32, _e: i32, _f: i32| -> i32 { 0 },
+        );
+        env_ns.insert("__syscall_listen", syscall_listen);
+        let syscall_accept4 = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut env: FunctionEnvMut<InvokeEnv>, _fd: i32, _a: i32, _b: i32, _c: i32| -> i32 {
+                let fd = env.data().next_fd;
+                env.data_mut().next_fd += 1;
+                env.data_mut()
+                    .sockets
+                    .entry(fd)
+                    .or_insert_with(VecDeque::new);
+                fd
+            },
+        );
+        env_ns.insert("__syscall_accept4", syscall_accept4);
+        let syscall_getsockname = Function::new_typed(
+            &mut store,
+            |_a: i32, _b: i32, _c: i32, _d: i32, _e: i32, _f: i32| -> i32 { 0 },
+        );
+        env_ns.insert("__syscall_getsockname", syscall_getsockname);
+        let syscall_getsockopt = Function::new_typed(
+            &mut store,
+            |_a: i32, _b: i32, _c: i32, _d: i32, _e: i32, _f: i32| -> i32 { 0 },
+        );
+        env_ns.insert("__syscall_getsockopt", syscall_getsockopt);
+        // Emscripten globals
+        let sp = Global::new_mut(&mut store, Value::I32(0));
+        env_ns.insert("__stack_pointer", sp);
+        // Expose the function table as the indirect function table
+        env_ns.insert("__indirect_function_table", globals.table.clone());
+        // invoke_j: return i64, no args
+        let invoke_j = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut env: FunctionEnvMut<InvokeEnv>, fidx: i32| -> i64 {
+                if fidx < 0 {
+                    return 0;
+                }
+                let idx = fidx as u32;
+                let table = env.data().table.clone();
+                let mut store_mut = env.as_store_mut();
+                if let Some(wasmer::Value::FuncRef(Some(func))) = table.get(&mut store_mut, idx) {
+                    if let Ok(typed) = func.typed::<(), i64>(&store_mut) {
+                        if let Ok(ret) = typed.call(&mut store_mut) {
+                            return ret;
+                        }
+                    }
+                }
+                0
+            },
+        );
+        env_ns.insert("invoke_j", invoke_j);
+        let invoke_jii = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut env: FunctionEnvMut<InvokeEnv>, fidx: i32, a1: i32, a2: i32| -> i64 {
+                if fidx < 0 {
+                    return 0;
+                }
+                let idx = fidx as u32;
+                let table = env.data().table.clone();
+                let mut store_mut = env.as_store_mut();
+                if let Some(wasmer::Value::FuncRef(Some(func))) = table.get(&mut store_mut, idx) {
+                    if let Ok(typed) = func.typed::<(i32, i32), i64>(&store_mut) {
+                        if let Ok(ret) = typed.call(&mut store_mut, a1, a2) {
+                            return ret;
+                        }
+                    }
+                }
+                0
+            },
+        );
+        env_ns.insert("invoke_jii", invoke_jii);
+        let invoke_ji = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut env: FunctionEnvMut<InvokeEnv>, fidx: i32, a1: i32| -> i64 {
+                if fidx < 0 {
+                    return 0;
+                }
+                let idx = fidx as u32;
+                let table = env.data().table.clone();
+                let mut store_mut = env.as_store_mut();
+                if let Some(wasmer::Value::FuncRef(Some(func))) = table.get(&mut store_mut, idx) {
+                    if let Ok(typed) = func.typed::<(i32), i64>(&store_mut) {
+                        if let Ok(ret) = typed.call(&mut store_mut, a1) {
+                            return ret;
+                        }
+                    }
+                }
+                0
+            },
+        );
+        env_ns.insert("invoke_ji", invoke_ji);
+        let invoke_viji = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut env: FunctionEnvMut<InvokeEnv>, fidx: i32, a1: i32, a2: i64, a3: i32| {
+                if fidx < 0 {
+                    return;
+                }
+                let idx = fidx as u32;
+                let table = env.data().table.clone();
+                let mut store_mut = env.as_store_mut();
+                if let Some(wasmer::Value::FuncRef(Some(func))) = table.get(&mut store_mut, idx) {
+                    if let Ok(typed) = func.typed::<(i32, i64, i32), ()>(&store_mut) {
+                        let _ = typed.call(&mut store_mut, a1, a2, a3);
+                    }
+                }
+            },
+        );
+        env_ns.insert("invoke_viji", invoke_viji);
+        let invoke_iiji = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut env: FunctionEnvMut<InvokeEnv>, fidx: i32, a1: i32, a2: i64, a3: i32| -> i32 {
+                if fidx < 0 {
+                    return 0;
+                }
+                let idx = fidx as u32;
+                let table = env.data().table.clone();
+                let mut store_mut = env.as_store_mut();
+                if let Some(wasmer::Value::FuncRef(Some(func))) = table.get(&mut store_mut, idx) {
+                    if let Ok(typed) = func.typed::<(i32, i64, i32), i32>(&store_mut) {
+                        if let Ok(ret) = typed.call(&mut store_mut, a1, a2, a3) {
+                            return ret;
+                        }
+                    }
+                }
+                0
+            },
+        );
+        env_ns.insert("invoke_iiji", invoke_iiji);
+        let invoke_vj = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut env: FunctionEnvMut<InvokeEnv>, fidx: i32, a1: i64| {
+                if fidx < 0 {
+                    return;
+                }
+                let idx = fidx as u32;
+                let table = env.data().table.clone();
+                let mut store_mut = env.as_store_mut();
+                if let Some(wasmer::Value::FuncRef(Some(func))) = table.get(&mut store_mut, idx) {
+                    if let Ok(typed) = func.typed::<(i64), ()>(&store_mut) {
+                        let _ = typed.call(&mut store_mut, a1);
+                    }
+                }
+            },
+        );
+        env_ns.insert("invoke_vj", invoke_vj);
+        let invoke_viiji = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut env: FunctionEnvMut<InvokeEnv>, fidx: i32, a1: i32, a2: i32, a3: i64, a4: i32| {
+                if fidx < 0 {
+                    return;
+                }
+                let idx = fidx as u32;
+                let table = env.data().table.clone();
+                let mut store_mut = env.as_store_mut();
+                if let Some(wasmer::Value::FuncRef(Some(func))) = table.get(&mut store_mut, idx) {
+                    if let Ok(typed) = func.typed::<(i32, i32, i64, i32), ()>(&store_mut) {
+                        let _ = typed.call(&mut store_mut, a1, a2, a3, a4);
+                    }
+                }
+            },
+        );
+        env_ns.insert("invoke_viiji", invoke_viiji);
+        let invoke_vij = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut env: FunctionEnvMut<InvokeEnv>, fidx: i32, a1: i32, a2: i64| {
+                if fidx < 0 {
+                    return;
+                }
+                let idx = fidx as u32;
+                let table = env.data().table.clone();
+                let mut store_mut = env.as_store_mut();
+                if let Some(wasmer::Value::FuncRef(Some(func))) = table.get(&mut store_mut, idx) {
+                    if let Ok(typed) = func.typed::<(i32, i64), ()>(&store_mut) {
+                        let _ = typed.call(&mut store_mut, a1, a2);
+                    }
+                }
+            },
+        );
+        env_ns.insert("invoke_vij", invoke_vij);
+        let invoke_viij = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut env: FunctionEnvMut<InvokeEnv>, fidx: i32, a1: i32, a2: i32, a3: i64| {
+                if fidx < 0 {
+                    return;
+                }
+                let idx = fidx as u32;
+                let table = env.data().table.clone();
+                let mut store_mut = env.as_store_mut();
+                if let Some(wasmer::Value::FuncRef(Some(func))) = table.get(&mut store_mut, idx) {
+                    if let Ok(typed) = func.typed::<(i32, i32, i64), ()>(&store_mut) {
+                        let _ = typed.call(&mut store_mut, a1, a2, a3);
+                    }
+                }
+            },
+        );
+        env_ns.insert("invoke_viij", invoke_viij);
+        // GOT.mem globals
+        let mut got_mem = Exports::new();
+        let heap_base = Global::new_mut(&mut store, Value::I32(0));
+        got_mem.insert("__heap_base", heap_base);
+        shim_imports.register_namespace("GOT.mem", got_mem);
+        let syscall_sendto = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut env: FunctionEnvMut<InvokeEnv>,
+             fd: i32,
+             buf: i32,
+             len: i32,
+             _flags: i32,
+             _addr: i32,
+             _alen: i32|
+             -> i32 {
+                if len <= 0 {
+                    return 0;
+                }
+                let l = len as usize;
+                let mut tmp = vec![0u8; l];
+                {
+                    let memory = env.data().memory.clone();
+                    let store_mut = env.as_store_mut();
+                    let view = memory.view(&store_mut);
+                    let _ = view.read(buf as u64, &mut tmp);
+                }
+                if let Some(q) = env.data_mut().sockets.get_mut(&fd) {
+                    for b in &tmp {
+                        q.push_back(*b);
+                    }
+                    return len;
+                }
+                len
+            },
+        );
+        env_ns.insert("__syscall_sendto", syscall_sendto);
+        let syscall_recvfrom = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut env: FunctionEnvMut<InvokeEnv>,
+             fd: i32,
+             buf: i32,
+             len: i32,
+             _flags: i32,
+             _addr: i32,
+             _alen: i32|
+             -> i32 {
+                if len <= 0 {
+                    return 0;
+                }
+                let l = len as usize;
+                let mut out = vec![0u8; l];
+                let mut n = 0usize;
+                if let Some(q) = env.data_mut().sockets.get_mut(&fd) {
+                    while n < l {
+                        if let Some(b) = q.pop_front() {
+                            out[n] = b;
+                            n += 1;
+                        } else {
+                            break;
+                        }
+                    }
+                }
+                if n > 0 {
+                    let memory = env.data().memory.clone();
+                    let store_mut = env.as_store_mut();
+                    let view = memory.view(&store_mut);
+                    let _ = view.write(buf as u64, &out[..n]);
+                }
+                n as i32
+            },
+        );
+        env_ns.insert("__syscall_recvfrom", syscall_recvfrom);
+        let syscall_poll =
+            Function::new_typed(&mut store, |_a: i32, _b: i32, _c: i32| -> i32 { 0 });
+        env_ns.insert("__syscall_poll", syscall_poll);
+        let syscall_fadvise64 =
+            Function::new_typed(&mut store, |_a: i32, _b: i64, _c: i64, _d: i32| -> i32 {
+                0
+            });
+        env_ns.insert("__syscall_fadvise64", syscall_fadvise64);
+        let syscall_fallocate =
+            Function::new_typed(&mut store, |_a: i32, _b: i32, _c: i64, _d: i64| -> i32 {
+                0
+            });
+        env_ns.insert("__syscall_fallocate", syscall_fallocate);
+        let em_get_progname = Function::new_typed(&mut store, |_a: i32, _b: i32| {});
+        env_ns.insert("_emscripten_get_progname", em_get_progname);
+        let em_keepalive_clear = Function::new_typed(&mut store, || {});
+        env_ns.insert("_emscripten_runtime_keepalive_clear", em_keepalive_clear);
+        let call_sighandler = Function::new_typed(&mut store, |_a: i32, _b: i32| {});
+        env_ns.insert("__call_sighandler", call_sighandler);
+        let syscall_readlinkat =
+            Function::new_typed(&mut store, |_a: i32, _b: i32, _c: i32, _d: i32| -> i32 {
+                0
+            });
+        env_ns.insert("__syscall_readlinkat", syscall_readlinkat);
+        let syscall_unlinkat =
+            Function::new_typed(&mut store, |_a: i32, _b: i32, _c: i32| -> i32 { 0 });
+        env_ns.insert("__syscall_unlinkat", syscall_unlinkat);
+        let syscall_rmdir = Function::new_typed(&mut store, |_a: i32| -> i32 { 0 });
+        env_ns.insert("__syscall_rmdir", syscall_rmdir);
+        let syscall_renameat =
+            Function::new_typed(&mut store, |_a: i32, _b: i32, _c: i32, _d: i32| -> i32 {
+                0
+            });
+        env_ns.insert("__syscall_renameat", syscall_renameat);
+        let syscall_newselect = Function::new_typed(
+            &mut store,
+            |_a: i32, _b: i32, _c: i32, _d: i32, _e: i32| -> i32 { 0 },
+        );
+        env_ns.insert("__syscall__newselect", syscall_newselect);
+        let setitimer_js = Function::new_typed(&mut store, |_a: i32, _b: f64| -> i32 { 0 });
+        env_ns.insert("_setitimer_js", setitimer_js);
+        let syscall_symlinkat =
+            Function::new_typed(&mut store, |_a: i32, _b: i32, _c: i32| -> i32 { 0 });
+        env_ns.insert("__syscall_symlinkat", syscall_symlinkat);
+        let get_heap_max = Function::new_typed(&mut store, || -> i32 { i32::MAX });
+        env_ns.insert("emscripten_get_heap_max", get_heap_max);
+        let em_system = Function::new_typed(&mut store, |_a: i32| -> i32 { 0 });
+        env_ns.insert("_emscripten_system", em_system);
+        let syscall_truncate64 = Function::new_typed(&mut store, |_a: i32, _b: i64| -> i32 { 0 });
+        env_ns.insert("__syscall_truncate64", syscall_truncate64);
+        let em_throw_longjmp = Function::new_typed(&mut store, || {});
+        env_ns.insert("_emscripten_throw_longjmp", em_throw_longjmp);
+        let syscall_accept4 = Function::new_typed(
+            &mut store,
+            |_a: i32, _b: i32, _c: i32, _d: i32, _e: i32, _f: i32| -> i32 { 0 },
+        );
+        env_ns.insert("__syscall_accept4", syscall_accept4);
+        let syscall_bind = Function::new_typed(
+            &mut store,
+            |_a: i32, _b: i32, _c: i32, _d: i32, _e: i32, _f: i32| -> i32 { 0 },
+        );
+        env_ns.insert("__syscall_bind", syscall_bind);
+        // invoke_ij: return i32, args: i64
+        let invoke_ij = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut env: FunctionEnvMut<InvokeEnv>, fidx: i32, a1: i64| -> i32 {
+                if fidx < 0 {
+                    return 0;
+                }
+                let idx = fidx as u32;
+                let table = env.data().table.clone();
+                let mut store_mut = env.as_store_mut();
+                if let Some(wasmer::Value::FuncRef(Some(func))) = table.get(&mut store_mut, idx) {
+                    if let Ok(typed) = func.typed::<(i64), i32>(&store_mut) {
+                        if let Ok(ret) = typed.call(&mut store_mut, a1) {
+                            return ret;
+                        }
+                    }
+                }
+                0
+            },
+        );
+        env_ns.insert("invoke_ij", invoke_ij);
+        shim_imports.register_namespace("env", env_ns);
+        import_object.extend(&shim_imports);
+        let mut instance = Instance::new(&mut store, &module, &import_object)?;
+        wasi_env.initialize(&mut store, &instance)?;
+
+        // Skip Emscripten constructors; the module exposes direct APIs we call below.
 
         // Call _pgl_initdb to ensure the database files are set up.
         let init = instance

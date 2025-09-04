@@ -37,7 +37,11 @@ impl LintCheck for SqlSyntax {
             self.check_stmt(&mut msgs, &view.sql, &format!("view '{}'", view.name));
         }
         for mview in &cfg.materialized {
-            self.check_stmt(&mut msgs, &mview.sql, &format!("materialized view '{}'", mview.name));
+            self.check_stmt(
+                &mut msgs,
+                &mview.sql,
+                &format!("materialized view '{}'", mview.name),
+            );
         }
         for policy in &cfg.policies {
             if let Some(using) = &policy.using {
@@ -49,12 +53,20 @@ impl LintCheck for SqlSyntax {
         }
         for table in &cfg.tables {
             for chk in &table.checks {
-                self.check_expr(&mut msgs, &chk.expression, &format!("table '{}' CHECK", table.name));
+                self.check_expr(
+                    &mut msgs,
+                    &chk.expression,
+                    &format!("table '{}' CHECK", table.name),
+                );
             }
         }
         for domain in &cfg.domains {
             if let Some(expr) = &domain.constraint {
-                self.check_expr(&mut msgs, expr, &format!("domain '{}' CONSTRAINT", domain.name));
+                self.check_expr(
+                    &mut msgs,
+                    expr,
+                    &format!("domain '{}' CONSTRAINT", domain.name),
+                );
             }
             if let Some(expr) = &domain.check {
                 self.check_expr(&mut msgs, expr, &format!("domain '{}' CHECK", domain.name));
@@ -102,7 +114,10 @@ mod tests {
             sql: "SELEC 1".into(),
             comment: None,
         };
-        let cfg = Config { views: vec![view], ..Default::default() };
+        let cfg = Config {
+            views: vec![view],
+            ..Default::default()
+        };
         let msgs = run_with_checks(&cfg, vec![Box::new(SqlSyntax)], &LintSettings::default());
         assert!(msgs.iter().any(|m| m.check == "sql-syntax"));
     }

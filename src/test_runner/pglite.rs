@@ -3,8 +3,8 @@ use postgres_protocol::message::backend;
 use std::collections::HashSet;
 
 use super::{is_verbose, TestBackend, TestResult, TestSummary};
-use log::info;
 use crate::ir::Config;
+use log::info;
 use pglite::assert_row_true;
 
 pub use pglite::PGliteRuntime;
@@ -28,7 +28,9 @@ impl TestBackend for PGliteTestBackend {
             let mut ok = true;
             let mut failed_msg = String::new();
             for s in &t.setup {
-                if is_verbose() { info!("-- setup: {}", s); }
+                if is_verbose() {
+                    info!("-- setup: {}", s);
+                }
                 if let Err(e) = rt.simple_query(s) {
                     ok = false;
                     failed_msg = format!("setup failed: {}", e);
@@ -37,7 +39,9 @@ impl TestBackend for PGliteTestBackend {
             }
             if ok {
                 for a in &t.asserts {
-                    if is_verbose() { info!("-- assert: {}", a); }
+                    if is_verbose() {
+                        info!("-- assert: {}", a);
+                    }
                     match rt.simple_query(a) {
                         Ok(msgs) => {
                             let mut data_row = None;
@@ -76,7 +80,9 @@ impl TestBackend for PGliteTestBackend {
             }
             if ok {
                 for a in &t.assert_fail {
-                    if is_verbose() { info!("-- assert-fail: {}", a); }
+                    if is_verbose() {
+                        info!("-- assert-fail: {}", a);
+                    }
                     match rt.simple_query(a) {
                         Ok(_) => {
                             ok = false;

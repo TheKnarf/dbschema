@@ -4,8 +4,8 @@ use std::collections::HashSet;
 use url::Url;
 
 use super::{is_verbose, TestBackend, TestResult, TestSummary};
-use log::info;
 use crate::ir::Config;
+use log::info;
 
 pub struct PostgresTestBackend;
 
@@ -26,7 +26,9 @@ impl TestBackend for PostgresTestBackend {
             let mut failed_msg = String::new();
             let mut ok = true;
             for s in &t.setup {
-                if is_verbose() { info!("-- setup: {}", s); }
+                if is_verbose() {
+                    info!("-- setup: {}", s);
+                }
                 if let Err(e) = tx.batch_execute(s) {
                     failed_msg = format!("setup failed: {}", e);
                     ok = false;
@@ -36,7 +38,9 @@ impl TestBackend for PostgresTestBackend {
             if ok {
                 // Positive asserts
                 for a in &t.asserts {
-                    if is_verbose() { info!("-- assert: {}", a); }
+                    if is_verbose() {
+                        info!("-- assert: {}", a);
+                    }
                     match tx.query(a, &[]) {
                         Ok(rows) => match assert_rows_true(&rows) {
                             Ok(true) => {}
@@ -62,7 +66,9 @@ impl TestBackend for PostgresTestBackend {
             if ok {
                 // Negative asserts expected to fail
                 for a in &t.assert_fail {
-                    if is_verbose() { info!("-- assert-fail: {}", a); }
+                    if is_verbose() {
+                        info!("-- assert-fail: {}", a);
+                    }
                     match tx.batch_execute(a) {
                         Ok(_) => {
                             ok = false;
