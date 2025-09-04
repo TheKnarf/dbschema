@@ -13,6 +13,7 @@ pub fn lower_config(ast: ast::Config) -> ir::Config {
         domains: ast.domains.into_iter().map(Into::into).collect(),
         types: ast.types.into_iter().map(Into::into).collect(),
         tables: ast.tables.into_iter().map(Into::into).collect(),
+        indexes: ast.indexes.into_iter().map(Into::into).collect(),
         views: ast.views.into_iter().map(Into::into).collect(),
         materialized: ast.materialized.into_iter().map(Into::into).collect(),
         policies: ast.policies.into_iter().map(Into::into).collect(),
@@ -242,6 +243,7 @@ impl From<ast::AstTable> for ir::TableSpec {
             columns: t.columns.into_iter().map(Into::into).collect(),
             primary_key: t.primary_key.map(Into::into),
             indexes: t.indexes.into_iter().map(Into::into).collect(),
+            checks: t.checks.into_iter().map(Into::into).collect(),
             foreign_keys: t.foreign_keys.into_iter().map(Into::into).collect(),
             back_references: t.back_references.into_iter().map(Into::into).collect(),
             lint_ignore: t.lint_ignore,
@@ -283,6 +285,15 @@ impl From<ast::AstIndex> for ir::IndexSpec {
     }
 }
 
+impl From<ast::AstCheck> for ir::CheckSpec {
+    fn from(c: ast::AstCheck) -> Self {
+        Self {
+            name: c.name,
+            expression: c.expression,
+        }
+    }
+}
+
 impl From<ast::AstForeignKey> for ir::ForeignKeySpec {
     fn from(fk: ast::AstForeignKey) -> Self {
         Self {
@@ -294,6 +305,18 @@ impl From<ast::AstForeignKey> for ir::ForeignKeySpec {
             on_delete: fk.on_delete,
             on_update: fk.on_update,
             back_reference_name: fk.back_reference_name,
+        }
+    }
+}
+
+impl From<ast::AstStandaloneIndex> for ir::StandaloneIndexSpec {
+    fn from(i: ast::AstStandaloneIndex) -> Self {
+        Self {
+            name: i.name,
+            table: i.table,
+            schema: i.schema,
+            columns: i.columns,
+            unique: i.unique,
         }
     }
 }

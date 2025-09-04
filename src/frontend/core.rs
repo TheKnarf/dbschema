@@ -907,6 +907,7 @@ fn load_file(
             cfg.extensions.extend(sub.extensions);
             cfg.sequences.extend(sub.sequences);
             cfg.tables.extend(sub.tables);
+            cfg.indexes.extend(sub.indexes);
             cfg.views.extend(sub.views);
             cfg.materialized.extend(sub.materialized);
             cfg.policies.extend(sub.policies);
@@ -965,6 +966,25 @@ fn load_file(
         let for_each_expr = find_attr(blk.body(), "for_each");
         let count_expr = find_attr(blk.body(), "count");
         execute_for_each::<ast::AstTable>(
+            &name,
+            blk.body(),
+            &env,
+            &mut cfg,
+            for_each_expr,
+            count_expr,
+        )?;
+    }
+
+    for blk in body.blocks().filter(|b| b.identifier() == "index") {
+        let name = blk
+            .labels()
+            .get(0)
+            .ok_or_else(|| anyhow::anyhow!("index block missing name label"))?
+            .as_str()
+            .to_string();
+        let for_each_expr = find_attr(blk.body(), "for_each");
+        let count_expr = find_attr(blk.body(), "count");
+        execute_for_each::<ast::AstStandaloneIndex>(
             &name,
             blk.body(),
             &env,

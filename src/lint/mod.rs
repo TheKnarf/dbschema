@@ -137,7 +137,13 @@ impl LintCheck for MissingIndex {
             if Self::ignored(&table.lint_ignore, self.name()) {
                 continue;
             }
-            if table.indexes.is_empty() && table.primary_key.is_none() {
+            let tbl_name = table.table_name.as_ref().unwrap_or(&table.name);
+            let schema = table.schema.as_deref().unwrap_or("public");
+            let has_global = cfg
+                .indexes
+                .iter()
+                .any(|i| i.table == *tbl_name && i.schema.as_deref().unwrap_or("public") == schema);
+            if table.indexes.is_empty() && !has_global && table.primary_key.is_none() {
                 msgs.push(LintMessage {
                     check: self.name(),
                     message: format!("table '{}' has no indexes", table.name),
@@ -220,6 +226,7 @@ mod tests {
                 columns: vec!["id".into()],
             }),
             indexes: vec![],
+            checks: vec![],
             foreign_keys: vec![],
             back_references: vec![],
             lint_ignore: vec![],

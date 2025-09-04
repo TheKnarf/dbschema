@@ -653,6 +653,16 @@ impl Index {
             unique: idx.unique,
         }
     }
+
+    pub fn from_standalone(idx: &crate::ir::StandaloneIndexSpec) -> Self {
+        Self {
+            table_schema: idx.schema.clone().unwrap_or_else(|| "public".to_string()),
+            table_name: idx.table.clone(),
+            name: Some(idx.name.clone()),
+            columns: idx.columns.clone(),
+            unique: idx.unique,
+        }
+    }
 }
 
 impl fmt::Display for Index {

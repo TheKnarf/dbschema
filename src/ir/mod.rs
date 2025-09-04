@@ -1,8 +1,8 @@
 pub mod config;
 
 pub use config::{
-    BackReferenceSpec, ColumnSpec, CompositeTypeFieldSpec, CompositeTypeSpec, Config, DomainSpec,
-    EnumSpec, EventTriggerSpec, ExtensionSpec, ForeignKeySpec, FunctionSpec, GrantSpec, IndexSpec,
-    MaterializedViewSpec, OutputSpec, PolicySpec, PrimaryKeySpec, RoleSpec, SchemaSpec,
-    SequenceSpec, TableSpec, TestSpec, TriggerSpec, ViewSpec,
+    BackReferenceSpec, CheckSpec, ColumnSpec, CompositeTypeFieldSpec, CompositeTypeSpec, Config,
+    DomainSpec, EnumSpec, EventTriggerSpec, ExtensionSpec, ForeignKeySpec, FunctionSpec, GrantSpec,
+    IndexSpec, MaterializedViewSpec, OutputSpec, PolicySpec, PrimaryKeySpec, RoleSpec, SchemaSpec,
+    SequenceSpec, StandaloneIndexSpec, TableSpec, TestSpec, TriggerSpec, ViewSpec,
 };
