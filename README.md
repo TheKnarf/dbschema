@@ -73,7 +73,7 @@ Run HCL tests with PGlite either by passing the backend on the command line or
 through `dbschema.toml`:
 
 ```bash
-./target/debug/dbschema --input examples/main.hcl test --backend pglite
+./target/debug/dbschema --input examples/table.hcl test --backend pglite
 
 # dbschema.toml
 [settings]
@@ -83,14 +83,21 @@ test_backend = "pglite"
 ## Usage
 
 - Format HCL files: `./target/release/dbschema fmt [path]`
-- Validate: `./target/release/dbschema --input examples/main.hcl validate`
-- Create migration (Postgres SQL): `./target/release/dbschema --input examples/main.hcl create-migration --out-dir migrations --name triggers`
-- Create Prisma models/enums only (no generator/datasource): `./target/release/dbschema --backend prisma --input examples/main.hcl create-migration --out-dir prisma --name schema`
-- Lint schema: `./target/release/dbschema --input examples/main.hcl lint`
+- Validate: `./target/release/dbschema --input examples/table.hcl validate`
+- Create migration (Postgres SQL): `./target/release/dbschema --input examples/table.hcl create-migration --out-dir migrations --name tables`
+- Create Prisma models/enums only (no generator/datasource): `./target/release/dbschema --backend prisma --input examples/table.hcl create-migration --out-dir prisma --name schema`
+- Lint schema: `./target/release/dbschema --input examples/table.hcl lint`
 - Variables: `--var schema=public` or `--var-file .env.hcl`
 - Using config file: `dbschema --config` or `dbschema --config --target <target_name>`
 - Event triggers: see `examples/event_trigger.hcl`
 
+
+### Examples
+
+- Validate all bundled examples: `just examples-validate`
+- Create migrations for all examples: `just examples-create-migration`
+- Run tests for a single example against Docker Postgres: `just example-test file=examples/table.hcl`
+- Run tests for all examples against Docker Postgres: `just examples-test`
 
 ## Linting
 
@@ -131,7 +138,7 @@ This project uses [`env_logger`](https://docs.rs/env_logger) with `info` output 
 Set the `RUST_LOG` environment variable to control verbosity:
 
 ```bash
-RUST_LOG=debug dbschema --input examples/main.hcl validate
+RUST_LOG=debug dbschema --input examples/table.hcl validate
 ```
 
 Use `warn` or `error` to reduce output, e.g. `RUST_LOG=warn`.
@@ -369,8 +376,8 @@ module "<name>" {
   - `--exclude tables` (repeatable)
   - Resource kinds: `schemas, sequences, enums, tables, views, materialized, functions, triggers, event_triggers, extensions, policies, tests`
 - Example split-output workflow:
-  - Prisma models for tables: `dbschema --backend prisma --include tables --input examples/main.hcl create-migration --out-dir prisma --name schema`
-  - SQL for everything else: `dbschema --backend postgres --exclude tables --input examples/main.hcl create-migration --out-dir migrations --name non_tables`
+  - Prisma models for tables: `dbschema --backend prisma --include tables --input path/to/schema.hcl create-migration --out-dir prisma --name schema`
+  - SQL for everything else: `dbschema --backend postgres --exclude tables --input path/to/schema.hcl create-migration --out-dir migrations --name non_tables`
 - Variables can be arrays/objects; use `for_each` on blocks and `each.value` inside.
 - Tests can run against a real Postgres server or the in-memory PGlite backend; each test executes inside a transaction and is rolled back when using Postgres.
   - Assertion queries may return `bool`, any signed or unsigned integer (non-zero is treated as `true`), or text values `"t"`/`"true"` (case-insensitive).
