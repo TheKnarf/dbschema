@@ -153,6 +153,35 @@ fn to_sql(cfg: &Config) -> Result<String> {
         }
     }
 
+    // Apply sequence ownership after tables exist to avoid ordering issues
+    for s in &cfg.sequences {
+        if let Some(ob) = &s.owned_by {
+            let schema = s.schema.clone().unwrap_or_else(|| "public".to_string());
+            let name = s.alt_name.clone().unwrap_or_else(|| s.name.clone());
+            let target = if ob.eq_ignore_ascii_case("NONE") {
+                "NONE".to_string()
+            } else {
+                let parts: Vec<&str> = ob.split('.').collect();
+                match parts.as_slice() {
+                    [table, column] => format!("{}.{}", pg::ident(table), pg::ident(column)),
+                    [schema, table, column] => format!(
+                        "{}.{}.{}",
+                        pg::ident(schema),
+                        pg::ident(table),
+                        pg::ident(column)
+                    ),
+                    _ => ob.to_string(),
+                }
+            };
+            out.push_str(&format!(
+                "ALTER SEQUENCE {}.{} OWNED BY {};\n\n",
+                pg::ident(&schema),
+                pg::ident(&name),
+                target
+            ));
+        }
+    }
+
     for idx in &cfg.indexes {
         out.push_str(&format!("{}\n\n", pg::Index::from_standalone(idx)));
     }

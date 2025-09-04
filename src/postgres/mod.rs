@@ -170,24 +170,7 @@ impl fmt::Display for Sequence {
         if self.cycle {
             write!(f, " CYCLE")?;
         }
-        if let Some(ob) = &self.owned_by {
-            if ob.eq_ignore_ascii_case("NONE") {
-                write!(f, " OWNED BY NONE")?;
-            } else {
-                let parts: Vec<&str> = ob.split('.').collect();
-                match parts.as_slice() {
-                    [table, column] => write!(f, " OWNED BY {}.{}", ident(table), ident(column))?,
-                    [schema, table, column] => write!(
-                        f,
-                        " OWNED BY {}.{}.{}",
-                        ident(schema),
-                        ident(table),
-                        ident(column)
-                    )?,
-                    _ => write!(f, " OWNED BY {}", ob)?,
-                }
-            }
-        }
+        // Ownership is applied after table creation using ALTER SEQUENCE.
         write!(f, ";")
     }
 }

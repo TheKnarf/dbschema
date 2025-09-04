@@ -15,4 +15,5 @@ sequence "user_id_seq" {
   start = 1
   cache = 1
   cycle = false
+  owned_by = "users.id"
 }
