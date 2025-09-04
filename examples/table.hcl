@@ -12,7 +12,15 @@ table "users" {
   }
 
   primary_key { columns = ["id"] }
-  unique "users_email_key" { columns = ["email"] }
+  check "email_not_empty" {
+    expression = "email <> ''"
+  }
+}
+
+index "users_email_key" {
+  table   = "users"
+  columns = ["email"]
+  unique  = true
 }
 
 test "table" {

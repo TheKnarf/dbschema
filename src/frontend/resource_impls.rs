@@ -163,6 +163,19 @@ impl ForEachSupport for AstTable {
             });
         }
 
+        // checks
+        let mut checks = Vec::new();
+        for cblk in body.blocks().filter(|bb| bb.identifier() == "check") {
+            let name_attr = cblk.labels().get(0).map(|s| s.as_str().to_string());
+            let cb = cblk.body();
+            let expression =
+                get_attr_string(cb, "expression", env)?.context("check requires expression")?;
+            checks.push(AstCheck {
+                name: name_attr,
+                expression,
+            });
+        }
+
         // foreign keys
         let mut fks = Vec::new();
         for fkblk in body.blocks().filter(|bb| bb.identifier() == "foreign_key") {
@@ -215,6 +228,7 @@ impl ForEachSupport for AstTable {
             columns,
             primary_key,
             indexes,
+            checks,
             foreign_keys: fks,
             back_references: Vec::new(),
             lint_ignore,
@@ -588,5 +602,31 @@ impl ForEachSupport for AstGrant {
 
     fn add_to_config(item: Self::Item, config: &mut Config) {
         config.grants.push(item);
+    }
+}
+
+// Index implementation
+impl ForEachSupport for AstStandaloneIndex {
+    type Item = Self;
+
+    fn parse_one(name: &str, body: &Body, env: &EnvVars) -> Result<Self::Item> {
+        let table = get_attr_string(body, "table", env)?.context("index 'table' is required")?;
+        let schema = get_attr_string(body, "schema", env)?;
+        let cols = match find_attr(body, "columns") {
+            Some(attr) => expr_to_string_vec(attr.expr(), env)?,
+            None => bail!("index requires columns = [..]"),
+        };
+        let unique = get_attr_bool(body, "unique", env)?.unwrap_or(false);
+        Ok(AstStandaloneIndex {
+            name: name.to_string(),
+            table,
+            schema,
+            columns: cols,
+            unique,
+        })
+    }
+
+    fn add_to_config(item: Self::Item, config: &mut Config) {
+        config.indexes.push(item);
     }
 }

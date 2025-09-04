@@ -326,8 +326,10 @@ table "<name>" {
   # Primary key (created inline only on CREATE TABLE)
   primary_key { columns = ["id"] }
 
-  # Indexes (emitted as CREATE [UNIQUE] INDEX IF NOT EXISTS ... after table)
-  unique "users_email_key" { columns = ["email"] }
+  # Check constraints
+  check "email_not_empty" { expression = "email <> ''" }
+
+  # Indexes can be defined inline or at top level
   index  "users_created_idx" { columns = ["created_at"] }
 
   # Foreign keys (created inline only on CREATE TABLE)
@@ -337,6 +339,12 @@ table "<name>" {
     on_delete = "CASCADE"      # optional
     on_update = "NO ACTION"    # optional
   }
+}
+
+index "users_email_key" {
+  table   = "users"
+  columns = ["email"]
+  unique  = true
 }
 
 extension "<name>" {

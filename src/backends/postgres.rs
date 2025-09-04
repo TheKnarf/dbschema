@@ -118,6 +118,20 @@ fn to_sql(cfg: &Config) -> Result<String> {
         for idx in &t.indexes {
             out.push_str(&format!("{}\n\n", pg::Index::from_specs(t, idx)));
         }
+        for chk in &t.checks {
+            let constraint = chk
+                .name
+                .as_ref()
+                .map(|n| format!("CONSTRAINT {} ", pg::ident(n)))
+                .unwrap_or_default();
+            out.push_str(&format!(
+                "ALTER TABLE {}.{} ADD {constraint}CHECK ({});\n\n",
+                pg::ident(&schema),
+                pg::ident(&table_name),
+                chk.expression,
+                constraint = constraint,
+            ));
+        }
         if let Some(comment) = &t.comment {
             out.push_str(&format!(
                 "COMMENT ON TABLE {}.{} IS {};\n\n",
@@ -137,6 +151,10 @@ fn to_sql(cfg: &Config) -> Result<String> {
                 ));
             }
         }
+    }
+
+    for idx in &cfg.indexes {
+        out.push_str(&format!("{}\n\n", pg::Index::from_standalone(idx)));
     }
 
     for p in &cfg.policies {

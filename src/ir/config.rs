@@ -13,6 +13,7 @@ pub struct Config {
     pub domains: Vec<DomainSpec>,
     pub types: Vec<CompositeTypeSpec>,
     pub tables: Vec<TableSpec>,
+    pub indexes: Vec<StandaloneIndexSpec>,
     pub views: Vec<ViewSpec>,
     pub materialized: Vec<MaterializedViewSpec>,
     pub policies: Vec<PolicySpec>,
@@ -195,6 +196,7 @@ pub struct TableSpec {
     pub columns: Vec<ColumnSpec>,
     pub primary_key: Option<PrimaryKeySpec>,
     pub indexes: Vec<IndexSpec>,
+    pub checks: Vec<CheckSpec>,
     pub foreign_keys: Vec<ForeignKeySpec>,
     pub back_references: Vec<BackReferenceSpec>,
     pub lint_ignore: Vec<String>,
@@ -225,6 +227,12 @@ pub struct PrimaryKeySpec {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct CheckSpec {
+    pub name: Option<String>,
+    pub expression: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct IndexSpec {
     pub name: Option<String>,
     pub columns: Vec<String>,
@@ -241,6 +249,15 @@ pub struct ForeignKeySpec {
     pub on_delete: Option<String>,
     pub on_update: Option<String>,
     pub back_reference_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct StandaloneIndexSpec {
+    pub name: String,
+    pub table: String,
+    pub schema: Option<String>,
+    pub columns: Vec<String>,
+    pub unique: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]

@@ -12,6 +12,7 @@ pub struct Config {
     pub domains: Vec<AstDomain>,
     pub types: Vec<AstCompositeType>,
     pub tables: Vec<AstTable>,
+    pub indexes: Vec<AstStandaloneIndex>,
     pub views: Vec<AstView>,
     pub materialized: Vec<AstMaterializedView>,
     pub policies: Vec<AstPolicy>,
@@ -194,6 +195,7 @@ pub struct AstTable {
     pub columns: Vec<AstColumn>,
     pub primary_key: Option<AstPrimaryKey>,
     pub indexes: Vec<AstIndex>,
+    pub checks: Vec<AstCheck>,
     pub foreign_keys: Vec<AstForeignKey>,
     pub back_references: Vec<AstBackReference>,
     pub lint_ignore: Vec<String>,
@@ -224,6 +226,12 @@ pub struct AstPrimaryKey {
 }
 
 #[derive(Debug, Clone)]
+pub struct AstCheck {
+    pub name: Option<String>,
+    pub expression: String,
+}
+
+#[derive(Debug, Clone)]
 pub struct AstIndex {
     pub name: Option<String>,
     pub columns: Vec<String>,
@@ -240,6 +248,15 @@ pub struct AstForeignKey {
     pub on_delete: Option<String>,
     pub on_update: Option<String>,
     pub back_reference_name: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AstStandaloneIndex {
+    pub name: String,
+    pub table: String,
+    pub schema: Option<String>,
+    pub columns: Vec<String>,
+    pub unique: bool,
 }
 
 #[derive(Debug, Clone)]
