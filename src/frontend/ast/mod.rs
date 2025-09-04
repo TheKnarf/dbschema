@@ -263,7 +263,8 @@ pub struct AstStandaloneIndex {
 pub struct AstTest {
     pub name: String,
     pub setup: Vec<String>,
-    pub assert_sql: String,
+    pub asserts: Vec<String>,
+    pub assert_fail: Vec<String>,
     pub teardown: Vec<String>,
 }
 

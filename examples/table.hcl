@@ -24,5 +24,18 @@ index "users_email_key" {
 }
 
 test "table" {
-  assert = "SELECT to_regclass('public.users') IS NOT NULL"
+  # Positive assert
+  assert = [
+    "SELECT to_regclass('public.users') IS NOT NULL"
+  ]
+}
+
+# Negative test: unique index prevents duplicates
+test "table_unique_enforced" {
+  setup = [
+    "INSERT INTO public.users(email) VALUES ('dup')"
+  ]
+  assert_fail = [
+    "INSERT INTO public.users(email) VALUES ('dup')"
+  ]
 }

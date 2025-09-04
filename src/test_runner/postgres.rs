@@ -34,24 +34,44 @@ impl TestBackend for PostgresTestBackend {
                 }
             }
             if ok {
-                if is_verbose() { info!("-- assert: {}", &t.assert_sql); }
-                match tx.query(&t.assert_sql, &[]) {
-                    Ok(rows) => {
-                        match assert_rows_true(&rows) {
-                            Ok(true) => { /* ok */ }
+                // Positive asserts
+                for a in &t.asserts {
+                    if is_verbose() { info!("-- assert: {}", a); }
+                    match tx.query(a, &[]) {
+                        Ok(rows) => match assert_rows_true(&rows) {
+                            Ok(true) => {}
                             Ok(false) => {
                                 ok = false;
                                 failed_msg = "assert returned false".into();
+                                break;
                             }
                             Err(e) => {
                                 ok = false;
                                 failed_msg = format!("assert error: {}", e);
+                                break;
                             }
+                        },
+                        Err(e) => {
+                            ok = false;
+                            failed_msg = format!("assert query error: {}", e);
+                            break;
                         }
                     }
-                    Err(e) => {
-                        ok = false;
-                        failed_msg = format!("assert query error: {}", e);
+                }
+            }
+            if ok {
+                // Negative asserts expected to fail
+                for a in &t.assert_fail {
+                    if is_verbose() { info!("-- assert-fail: {}", a); }
+                    match tx.batch_execute(a) {
+                        Ok(_) => {
+                            ok = false;
+                            failed_msg = "assert-fail succeeded unexpectedly".into();
+                            break;
+                        }
+                        Err(_) => {
+                            // expected failure
+                        }
                     }
                 }
             }

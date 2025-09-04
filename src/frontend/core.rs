@@ -1234,8 +1234,29 @@ fn load_file(
             Some(attr) => expr_to_string_vec(attr.expr(), &env)?,
             None => Vec::new(),
         };
-        let assert_sql =
-            get_attr_string(b, "assert", &env)?.context("test 'assert' is required")?;
+        // 'assert' can be a string or an array of strings
+        let asserts: Vec<String> = match find_attr(b, "assert") {
+            Some(attr) => match expr_to_string_vec(attr.expr(), &env) {
+                Ok(v) => v,
+                Err(_) => {
+                    // Fallback: try single string
+                    vec![get_attr_string(b, "assert", &env)?
+                        .context("test 'assert' is required")?]
+                }
+            },
+            None => Vec::new(),
+        };
+        // Negative asserts expected to fail
+        let assert_fail = match find_attr(b, "assert_fail") {
+            Some(attr) => expr_to_string_vec(attr.expr(), &env)?,
+            None => Vec::new(),
+        };
+        if asserts.is_empty() && assert_fail.is_empty() {
+            return Err(anyhow::anyhow!(
+                "test '{}' must define 'assert' or 'assert_fail'",
+                name
+            ));
+        }
         let teardown = match find_attr(b, "teardown") {
             Some(attr) => expr_to_string_vec(attr.expr(), &env)?,
             None => Vec::new(),
@@ -1243,7 +1264,8 @@ fn load_file(
         cfg.tests.push(ast::AstTest {
             name,
             setup,
-            assert_sql,
+            asserts,
+            assert_fail,
             teardown,
         });
     }

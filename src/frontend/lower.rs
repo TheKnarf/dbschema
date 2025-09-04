@@ -335,7 +335,8 @@ impl From<ast::AstTest> for ir::TestSpec {
         Self {
             name: t.name,
             setup: t.setup,
-            assert_sql: t.assert_sql,
+            asserts: t.asserts,
+            assert_fail: t.assert_fail,
             teardown: t.teardown,
         }
     }

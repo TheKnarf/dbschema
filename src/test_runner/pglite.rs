@@ -36,35 +36,54 @@ impl TestBackend for PGliteTestBackend {
                 }
             }
             if ok {
-                if is_verbose() { info!("-- assert: {}", &t.assert_sql); }
-                match rt.simple_query(&t.assert_sql) {
-                    Ok(msgs) => {
-                        let mut data_row = None;
-                        for m in msgs {
-                            if let backend::Message::DataRow(row) = m {
-                                data_row = Some(row);
+                for a in &t.asserts {
+                    if is_verbose() { info!("-- assert: {}", a); }
+                    match rt.simple_query(a) {
+                        Ok(msgs) => {
+                            let mut data_row = None;
+                            for m in msgs {
+                                if let backend::Message::DataRow(row) = m {
+                                    data_row = Some(row);
+                                }
+                            }
+                            if let Some(row) = data_row {
+                                match assert_row_true(&row) {
+                                    Ok(true) => {}
+                                    Ok(false) => {
+                                        ok = false;
+                                        failed_msg = "assert returned false".into();
+                                        break;
+                                    }
+                                    Err(e) => {
+                                        ok = false;
+                                        failed_msg = format!("assert error: {}", e);
+                                        break;
+                                    }
+                                }
+                            } else {
+                                ok = false;
+                                failed_msg = "assert returned no rows".into();
+                                break;
                             }
                         }
-                        if let Some(row) = data_row {
-                            match assert_row_true(&row) {
-                                Ok(true) => {}
-                                Ok(false) => {
-                                    ok = false;
-                                    failed_msg = "assert returned false".into();
-                                }
-                                Err(e) => {
-                                    ok = false;
-                                    failed_msg = format!("assert error: {}", e);
-                                }
-                            }
-                        } else {
+                        Err(e) => {
                             ok = false;
-                            failed_msg = "assert returned no rows".into();
+                            failed_msg = format!("assert query error: {}", e);
+                            break;
                         }
                     }
-                    Err(e) => {
-                        ok = false;
-                        failed_msg = format!("assert query error: {}", e);
+                }
+            }
+            if ok {
+                for a in &t.assert_fail {
+                    if is_verbose() { info!("-- assert-fail: {}", a); }
+                    match rt.simple_query(a) {
+                        Ok(_) => {
+                            ok = false;
+                            failed_msg = "assert-fail succeeded unexpectedly".into();
+                            break;
+                        }
+                        Err(_) => {}
                     }
                 }
             }
