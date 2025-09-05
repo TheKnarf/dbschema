@@ -33,17 +33,21 @@ pub struct PGliteRuntime {
 impl PGliteRuntime {
     /// Initialise the PGlite runtime and underlying database.
     pub fn new() -> Result<Self> {
+        eprintln!("[pglite] new(): begin");
         let pkg_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("node_modules/@electric-sql/pglite/dist");
         let wasm_path = pkg_dir.join("pglite.wasm");
         let wasm_bytes = std::fs::read(&wasm_path)?;
+        eprintln!("[pglite] read wasm {} ({} bytes)", wasm_path.display(), wasm_bytes.len());
 
         let mut store = Store::default();
         let module = Module::new(&store, wasm_bytes)?;
+        eprintln!("[pglite] module compiled");
 
         let env = FunctionEnv::new(&mut store, EmEnv::new());
         let mut globals =
             EmscriptenGlobals::new(&mut store, &env, &module).map_err(|e| anyhow!(e))?;
+        eprintln!("[pglite] emscripten globals created");
         let mut mapped_dirs = HashMap::new();
         mapped_dirs.insert("/tmp/pglite".to_string(), pkg_dir.clone());
         mapped_dirs.insert(".".to_string(), pkg_dir.clone());
@@ -53,8 +57,14 @@ impl PGliteRuntime {
         let mut wasi_env = wasmer_wasi::WasiState::new("pglite").finalize(&mut store)?;
 
         let mut import_object = generate_emscripten_env(&mut store, &env, &mut globals);
+        eprintln!("[pglite] emscripten env generated");
+        let t_ty = globals.table.ty(&store);
+        eprintln!("[pglite] base table min={} max={:?}", t_ty.minimum, t_ty.maximum);
+        let m_ty = globals.memory.ty(&store);
+        eprintln!("[pglite] base memory min={} max={:?}", m_ty.minimum.0, m_ty.maximum);
         let wasi_imports = wasi_env.import_object(&mut store, &module)?;
         import_object.extend(&wasi_imports);
+        eprintln!("[pglite] wasi imports extended");
 
         // Shim missing Emscripten invoke thunk expected by the module.
         // Provide env.invoke_vji: (i32 func_idx, i64, i32) -> () that
@@ -81,6 +91,31 @@ impl PGliteRuntime {
             },
         );
         let mut env_ns = Exports::new();
+        // Important: do not override Emscripten-provided memory or table.
+        // We only provide a mutable `__stack_pointer` Global if the base env
+        // doesn’t expose one (Wasmer `extend` will keep the existing symbol
+        // when present in the base `import_object`).
+        // Provide a mutable stack pointer global expected by Emscripten.
+        let sp = Global::new_mut(&mut store, Value::I32(0));
+        env_ns.insert("__stack_pointer", sp);
+        // Provide the imported function table with the minimum size required
+        // by the module, if present. We derive the min from the module's
+        // declared import type to avoid size mismatches.
+        if let Some(wasmer::ExternType::Table(tt)) = module
+            .imports()
+            .find(|i| i.module() == "env" && i.name() == "__indirect_function_table")
+            .map(|i| i.ty().clone())
+        {
+            let required_min = tt.minimum;
+            // Start from the base Emscripten table and grow if needed.
+            let mut table = globals.table.clone();
+            let cur_min = table.ty(&store).minimum;
+            if cur_min < required_min {
+                let delta = required_min - cur_min;
+                table.grow(&mut store, delta, Value::FuncRef(None))?;
+            }
+            env_ns.insert("__indirect_function_table", table);
+        }
         let invoke_vji = Function::new_typed_with_env(
             &mut store,
             &invoke_env,
@@ -1090,9 +1125,7 @@ impl PGliteRuntime {
             |_a: i32, _b: i32, _c: i32, _d: i32, _e: i32, _f: i32| -> i32 { 0 },
         );
         env_ns.insert("__syscall_getsockopt", syscall_getsockopt);
-        // Provide missing Emscripten globals not created by generate_emscripten_env
-        let sp = Global::new_mut(&mut store, Value::I32(0));
-        env_ns.insert("__stack_pointer", sp);
+        // Do not provide __stack_pointer here; keep the one from generate_emscripten_env
         // invoke_j: return i64, no args
         let invoke_j = Function::new_typed_with_env(
             &mut store,
@@ -1447,42 +1480,39 @@ impl PGliteRuntime {
             },
         );
         env_ns.insert("invoke_ij", invoke_ij);
-        // Merge carefully: prefer our invoke_* wrappers; otherwise insert only missing shims
-        if let Some(base) = import_object.get_namespace_exports("env") {
-            let mut merged = base.clone();
-            for (name, ext) in env_ns.into_iter() {
-                if name.starts_with("invoke_") {
-                    merged.insert(name, ext);
-                } else if merged.get_extern(&name).is_none() {
-                    merged.insert(name, ext);
-                }
-            }
-            // Ensure required globals are present if emscripten didn't add them
-            if merged.get_extern("__stack_pointer").is_none() {
-                merged.insert(
-                    "__stack_pointer",
-                    Global::new_mut(&mut store, Value::I32(0)),
-                );
-            }
-            if merged.get_extern("__indirect_function_table").is_none() {
-                merged.insert("__indirect_function_table", globals.table.clone());
+        // Merge env: override invoke_*; insert shims only if missing; never override memory or table
+        // Merge our env shims into the base env namespace without clobbering
+        // existing entries like memory/table.
+        if let Some(base_env) = import_object.get_namespace_exports("env") {
+            let mut merged = base_env.clone();
+            for (name, export) in env_ns.into_iter() {
+                merged.insert(name, export);
             }
             import_object.register_namespace("env", merged);
         } else {
             import_object.register_namespace("env", env_ns);
         }
+        eprintln!("[pglite] shims merged; instantiating");
         let instance = Instance::new(&mut store, &module, &import_object)?;
+        eprintln!("[pglite] instance created");
         wasi_env.initialize(&mut store, &instance)?;
+        eprintln!("[pglite] wasi initialized");
 
         // Skip Emscripten constructors; the module exposes direct APIs we call below.
 
-        // Call _pgl_initdb to ensure the database files are set up.
-        let init = instance
-            .exports
-            .get_typed_function::<(), i32>(&mut store, "_pgl_initdb")?;
-        let rc = init.call(&mut store)?;
-        if rc != 0 {
-            return Err(anyhow!("pglite initdb failed with code {rc}"));
+        if std::env::var("PGLITE_SKIP_INITDB").ok().as_deref() != Some("1") {
+            // Call _pgl_initdb to ensure the database files are set up.
+            let init = instance
+                .exports
+                .get_typed_function::<(), i32>(&mut store, "_pgl_initdb")?;
+            eprintln!("[pglite] calling _pgl_initdb");
+            let rc = init.call(&mut store)?;
+            eprintln!("[pglite] _pgl_initdb returned {rc}");
+            if rc != 0 {
+                return Err(anyhow!("pglite initdb failed with code {rc}"));
+            }
+        } else {
+            eprintln!("[pglite] skipping _pgl_initdb by env");
         }
 
         let interactive_write = instance
