@@ -2428,7 +2428,7 @@ impl PGliteRuntime {
             },
         );
         let set_threw_fn = Function::new_typed(&mut store, |_a: i32, _b: i32| {});
-        // Build minimal EmscriptenFunctions with our stack ops
+        // Build minimal EmscriptenFunctions with our stack & dynCall ops
         let mut ef = EmscriptenFunctions::new();
         let ss: wasmer::TypedFunction<(), i32> = stack_save_fn.typed(&store).unwrap();
         let sr: wasmer::TypedFunction<i32, ()> = stack_restore_fn.typed(&store).unwrap();
@@ -2436,6 +2436,117 @@ impl PGliteRuntime {
         ef.stack_save = Some(ss);
         ef.stack_restore = Some(sr);
         ef.set_threw = Some(st);
+        // dynCall_* host shims (minimal set required)
+        let dyn_i_fn = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut env: FunctionEnvMut<InvokeEnv>, fidx: i32| -> i32 {
+                if fidx < 0 {
+                    return 0;
+                }
+                let idx = fidx as u32;
+                let table = env.data().table.clone();
+                let mut st = env.as_store_mut();
+                if let Some(Value::FuncRef(Some(func))) = table.get(&mut st, idx) {
+                    if let Ok(tf) = func.typed::<(), i32>(&st) {
+                        return tf.call(&mut st).unwrap_or(0);
+                    }
+                }
+                0
+            },
+        );
+        let dyn_ii_fn = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut env: FunctionEnvMut<InvokeEnv>, fidx: i32, a1: i32| -> i32 {
+                if fidx < 0 {
+                    return 0;
+                }
+                let idx = fidx as u32;
+                let table = env.data().table.clone();
+                let mut st = env.as_store_mut();
+                if let Some(Value::FuncRef(Some(func))) = table.get(&mut st, idx) {
+                    if let Ok(tf) = func.typed::<i32, i32>(&st) {
+                        return tf.call(&mut st, a1).unwrap_or(0);
+                    }
+                }
+                0
+            },
+        );
+        let dyn_iii_fn = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut env: FunctionEnvMut<InvokeEnv>, fidx: i32, a1: i32, a2: i32| -> i32 {
+                if fidx < 0 {
+                    return 0;
+                }
+                let idx = fidx as u32;
+                let table = env.data().table.clone();
+                let mut st = env.as_store_mut();
+                if let Some(Value::FuncRef(Some(func))) = table.get(&mut st, idx) {
+                    if let Ok(tf) = func.typed::<(i32, i32), i32>(&st) {
+                        return tf.call(&mut st, a1, a2).unwrap_or(0);
+                    }
+                }
+                0
+            },
+        );
+        let dyn_iiii_fn = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut env: FunctionEnvMut<InvokeEnv>, fidx: i32, a1: i32, a2: i32, a3: i32| -> i32 {
+                if fidx < 0 {
+                    return 0;
+                }
+                let idx = fidx as u32;
+                let table = env.data().table.clone();
+                let mut st = env.as_store_mut();
+                if let Some(Value::FuncRef(Some(func))) = table.get(&mut st, idx) {
+                    if let Ok(tf) = func.typed::<(i32, i32, i32), i32>(&st) {
+                        return tf.call(&mut st, a1, a2, a3).unwrap_or(0);
+                    }
+                }
+                0
+            },
+        );
+        let dyn_v_fn = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut env: FunctionEnvMut<InvokeEnv>, fidx: i32| {
+                if fidx < 0 {
+                    return;
+                }
+                let idx = fidx as u32;
+                let table = env.data().table.clone();
+                let mut st = env.as_store_mut();
+                if let Some(Value::FuncRef(Some(func))) = table.get(&mut st, idx) {
+                    let _ = func.call(&mut st, &[]);
+                }
+            },
+        );
+        let dyn_vi_fn = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut env: FunctionEnvMut<InvokeEnv>, fidx: i32, a1: i32| {
+                if fidx < 0 {
+                    return;
+                }
+                let idx = fidx as u32;
+                let table = env.data().table.clone();
+                let mut st = env.as_store_mut();
+                if let Some(Value::FuncRef(Some(func))) = table.get(&mut st, idx) {
+                    if let Ok(tf) = func.typed::<i32, ()>(&st) {
+                        let _ = tf.call(&mut st, a1);
+                    }
+                }
+            },
+        );
+        ef.dyn_call_i = Some(dyn_i_fn.typed(&store).unwrap());
+        ef.dyn_call_ii = Some(dyn_ii_fn.typed(&store).unwrap());
+        ef.dyn_call_iii = Some(dyn_iii_fn.typed(&store).unwrap());
+        ef.dyn_call_iiii = Some(dyn_iiii_fn.typed(&store).unwrap());
+        ef.dyn_call_v = Some(dyn_v_fn.typed(&store).unwrap());
+        ef.dyn_call_vi = Some(dyn_vi_fn.typed(&store).unwrap());
         // Install into the Emscripten env
         env.as_mut(&mut store).set_functions(ef);
 
