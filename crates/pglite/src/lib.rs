@@ -2,6 +2,7 @@ use anyhow::{anyhow, Result};
 use bytes::BytesMut;
 use fallible_iterator::FallibleIterator;
 use postgres_protocol::message::{backend, frontend};
+use regex::Regex;
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 use wasmer::{
@@ -21,9 +22,11 @@ pub struct PGliteRuntime {
     store: Store,
     _instance: Instance,
     memory: Memory,
+    data_dir: PathBuf,
     interactive_write: TypedFunction<i32, ()>,
     interactive_read: TypedFunction<(), i32>,
     get_channel: TypedFunction<(), i32>,
+    interactive_one: TypedFunction<(), ()>,
     get_buffer_size: Option<Function>,
     get_buffer_addr: Option<Function>,
     use_wire: TypedFunction<i32, ()>,
@@ -59,6 +62,9 @@ impl PGliteRuntime {
         // Mount a writable temp directory for the database data files
         let host_tmp = std::env::temp_dir().join("pglite-db");
         let _ = std::fs::create_dir_all(&host_tmp);
+        // Home directory mapping for potential pgpass and related files
+        let host_home = std::env::temp_dir().join("pglite-home");
+        let _ = std::fs::create_dir_all(host_home.join("web_user"));
         // Create a subset of expected directory layout under /tmp/pglite to satisfy init checks
         let subdirs = [
             "bin",
@@ -92,8 +98,11 @@ impl PGliteRuntime {
         for d in &subdirs {
             let _ = std::fs::create_dir_all(host_tmp.join(d));
         }
+        // Ensure packaged files from pglite.data are extracted to host before initdb
+        Self::extract_pglite_data(&pkg_dir, &host_tmp, &host_home)?;
         mapped_dirs.insert("/tmp/pglite".to_string(), host_tmp.clone());
         mapped_dirs.insert("/data".to_string(), host_tmp);
+        mapped_dirs.insert("/home".to_string(), host_home);
         // Mount the package dist for read-only assets
         mapped_dirs.insert("/pkg".to_string(), pkg_dir.clone());
         env.as_mut(&mut store).set_data(&globals.data, mapped_dirs);
@@ -141,6 +150,15 @@ impl PGliteRuntime {
                     let _ = view.write(ptr as u64, &val.to_le_bytes());
                 }
             };
+            // Provide minimal environment variables for Postgres init
+            let env_vars: Vec<String> = vec![
+                "HOME=/home/web_user".to_string(),
+                "USER=web_user".to_string(),
+                "LC_ALL=C".to_string(),
+                "PGTZDIR=/tmp/pglite/share/postgresql/timezone".to_string(),
+                "PGSYSCONFDIR=/tmp/pglite/share/postgresql".to_string(),
+            ];
+            let env_vars_clone = env_vars.clone();
             wasi.insert(
                 "environ_sizes_get",
                 Function::new_typed_with_env(
@@ -149,15 +167,41 @@ impl PGliteRuntime {
                     move |mut env: FunctionEnvMut<InvokeEnv>, pcount: i32, psize: i32| -> i32 {
                         let mem = env.data().memory.clone();
                         let mut store_mut = env.as_store_mut();
-                        write_u32(&mem, &mut store_mut, pcount as u32, 0);
-                        write_u32(&mem, &mut store_mut, psize as u32, 0);
+                        let count = env_vars_clone.len() as u32;
+                        let total: u32 = env_vars_clone.iter().map(|s| s.len() as u32 + 1).sum();
+                        write_u32(&mem, &mut store_mut, pcount as u32, count);
+                        write_u32(&mem, &mut store_mut, psize as u32, total);
                         0
                     },
                 ),
             );
+            let env_vars_clone2 = env_vars.clone();
             wasi.insert(
                 "environ_get",
-                Function::new_typed(&mut store, |_a: i32, _b: i32| -> i32 { 0 }),
+                Function::new_typed_with_env(
+                    &mut store,
+                    &invoke_env,
+                    move |mut env: FunctionEnvMut<InvokeEnv>, penvp: i32, pbuf: i32| -> i32 {
+                        let mem = env.data().memory.clone();
+                        let mut store_mut = env.as_store_mut();
+                        let mut buf_off = pbuf as u64;
+                        let mut vec_off = penvp as u64;
+                        let view = mem.view(&store_mut);
+                        for s in &env_vars_clone2 {
+                            // write pointer
+                            let ptr = buf_off as u32;
+                            let _ = view.write(vec_off, &ptr.to_le_bytes());
+                            vec_off += 4;
+                            // write string
+                            let bytes = s.as_bytes();
+                            let _ = view.write(buf_off, bytes);
+                            buf_off += bytes.len() as u64;
+                            let _ = view.write(buf_off, &[0]);
+                            buf_off += 1;
+                        }
+                        0
+                    },
+                ),
             );
             wasi.insert(
                 "proc_exit",
@@ -217,14 +261,42 @@ impl PGliteRuntime {
                     &mut store,
                     &invoke_env,
                     move |mut env: FunctionEnvMut<InvokeEnv>,
-                          _fd: i32,
-                          _iov: i32,
-                          _ioc: i32,
-                          nw: i32|
+                          fd: i32,
+                          iov_ptr: i32,
+                          iov_cnt: i32,
+                          nw_ptr: i32|
                           -> i32 {
                         let mem = env.data().memory.clone();
                         let mut store_mut = env.as_store_mut();
-                        write_u32(&mem, &mut store_mut, nw as u32, u32::MAX);
+                        let view = mem.view(&store_mut);
+                        let mut written: u32 = 0;
+                        let mut buf = Vec::new();
+                        let mut off = iov_ptr as u64;
+                        for _ in 0..iov_cnt {
+                            let mut tmp = [0u8; 4];
+                            // read iov_base
+                            let _ = view.read(off, &mut tmp);
+                            let base = u32::from_le_bytes(tmp) as u64;
+                            off += 4;
+                            // read iov_len
+                            let _ = view.read(off, &mut tmp);
+                            let len = u32::from_le_bytes(tmp) as u64;
+                            off += 4;
+                            if len > 0 {
+                                let mut chunk = vec![0u8; len as usize];
+                                let _ = view.read(base, &mut chunk);
+                                written = written.saturating_add(len as u32);
+                                buf.extend_from_slice(&chunk);
+                            }
+                        }
+                        if fd == 1 || fd == 2 {
+                            if let Ok(s) = std::str::from_utf8(&buf) {
+                                eprint!("{}", s);
+                            } else {
+                                eprintln!("[fd{} binary {} bytes]", fd, buf.len());
+                            }
+                        }
+                        write_u32(&mem, &mut store_mut, nw_ptr as u32, written);
                         0
                     },
                 ),
@@ -2107,10 +2179,26 @@ impl PGliteRuntime {
         shim_imports.register_namespace("env", env_ns);
         import_object.extend(&shim_imports);
         eprintln!("[pglite] shims merged; instantiating");
-        let instance = Instance::new(&mut store, &module, &import_object)?;
+        let mut instance = Instance::new(&mut store, &module, &import_object)?;
         eprintln!("[pglite] instance created");
-        // Debug export listing removed to reduce log noise
-        // Skip running Emscripten constructors; module APIs handle init paths.
+        // Provide program arguments similar to the JS loader
+        let args: Vec<&str> = vec![
+            "--single",
+            "postgres",
+            "--",
+            "PGDATA=/tmp/pglite/base",
+            "PREFIX=/tmp/pglite",
+            "PGUSER=postgres",
+            "REPL=N",
+        ];
+        let _ = wasmer_emscripten::run_emscripten_instance(
+            &mut instance,
+            env.clone().into_mut(&mut store),
+            &mut globals,
+            "pglite",
+            args,
+            Some("__wasm_call_ctors".to_string()),
+        );
 
         if std::env::var("PGLITE_SKIP_INITDB").ok().as_deref() != Some("1") {
             // Call pgl_initdb to ensure the database files are set up.
@@ -2120,7 +2208,8 @@ impl PGliteRuntime {
             eprintln!("[pglite] calling pgl_initdb");
             let rc = init.call(&mut store)?;
             eprintln!("[pglite] pgl_initdb returned {rc}");
-            if rc != 0 {
+            // Bit 0 signals fatal failure; other bits report state
+            if (rc & 1) != 0 {
                 return Err(anyhow!("pglite initdb failed with code {rc}"));
             }
         } else {
@@ -2139,6 +2228,9 @@ impl PGliteRuntime {
         let use_wire = instance
             .exports
             .get_typed_function::<i32, ()>(&mut store, "use_wire")?;
+        let interactive_one = instance
+            .exports
+            .get_typed_function::<(), ()>(&mut store, "interactive_one")?;
         let get_buffer_size = instance
             .exports
             .get_function("get_buffer_size")
@@ -2160,9 +2252,11 @@ impl PGliteRuntime {
             store,
             _instance: instance,
             memory: globals.memory.clone(),
+            data_dir: std::env::temp_dir().join("pglite-db"),
             interactive_write,
             interactive_read,
             get_channel,
+            interactive_one,
             get_buffer_size,
             get_buffer_addr,
             use_wire,
@@ -2172,89 +2266,76 @@ impl PGliteRuntime {
         })
     }
 
+    /// Extracts files listed in dist/pglite.js metadata from pglite.data into host_tmp.
+    /// This mirrors Emscripten's FS preload step performed by the JS loader.
+    fn extract_pglite_data(
+        dist_dir: &PathBuf,
+        host_tmp: &PathBuf,
+        host_home: &PathBuf,
+    ) -> Result<()> {
+        let js_path = dist_dir.join("pglite.js");
+        let data_path = dist_dir.join("pglite.data");
+        if !js_path.exists() || !data_path.exists() {
+            // Nothing to extract
+            return Ok(());
+        }
+        // Heuristic: if a key file exists, assume already extracted
+        let key_file = host_tmp.join("lib/postgresql/plpgsql.so");
+        if key_file.exists() {
+            return Ok(());
+        }
+        let js = std::fs::read_to_string(&js_path)?;
+        // Find file entries: filename:"...",start:N,end:M
+        let re = Regex::new(r#"filename:\s*\"([^\"]+)\"\s*,\s*start:\s*(\d+)\s*,\s*end:\s*(\d+)"#)
+            .map_err(|e| anyhow!(e))?;
+        let mut entries: Vec<(String, usize, usize)> = Vec::new();
+        for cap in re.captures_iter(&js) {
+            let name = cap.get(1).unwrap().as_str().to_string();
+            let start: usize = cap.get(2).unwrap().as_str().parse().unwrap_or(0);
+            let end: usize = cap.get(3).unwrap().as_str().parse().unwrap_or(0);
+            entries.push((name, start, end));
+        }
+        if entries.is_empty() {
+            return Err(anyhow!("failed to parse pglite.js metadata"));
+        }
+        let data = std::fs::read(&data_path)?;
+        for (name, start, end) in entries {
+            // Materialize files under known prefixes into mapped host dirs
+            let out_path = if let Some(rest) = name.strip_prefix("/tmp/pglite/") {
+                host_tmp.join(rest)
+            } else if let Some(rest) = name.strip_prefix("/home/web_user/") {
+                host_home.join("web_user").join(rest)
+            } else {
+                continue;
+            };
+            if let Some(parent) = out_path.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            let content = if end >= start && end <= data.len() {
+                &data[start..end]
+            } else {
+                &[]
+            };
+            std::fs::write(&out_path, content)?;
+        }
+        Ok(())
+    }
+
     /// Execute a single protocol message and return the backend response bytes.
     fn exec_protocol(&mut self, message: &[u8]) -> Result<Vec<u8>> {
-        self.use_wire.call(&mut self.store, 1)?;
-        // Prepare write
-        self.interactive_write
-            .call(&mut self.store, message.len() as i32)?;
-        // Determine buffer base and capacity
-        let (base, cap) = if let (Some(ref addr_fn), Some(ref size_fn)) =
-            (self.get_buffer_addr.as_ref(), self.get_buffer_size.as_ref())
-        {
-            let addr_val = addr_fn
-                .call(&mut self.store, &[Value::I32(0)])
-                .map_err(|e| anyhow!(e.to_string()))?
-                .get(0)
-                .cloned()
-                .unwrap_or(Value::I32(0));
-            let size_val = size_fn
-                .call(&mut self.store, &[Value::I32(0)])
-                .map_err(|e| anyhow!(e.to_string()))?
-                .get(0)
-                .cloned()
-                .unwrap_or(Value::I32(0));
-            let addr_u64 = match addr_val {
-                Value::I32(x) => x as u64,
-                Value::I64(x) => x as u64,
-                _ => 0,
-            };
-            let size_usize = match size_val {
-                Value::I32(x) => x as usize,
-                Value::I64(x) => x as usize,
-                _ => 0,
-            };
-            (addr_u64, size_usize)
-        } else {
-            // Fallback to legacy layout assumptions
-            let total = self.memory.view(&self.store).data_size();
-            (1u64, total.saturating_sub(2) as usize)
-        };
-        if message.len() > cap {
-            return Err(anyhow!(
-                "message too large for buffer ({} > {})",
-                message.len(),
-                cap
-            ));
-        }
-        {
-            let view = self.memory.view(&self.store);
-            let mem_len = view.data_size() as u64;
-            if base + (message.len() as u64) > mem_len {
-                return Err(anyhow!("buffer write out of bounds"));
-            }
-            view.write(base, message)
-                .map_err(|e| anyhow!(e.to_string()))?;
-        }
+        // Use file-based wire protocol to avoid CMA pitfalls
+        self.use_wire.call(&mut self.store, 0)?;
+        let base_dir = self.data_dir.join("base");
+        let _ = std::fs::create_dir_all(&base_dir);
+        let in_path = base_dir.join(".s.PGSQL.5432.in");
+        let out_path = base_dir.join(".s.PGSQL.5432.out");
+        // Write request file
+        std::fs::write(&in_path, message)?;
+        // Process backend once
         self.backend.call(&mut self.store)?;
-        let chan = self.get_channel.call(&mut self.store)?;
-        if chan <= 0 {
-            return Err(anyhow!("unsupported channel"));
-        }
-        let out_len = self.interactive_read.call(&mut self.store)? as usize;
-        if out_len > cap {
-            return Err(anyhow!(
-                "response too large for buffer ({} > {})",
-                out_len,
-                cap
-            ));
-        }
-        let mut out = vec![0u8; out_len];
-        {
-            let view = self.memory.view(&self.store);
-            let mem_len = view.data_size() as u64;
-            // If we don't know base, assume response directly follows request + 2 bytes header
-            let read_base = if self.get_buffer_addr.is_some() {
-                base
-            } else {
-                (message.len() + 2) as u64
-            };
-            if read_base + (out_len as u64) > mem_len {
-                return Err(anyhow!("response length out of bounds"));
-            }
-            view.read(read_base, &mut out)
-                .map_err(|e| anyhow!(e.to_string()))?;
-        }
+        // Read response (if present)
+        let out = std::fs::read(&out_path).map_err(|e| anyhow!(e))?;
+        let _ = std::fs::remove_file(&out_path);
         Ok(out)
     }
 
