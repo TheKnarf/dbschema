@@ -8,9 +8,8 @@ anyhow = "1"
 bytes = "1"
 fallible-iterator = "0.2"
 postgres-protocol = "0.6"
-wasmer = "3.1.1"
-wasmer-emscripten = "3.1.1"
-wasmer-wasi = "3.1.1"
+wasmer = "5.0.0-rc.1"
+wasmer-emscripten = "5.0.0-rc.1"
 
 [dev-dependencies]
 wasmparser = "0.216"
