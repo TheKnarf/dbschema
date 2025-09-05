@@ -908,7 +908,11 @@ impl PGliteRuntime {
                 let mut buf = [0u8; 8];
                 buf[..4].copy_from_slice(&a.to_le_bytes());
                 buf[4..].copy_from_slice(&b.to_le_bytes());
-                let _ = view.write(ptr as u64, &buf);
+                let mem_len = view.data_size() as u64;
+                let off = ptr as u64;
+                if off + 8 <= mem_len {
+                    let _ = view.write(off, &buf);
+                }
                 0
             },
         );
@@ -949,8 +953,19 @@ impl PGliteRuntime {
                     let memory = env.data().memory.clone();
                     let store_mut = env.as_store_mut();
                     let view = memory.view(&store_mut);
-                    let _ = view.write(buf_ptr as u64, &out[..n]);
-                    return n as i32;
+                    let mem_len = view.data_size() as u64;
+                    let off = buf_ptr as u64;
+                    let mut nn = n as u64;
+                    if off >= mem_len {
+                        nn = 0;
+                    } else if off + nn > mem_len {
+                        nn = mem_len - off;
+                    }
+                    if nn > 0 {
+                        let _ = view.write(off, &out[..(nn as usize)]);
+                        return nn as i32;
+                    }
+                    return 0;
                 }
                 // stdout/stderr: no-op
                 0
@@ -971,7 +986,17 @@ impl PGliteRuntime {
                     let memory = env.data().memory.clone();
                     let store_mut = env.as_store_mut();
                     let view = memory.view(&store_mut);
-                    let _ = view.read(buf_ptr as u64, &mut tmp);
+                    let mem_len = view.data_size() as u64;
+                    let off = buf_ptr as u64;
+                    let mut nn = len as u64;
+                    if off >= mem_len {
+                        nn = 0;
+                    } else if off + nn > mem_len {
+                        nn = mem_len - off;
+                    }
+                    if nn > 0 {
+                        let _ = view.read(off, &mut tmp[..(nn as usize)]);
+                    }
                 }
                 // pipe write: push to peer queue
                 if let Some(&peer) = env.data().pipes.get(&fd) {
@@ -1069,11 +1094,9 @@ impl PGliteRuntime {
             |_a: i32, _b: i32, _c: i32, _d: i32, _e: i32, _f: i32| -> i32 { 0 },
         );
         env_ns.insert("__syscall_getsockopt", syscall_getsockopt);
-        // Emscripten globals
+        // Provide missing Emscripten globals not created by generate_emscripten_env
         let sp = Global::new_mut(&mut store, Value::I32(0));
         env_ns.insert("__stack_pointer", sp);
-        // Expose the function table as the indirect function table
-        env_ns.insert("__indirect_function_table", globals.table.clone());
         // invoke_j: return i64, no args
         let invoke_j = Function::new_typed_with_env(
             &mut store,
@@ -1249,11 +1272,11 @@ impl PGliteRuntime {
             },
         );
         env_ns.insert("invoke_viij", invoke_viij);
-        // GOT.mem globals
+        // Provide GOT.mem globals required by the module
         let mut got_mem = Exports::new();
         let heap_base = Global::new_mut(&mut store, Value::I32(0));
         got_mem.insert("__heap_base", heap_base);
-        shim_imports.register_namespace("GOT.mem", got_mem);
+        import_object.register_namespace("GOT.mem", got_mem);
         let syscall_sendto = Function::new_typed_with_env(
             &mut store,
             &invoke_env,
@@ -1274,7 +1297,17 @@ impl PGliteRuntime {
                     let memory = env.data().memory.clone();
                     let store_mut = env.as_store_mut();
                     let view = memory.view(&store_mut);
-                    let _ = view.read(buf as u64, &mut tmp);
+                    let mem_len = view.data_size() as u64;
+                    let off = buf as u64;
+                    let mut nn = l as u64;
+                    if off >= mem_len {
+                        nn = 0;
+                    } else if off + nn > mem_len {
+                        nn = mem_len - off;
+                    }
+                    if nn > 0 {
+                        let _ = view.read(off, &mut tmp[..(nn as usize)]);
+                    }
                 }
                 if let Some(q) = env.data_mut().sockets.get_mut(&fd) {
                     for b in &tmp {
@@ -1317,9 +1350,20 @@ impl PGliteRuntime {
                     let memory = env.data().memory.clone();
                     let store_mut = env.as_store_mut();
                     let view = memory.view(&store_mut);
-                    let _ = view.write(buf as u64, &out[..n]);
+                    let mem_len = view.data_size() as u64;
+                    let off = buf as u64;
+                    let mut nn = n as u64;
+                    if off >= mem_len {
+                        nn = 0;
+                    } else if off + nn > mem_len {
+                        nn = mem_len - off;
+                    }
+                    if nn > 0 {
+                        let _ = view.write(off, &out[..(nn as usize)]);
+                        return nn as i32;
+                    }
                 }
-                n as i32
+                0
             },
         );
         env_ns.insert("__syscall_recvfrom", syscall_recvfrom);
@@ -1407,8 +1451,24 @@ impl PGliteRuntime {
             },
         );
         env_ns.insert("invoke_ij", invoke_ij);
-        shim_imports.register_namespace("env", env_ns);
-        import_object.extend(&shim_imports);
+        // Merge carefully: do not override critical emscripten globals like memory/table/stack_pointer
+        if let Some(base) = import_object.get_namespace_exports("env") {
+            let mut merged = base.clone();
+            for (name, ext) in env_ns.into_iter() {
+                if name == "__stack_pointer" || name == "__indirect_function_table" || name == "memory" {
+                    // never override these; rely on generated env
+                    continue;
+                }
+                // only insert if absent
+                let exists = merged.get_extern(&name).is_some();
+                if !exists {
+                    merged.insert(name, ext);
+                }
+            }
+            import_object.register_namespace("env", merged);
+        } else {
+            import_object.register_namespace("env", env_ns);
+        }
         let mut instance = Instance::new(&mut store, &module, &import_object)?;
         wasi_env.initialize(&mut store, &instance)?;
 
@@ -1463,7 +1523,13 @@ impl PGliteRuntime {
             .call(&mut self.store, message.len() as i32)?;
         {
             let view = self.memory.view(&self.store);
-            view.write(1, message).map_err(|e| anyhow!(e.to_string()))?;
+            let mem_len = view.data_size();
+            let off = 1u64;
+            if off + (message.len() as u64) > mem_len as u64 {
+                return Err(anyhow!("message too large for shared memory"));
+            }
+            view.write(off, message)
+                .map_err(|e| anyhow!(e.to_string()))?;
         }
         self.backend.call(&mut self.store)?;
         let chan = self.get_channel.call(&mut self.store)?;
@@ -1475,7 +1541,12 @@ impl PGliteRuntime {
         let mut out = vec![0u8; out_len];
         {
             let view = self.memory.view(&self.store);
-            view.read(start as u64, &mut out)
+            let mem_len = view.data_size() as u64;
+            let off = start as u64;
+            if off + (out_len as u64) > mem_len {
+                return Err(anyhow!("response length out of bounds"));
+            }
+            view.read(off, &mut out)
                 .map_err(|e| anyhow!(e.to_string()))?;
         }
         Ok(out)
