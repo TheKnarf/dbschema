@@ -9,7 +9,7 @@ use wasmer::{
     AsStoreMut, Exports, Function, FunctionEnv, FunctionEnvMut, Global, Imports, Instance, Memory,
     Module, Store, Table, TypedFunction, Value,
 };
-use wasmer_emscripten::{generate_emscripten_env, EmEnv, EmscriptenGlobals};
+use wasmer_emscripten::{generate_emscripten_env, EmEnv, EmscriptenFunctions, EmscriptenGlobals};
 
 /// In-memory Postgres backend powered by the PGlite WASM build.
 ///
@@ -124,6 +124,7 @@ impl PGliteRuntime {
         struct InvokeEnv {
             table: Table,
             memory: Memory,
+            stack_ptr: Option<Global>,
             next_fd: i32,
             pipes: HashMap<i32, i32>, // fd -> peer fd (loopback pipe pair)
             pipe_bufs: HashMap<i32, VecDeque<u8>>, // readable buffers per fd
@@ -134,6 +135,7 @@ impl PGliteRuntime {
             InvokeEnv {
                 table: globals.table.clone(),
                 memory: globals.memory.clone(),
+                stack_ptr: None,
                 next_fd: 3,
                 pipes: HashMap::new(),
                 pipe_bufs: HashMap::new(),
@@ -395,6 +397,8 @@ impl PGliteRuntime {
         // Provide a mutable stack pointer global expected by Emscripten if missing.
         // Using a default 0; the module initializes it at runtime.
         let sp = Global::new_mut(&mut store, Value::I32(0));
+        // Link stack pointer global into our helper env
+        invoke_env.as_mut(&mut store).stack_ptr = Some(sp.clone());
         env_ns.insert("__stack_pointer", sp);
         // Provide the imported function table with the minimum size required
         // by the module, if present. We derive the min from the module's
@@ -419,6 +423,190 @@ impl PGliteRuntime {
             },
         );
         env_ns.insert("invoke_vji", invoke_vji);
+        // Basic invoke_* shims used by emscripten
+        let invoke_i = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut env: FunctionEnvMut<InvokeEnv>, fidx: i32| -> i32 {
+                if fidx < 0 {
+                    return 0;
+                }
+                let idx = fidx as u32;
+                let table = env.data().table.clone();
+                let mut st = env.as_store_mut();
+                if let Some(wasmer::Value::FuncRef(Some(func))) = table.get(&mut st, idx) {
+                    if let Ok(typed) = func.typed::<(), i32>(&st) {
+                        return typed.call(&mut st).unwrap_or(0);
+                    }
+                }
+                0
+            },
+        );
+        env_ns.insert("invoke_i", invoke_i);
+        let invoke_ii = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut env: FunctionEnvMut<InvokeEnv>, fidx: i32, a1: i32| -> i32 {
+                if fidx < 0 {
+                    return 0;
+                }
+                let idx = fidx as u32;
+                let table = env.data().table.clone();
+                let mut st = env.as_store_mut();
+                if let Some(wasmer::Value::FuncRef(Some(func))) = table.get(&mut st, idx) {
+                    if let Ok(typed) = func.typed::<i32, i32>(&st) {
+                        return typed.call(&mut st, a1).unwrap_or(0);
+                    }
+                }
+                0
+            },
+        );
+        env_ns.insert("invoke_ii", invoke_ii);
+        let invoke_iii = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut env: FunctionEnvMut<InvokeEnv>, fidx: i32, a1: i32, a2: i32| -> i32 {
+                if fidx < 0 {
+                    return 0;
+                }
+                let idx = fidx as u32;
+                let table = env.data().table.clone();
+                let mut st = env.as_store_mut();
+                if let Some(wasmer::Value::FuncRef(Some(func))) = table.get(&mut st, idx) {
+                    if let Ok(typed) = func.typed::<(i32, i32), i32>(&st) {
+                        return typed.call(&mut st, a1, a2).unwrap_or(0);
+                    }
+                }
+                0
+            },
+        );
+        env_ns.insert("invoke_iii", invoke_iii);
+        let invoke_iiii = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut env: FunctionEnvMut<InvokeEnv>, fidx: i32, a1: i32, a2: i32, a3: i32| -> i32 {
+                if fidx < 0 {
+                    return 0;
+                }
+                let idx = fidx as u32;
+                let table = env.data().table.clone();
+                let mut st = env.as_store_mut();
+                if let Some(wasmer::Value::FuncRef(Some(func))) = table.get(&mut st, idx) {
+                    if let Ok(typed) = func.typed::<(i32, i32, i32), i32>(&st) {
+                        return typed.call(&mut st, a1, a2, a3).unwrap_or(0);
+                    }
+                }
+                0
+            },
+        );
+        env_ns.insert("invoke_iiii", invoke_iiii);
+        let invoke_v = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut env: FunctionEnvMut<InvokeEnv>, fidx: i32| {
+                if fidx < 0 {
+                    return;
+                }
+                let idx = fidx as u32;
+                let table = env.data().table.clone();
+                let mut st = env.as_store_mut();
+                if let Some(wasmer::Value::FuncRef(Some(func))) = table.get(&mut st, idx) {
+                    let _ = func.call(&mut st, &[]);
+                }
+            },
+        );
+        env_ns.insert("invoke_v", invoke_v);
+        let invoke_vi = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut env: FunctionEnvMut<InvokeEnv>, fidx: i32, a1: i32| {
+                if fidx < 0 {
+                    return;
+                }
+                let idx = fidx as u32;
+                let table = env.data().table.clone();
+                let mut st = env.as_store_mut();
+                if let Some(wasmer::Value::FuncRef(Some(func))) = table.get(&mut st, idx) {
+                    if let Ok(typed) = func.typed::<i32, ()>(&st) {
+                        let _ = typed.call(&mut st, a1);
+                    }
+                }
+            },
+        );
+        env_ns.insert("invoke_vi", invoke_vi);
+        let invoke_vii = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut env: FunctionEnvMut<InvokeEnv>, fidx: i32, a1: i32, a2: i32| {
+                if fidx < 0 {
+                    return;
+                }
+                let idx = fidx as u32;
+                let table = env.data().table.clone();
+                let mut st = env.as_store_mut();
+                if let Some(wasmer::Value::FuncRef(Some(func))) = table.get(&mut st, idx) {
+                    if let Ok(typed) = func.typed::<(i32, i32), ()>(&st) {
+                        let _ = typed.call(&mut st, a1, a2);
+                    }
+                }
+            },
+        );
+        env_ns.insert("invoke_vii", invoke_vii);
+        let invoke_viii_basic = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut env: FunctionEnvMut<InvokeEnv>, fidx: i32, a1: i32, a2: i32, a3: i32| {
+                if fidx < 0 {
+                    return;
+                }
+                let idx = fidx as u32;
+                let table = env.data().table.clone();
+                let mut st = env.as_store_mut();
+                if let Some(wasmer::Value::FuncRef(Some(func))) = table.get(&mut st, idx) {
+                    if let Ok(typed) = func.typed::<(i32, i32, i32), ()>(&st) {
+                        let _ = typed.call(&mut st, a1, a2, a3);
+                    }
+                }
+            },
+        );
+        env_ns.insert("invoke_viii", invoke_viii_basic);
+        let invoke_viiii_basic = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut env: FunctionEnvMut<InvokeEnv>, fidx: i32, a1: i32, a2: i32, a3: i32, a4: i32| {
+                if fidx < 0 {
+                    return;
+                }
+                let idx = fidx as u32;
+                let table = env.data().table.clone();
+                let mut st = env.as_store_mut();
+                if let Some(wasmer::Value::FuncRef(Some(func))) = table.get(&mut st, idx) {
+                    if let Ok(typed) = func.typed::<(i32, i32, i32, i32), ()>(&st) {
+                        let _ = typed.call(&mut st, a1, a2, a3, a4);
+                    }
+                }
+            },
+        );
+        env_ns.insert("invoke_viiii", invoke_viiii_basic);
+        let invoke_dii = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut env: FunctionEnvMut<InvokeEnv>, fidx: i32, a1: i32, a2: i32| -> f64 {
+                if fidx < 0 {
+                    return 0.0;
+                }
+                let idx = fidx as u32;
+                let table = env.data().table.clone();
+                let mut st = env.as_store_mut();
+                if let Some(wasmer::Value::FuncRef(Some(func))) = table.get(&mut st, idx) {
+                    if let Ok(typed) = func.typed::<(i32, i32), f64>(&st) {
+                        return typed.call(&mut st, a1, a2).unwrap_or(0.0);
+                    }
+                }
+                0.0
+            },
+        );
+        env_ns.insert("invoke_dii", invoke_dii);
         // Emscripten inline asm const shim: return 0 by default.
         let asm_const_int =
             Function::new_typed(&mut store, |_code: i32, _sig: i32, _argv: i32| -> i32 { 0 });
@@ -2181,6 +2369,23 @@ impl PGliteRuntime {
         eprintln!("[pglite] shims merged; instantiating");
         let mut instance = Instance::new(&mut store, &module, &import_object)?;
         eprintln!("[pglite] instance created");
+        // Debug: list key exports presence
+        {
+            let mut has_stack_save = false;
+            let mut has_stack_restore = false;
+            for (name, _ext) in instance.exports.iter() {
+                if name == "stackSave" {
+                    has_stack_save = true;
+                }
+                if name == "stackRestore" {
+                    has_stack_restore = true;
+                }
+            }
+            eprintln!(
+                "[pglite] exports: stackSave={} stackRestore={}",
+                has_stack_save, has_stack_restore
+            );
+        }
         // Provide program arguments similar to the JS loader
         let args: Vec<&str> = vec![
             "--single",
@@ -2199,6 +2404,40 @@ impl PGliteRuntime {
             args,
             Some("__wasm_call_ctors".to_string()),
         );
+
+        // Provide required Emscripten stack helpers for invoke_* thunks
+        let stack_save_fn = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut env: FunctionEnvMut<InvokeEnv>| -> i32 {
+                let spg = env.data().stack_ptr.clone().expect("stack_ptr not set");
+                let mut s = env.as_store_mut();
+                match spg.get(&mut s) {
+                    Value::I32(v) => v,
+                    _ => 0,
+                }
+            },
+        );
+        let stack_restore_fn = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut env: FunctionEnvMut<InvokeEnv>, sp: i32| {
+                let spg = env.data().stack_ptr.clone().expect("stack_ptr not set");
+                let mut s = env.as_store_mut();
+                spg.set(&mut s, Value::I32(sp)).ok();
+            },
+        );
+        let set_threw_fn = Function::new_typed(&mut store, |_a: i32, _b: i32| {});
+        // Build minimal EmscriptenFunctions with our stack ops
+        let mut ef = EmscriptenFunctions::new();
+        let ss: wasmer::TypedFunction<(), i32> = stack_save_fn.typed(&store).unwrap();
+        let sr: wasmer::TypedFunction<i32, ()> = stack_restore_fn.typed(&store).unwrap();
+        let st: wasmer::TypedFunction<(i32, i32), ()> = set_threw_fn.typed(&store).unwrap();
+        ef.stack_save = Some(ss);
+        ef.stack_restore = Some(sr);
+        ef.set_threw = Some(st);
+        // Install into the Emscripten env
+        env.as_mut(&mut store).set_functions(ef);
 
         if std::env::var("PGLITE_SKIP_INITDB").ok().as_deref() != Some("1") {
             // Call pgl_initdb to ensure the database files are set up.
@@ -2323,17 +2562,19 @@ impl PGliteRuntime {
 
     /// Execute a single protocol message and return the backend response bytes.
     fn exec_protocol(&mut self, message: &[u8]) -> Result<Vec<u8>> {
-        // Use file-based wire protocol to avoid CMA pitfalls
+        // Use file-based wire protocol (same path as JS)
         self.use_wire.call(&mut self.store, 0)?;
+        self.interactive_write.call(&mut self.store, 0)?;
         let base_dir = self.data_dir.join("base");
         let _ = std::fs::create_dir_all(&base_dir);
         let in_path = base_dir.join(".s.PGSQL.5432.in");
         let out_path = base_dir.join(".s.PGSQL.5432.out");
-        // Write request file
-        std::fs::write(&in_path, message)?;
-        // Process backend once
-        self.backend.call(&mut self.store)?;
-        // Read response (if present)
+        let lock_in = base_dir.join(".s.PGSQL.5432.lock.in");
+        std::fs::write(&lock_in, message)?;
+        // Rename to signal ready input (mirrors JS path)
+        let _ = std::fs::rename(&lock_in, &in_path);
+        // Process one roundtrip like the JS loader
+        self.interactive_one.call(&mut self.store)?;
         let out = std::fs::read(&out_path).map_err(|e| anyhow!(e))?;
         let _ = std::fs::remove_file(&out_path);
         Ok(out)
