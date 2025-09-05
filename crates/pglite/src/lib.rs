@@ -394,8 +394,11 @@ impl PGliteRuntime {
         let mut env_ns = Exports::new();
         // Important: do not override Emscripten-provided memory or table.
         // Provide a mutable __stack_pointer Global expected by Emscripten.
-        // Initialize to 0; the module runtime sets it appropriately.
-        let sp = Global::new_mut(&mut store, Value::I32(0));
+        // Initialize to a reasonable top-of-stack near the end of initial memory
+        // (Emscripten stack grows down; runtime may adjust it later).
+        let mem_pages = globals.memory.ty(&store).minimum.0 as i32;
+        let sp_init = mem_pages.saturating_mul(64 * 1024).saturating_sub(16 * 1024);
+        let sp = Global::new_mut(&mut store, Value::I32(sp_init));
         env_ns.insert("__stack_pointer", sp);
         // Provide the imported function table with the minimum size required
         // by the module, if present. We derive the min from the module's
@@ -2112,6 +2115,124 @@ impl PGliteRuntime {
             },
         );
         env_ns.insert("invoke_ij", invoke_ij.clone());
+        // dynCall_* shims exposed via env for signatures with i64 ("j") args/returns
+        let dyn_j = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut env: FunctionEnvMut<InvokeEnv>, fidx: i32| -> i64 {
+                if fidx < 0 { return 0; }
+                let idx = fidx as u32;
+                let table = env.data().table.clone();
+                let mut st = env.as_store_mut();
+                if let Some(Value::FuncRef(Some(func))) = table.get(&mut st, idx) {
+                    if let Ok(tf) = func.typed::<(), i64>(&st) { return tf.call(&mut st).unwrap_or(0); }
+                }
+                0
+            },
+        );
+        env_ns.insert("dynCall_j", dyn_j);
+        let dyn_ji = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut env: FunctionEnvMut<InvokeEnv>, fidx: i32, a1: i32| -> i64 {
+                if fidx < 0 { return 0; }
+                let idx = fidx as u32;
+                let table = env.data().table.clone();
+                let mut st = env.as_store_mut();
+                if let Some(Value::FuncRef(Some(func))) = table.get(&mut st, idx) {
+                    if let Ok(tf) = func.typed::<i32, i64>(&st) { return tf.call(&mut st, a1).unwrap_or(0); }
+                }
+                0
+            },
+        );
+        env_ns.insert("dynCall_ji", dyn_ji);
+        let dyn_jii = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut env: FunctionEnvMut<InvokeEnv>, fidx: i32, a1: i32, a2: i32| -> i64 {
+                if fidx < 0 { return 0; }
+                let idx = fidx as u32;
+                let table = env.data().table.clone();
+                let mut st = env.as_store_mut();
+                if let Some(Value::FuncRef(Some(func))) = table.get(&mut st, idx) {
+                    if let Ok(tf) = func.typed::<(i32,i32), i64>(&st) { return tf.call(&mut st, a1, a2).unwrap_or(0); }
+                }
+                0
+            },
+        );
+        env_ns.insert("dynCall_jii", dyn_jii);
+        let dyn_vj = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut env: FunctionEnvMut<InvokeEnv>, fidx: i32, a1: i64| {
+                if fidx < 0 { return; }
+                let idx = fidx as u32;
+                let table = env.data().table.clone();
+                let mut st = env.as_store_mut();
+                if let Some(Value::FuncRef(Some(func))) = table.get(&mut st, idx) {
+                    if let Ok(tf) = func.typed::<i64, ()>(&st) { let _ = tf.call(&mut st, a1); }
+                }
+            },
+        );
+        env_ns.insert("dynCall_vj", dyn_vj);
+        let dyn_vij = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut env: FunctionEnvMut<InvokeEnv>, fidx: i32, a1: i32, a2: i64| {
+                if fidx < 0 { return; }
+                let idx = fidx as u32;
+                let table = env.data().table.clone();
+                let mut st = env.as_store_mut();
+                if let Some(Value::FuncRef(Some(func))) = table.get(&mut st, idx) {
+                    if let Ok(tf) = func.typed::<(i32,i64), ()>(&st) { let _ = tf.call(&mut st, a1, a2); }
+                }
+            },
+        );
+        env_ns.insert("dynCall_vij", dyn_vij);
+        let dyn_viij = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut env: FunctionEnvMut<InvokeEnv>, fidx: i32, a1: i32, a2: i32, a3: i64| {
+                if fidx < 0 { return; }
+                let idx = fidx as u32;
+                let table = env.data().table.clone();
+                let mut st = env.as_store_mut();
+                if let Some(Value::FuncRef(Some(func))) = table.get(&mut st, idx) {
+                    if let Ok(tf) = func.typed::<(i32,i32,i64), ()>(&st) { let _ = tf.call(&mut st, a1, a2, a3); }
+                }
+            },
+        );
+        env_ns.insert("dynCall_viij", dyn_viij);
+        let dyn_ij = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut env: FunctionEnvMut<InvokeEnv>, fidx: i32, a1: i64| -> i32 {
+                if fidx < 0 { return 0; }
+                let idx = fidx as u32;
+                let table = env.data().table.clone();
+                let mut st = env.as_store_mut();
+                if let Some(Value::FuncRef(Some(func))) = table.get(&mut st, idx) {
+                    if let Ok(tf) = func.typed::<i64, i32>(&st) { return tf.call(&mut st, a1).unwrap_or(0); }
+                }
+                0
+            },
+        );
+        env_ns.insert("dynCall_ij", dyn_ij);
+        let dyn_iij = Function::new_typed_with_env(
+            &mut store,
+            &invoke_env,
+            |mut env: FunctionEnvMut<InvokeEnv>, fidx: i32, a1: i32, a2: i32, a3: i64| -> i32 {
+                if fidx < 0 { return 0; }
+                let idx = fidx as u32;
+                let table = env.data().table.clone();
+                let mut st = env.as_store_mut();
+                if let Some(Value::FuncRef(Some(func))) = table.get(&mut st, idx) {
+                    if let Ok(tf) = func.typed::<(i32,i32,i64), i32>(&st) { return tf.call(&mut st, a1, a2, a3).unwrap_or(0); }
+                }
+                0
+            },
+        );
+        env_ns.insert("dynCall_iij", dyn_iij);
         // Optionally reduce shims to a minimal set to isolate instantiation issues.
         #[cfg(any())]
         if std::env::var("PGLITE_MIN_ENV").ok().as_deref() == Some("1") {
@@ -2367,7 +2488,7 @@ impl PGliteRuntime {
         ef.stack_save = Some(ss);
         ef.stack_restore = Some(sr);
         ef.set_threw = Some(st);
-        // dynCall_* host shims (minimal set required)
+        // dynCall_* host shims (expanded set)
         let dyn_i_fn = Function::new_typed_with_env(
             &mut store,
             &invoke_env,
@@ -2655,14 +2776,24 @@ impl PGliteRuntime {
         let in_path = base_dir.join(".s.PGSQL.5432.in");
         let out_path = base_dir.join(".s.PGSQL.5432.out");
         let lock_in = base_dir.join(".s.PGSQL.5432.lock.in");
+        let _ = std::fs::remove_file(&in_path);
+        let _ = std::fs::remove_file(&out_path);
         std::fs::write(&lock_in, message)?;
         // Rename to signal ready input (mirrors JS path)
         let _ = std::fs::rename(&lock_in, &in_path);
-        // Process one roundtrip like the JS loader
-        self.interactive_one.call(&mut self.store)?;
-        let out = std::fs::read(&out_path).map_err(|e| anyhow!(e))?;
-        let _ = std::fs::remove_file(&out_path);
-        Ok(out)
+        // Pump the backend until it writes the reply file
+        // Try a bounded number of iterations to avoid infinite loops
+        for _ in 0..2000 {
+            self.interactive_one.call(&mut self.store)?;
+            if out_path.exists() {
+                let out = std::fs::read(&out_path).map_err(|e| anyhow!(e))?;
+                let _ = std::fs::remove_file(&out_path);
+                return Ok(out);
+            }
+            // brief yield to avoid hogging CPU
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+        Err(anyhow!("pglite: no reply produced on file bridge"))
     }
 
     /// Perform the initial startup handshake.
