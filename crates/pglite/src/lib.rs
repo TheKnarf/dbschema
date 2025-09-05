@@ -5,13 +5,10 @@ use postgres_protocol::message::{backend, frontend};
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 use wasmer::{
-    AsStoreMut, Exports, Function, FunctionEnv, FunctionEnvMut, Global, Imports, Instance, Memory,
-    Module, Store, Table, TypedFunction, Value,
+    AsStoreMut, Exports, Function, FunctionEnv, FunctionEnvMut, Global, Instance, Memory, Module,
+    Store, Table, TypedFunction, Value,
 };
-use wasmer_emscripten::{
-    generate_emscripten_env, run_emscripten_instance, EmEnv, EmscriptenGlobals,
-};
-use wasmer_wasi::WasiEnv;
+use wasmer_emscripten::{generate_emscripten_env, EmEnv, EmscriptenGlobals};
 
 /// In-memory Postgres backend powered by the PGlite WASM build.
 ///
@@ -83,7 +80,6 @@ impl PGliteRuntime {
                 sockets: HashMap::new(),
             },
         );
-        let mut shim_imports = Imports::new();
         let mut env_ns = Exports::new();
         let invoke_vji = Function::new_typed_with_env(
             &mut store,
@@ -692,7 +688,7 @@ impl PGliteRuntime {
                 let table = env.data().table.clone();
                 let mut store_mut = env.as_store_mut();
                 if let Some(wasmer::Value::FuncRef(Some(func))) = table.get(&mut store_mut, idx) {
-                    if let Ok(typed) = func.typed::<(i32), f64>(&store_mut) {
+                    if let Ok(typed) = func.typed::<i32, f64>(&store_mut) {
                         if let Ok(ret) = typed.call(&mut store_mut, a1) {
                             return ret;
                         }
@@ -714,7 +710,7 @@ impl PGliteRuntime {
                 let table = env.data().table.clone();
                 let mut store_mut = env.as_store_mut();
                 if let Some(wasmer::Value::FuncRef(Some(func))) = table.get(&mut store_mut, idx) {
-                    if let Ok(typed) = func.typed::<(f64), i32>(&store_mut) {
+                    if let Ok(typed) = func.typed::<f64, i32>(&store_mut) {
                         if let Ok(ret) = typed.call(&mut store_mut, a1) {
                             return ret;
                         }
@@ -801,8 +797,8 @@ impl PGliteRuntime {
                 }
                 let len = n as usize;
                 let memory = env.data().memory.clone();
-                let mut store_mut = env.as_store_mut();
-                let view = memory.view(&store_mut);
+                let store = env.as_store_mut();
+                let view = memory.view(&store);
                 let mem_len = view.data_size();
                 let src_off = src as u64;
                 let dst_off = dest as u64;
@@ -1151,7 +1147,7 @@ impl PGliteRuntime {
                 let table = env.data().table.clone();
                 let mut store_mut = env.as_store_mut();
                 if let Some(wasmer::Value::FuncRef(Some(func))) = table.get(&mut store_mut, idx) {
-                    if let Ok(typed) = func.typed::<(i32), i64>(&store_mut) {
+                    if let Ok(typed) = func.typed::<i32, i64>(&store_mut) {
                         if let Ok(ret) = typed.call(&mut store_mut, a1) {
                             return ret;
                         }
@@ -1211,7 +1207,7 @@ impl PGliteRuntime {
                 let table = env.data().table.clone();
                 let mut store_mut = env.as_store_mut();
                 if let Some(wasmer::Value::FuncRef(Some(func))) = table.get(&mut store_mut, idx) {
-                    if let Ok(typed) = func.typed::<(i64), ()>(&store_mut) {
+                    if let Ok(typed) = func.typed::<i64, ()>(&store_mut) {
                         let _ = typed.call(&mut store_mut, a1);
                     }
                 }
@@ -1441,7 +1437,7 @@ impl PGliteRuntime {
                 let table = env.data().table.clone();
                 let mut store_mut = env.as_store_mut();
                 if let Some(wasmer::Value::FuncRef(Some(func))) = table.get(&mut store_mut, idx) {
-                    if let Ok(typed) = func.typed::<(i64), i32>(&store_mut) {
+                    if let Ok(typed) = func.typed::<i64, i32>(&store_mut) {
                         if let Ok(ret) = typed.call(&mut store_mut, a1) {
                             return ret;
                         }
@@ -1451,25 +1447,31 @@ impl PGliteRuntime {
             },
         );
         env_ns.insert("invoke_ij", invoke_ij);
-        // Merge carefully: do not override critical emscripten globals like memory/table/stack_pointer
+        // Merge carefully: prefer our invoke_* wrappers; otherwise insert only missing shims
         if let Some(base) = import_object.get_namespace_exports("env") {
             let mut merged = base.clone();
             for (name, ext) in env_ns.into_iter() {
-                if name == "__stack_pointer" || name == "__indirect_function_table" || name == "memory" {
-                    // never override these; rely on generated env
-                    continue;
-                }
-                // only insert if absent
-                let exists = merged.get_extern(&name).is_some();
-                if !exists {
+                if name.starts_with("invoke_") {
+                    merged.insert(name, ext);
+                } else if merged.get_extern(&name).is_none() {
                     merged.insert(name, ext);
                 }
+            }
+            // Ensure required globals are present if emscripten didn't add them
+            if merged.get_extern("__stack_pointer").is_none() {
+                merged.insert(
+                    "__stack_pointer",
+                    Global::new_mut(&mut store, Value::I32(0)),
+                );
+            }
+            if merged.get_extern("__indirect_function_table").is_none() {
+                merged.insert("__indirect_function_table", globals.table.clone());
             }
             import_object.register_namespace("env", merged);
         } else {
             import_object.register_namespace("env", env_ns);
         }
-        let mut instance = Instance::new(&mut store, &module, &import_object)?;
+        let instance = Instance::new(&mut store, &module, &import_object)?;
         wasi_env.initialize(&mut store, &instance)?;
 
         // Skip Emscripten constructors; the module exposes direct APIs we call below.
