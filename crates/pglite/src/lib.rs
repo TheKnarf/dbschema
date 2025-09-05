@@ -2833,12 +2833,22 @@ impl PGliteRuntime {
             }
             let rlen = self.interactive_read.call(&mut self.store)? as usize;
             if rlen > 0 {
-                // JS runtime reads from offset (len + 2), not adding base
-                let resp_start = message.len() as u64 + 2;
-                let mut out = vec![0u8; rlen];
+                // Try JS runtime offset first (len + 2)
                 let view = self.memory.view(&self.store);
-                let _ = view.read(resp_start, &mut out);
-                return Ok(out);
+                let mut out1 = vec![0u8; rlen];
+                let off1 = message.len() as u64 + 2;
+                let _ = view.read(off1, &mut out1);
+                // Also try base-relative offset (base + len + 2)
+                let mut out2 = vec![0u8; rlen];
+                let off2 = base as u64 + message.len() as u64 + 2;
+                let _ = view.read(off2, &mut out2);
+                // Heuristic: prefer buffer starting with an uppercase ASCII tag (e.g., 'R','Z','T','E')
+                let pick1 = matches!(out1.first(), Some(b'A'..=b'Z'));
+                let pick2 = matches!(out2.first(), Some(b'A'..=b'Z'));
+                if pick1 && !pick2 { return Ok(out1); }
+                if pick2 && !pick1 { return Ok(out2); }
+                // Fallback to JS-style
+                return Ok(out1);
             }
             std::thread::sleep(std::time::Duration::from_millis(1));
         }
