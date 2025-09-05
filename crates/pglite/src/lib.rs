@@ -54,8 +54,13 @@ impl PGliteRuntime {
             EmscriptenGlobals::new(&mut store, &env, &module).map_err(|e| anyhow!(e))?;
         eprintln!("[pglite] emscripten globals created");
         let mut mapped_dirs = HashMap::new();
-        mapped_dirs.insert("/tmp/pglite".to_string(), pkg_dir.clone());
-        mapped_dirs.insert(".".to_string(), pkg_dir.clone());
+        // Mount a writable temp directory for the database data files
+        let host_tmp = std::env::temp_dir().join("pglite-db");
+        let _ = std::fs::create_dir_all(&host_tmp);
+        mapped_dirs.insert("/tmp/pglite".to_string(), host_tmp.clone());
+        mapped_dirs.insert("/data".to_string(), host_tmp);
+        // Mount the package dist for read-only assets
+        mapped_dirs.insert("/pkg".to_string(), pkg_dir.clone());
         env.as_mut(&mut store).set_data(&globals.data, mapped_dirs);
 
         let mut import_object = generate_emscripten_env(&mut store, &env, &mut globals);
@@ -786,15 +791,16 @@ impl PGliteRuntime {
         // Minimal syscall stubs expected by emscripten
         let syscall_fcntl64 =
             Function::new_typed(&mut store, |_a: i32, _b: i32, _c: i32| -> i32 { 0 });
-        env_ns.insert("__syscall_fcntl64", syscall_fcntl64.clone());
+        if std::env::var("PGLITE_INJECT_SYSCALLS").ok().as_deref() == Some("1") {
+            env_ns.insert("__syscall_fcntl64", syscall_fcntl64.clone());
         let syscall_ioctl =
             Function::new_typed(&mut store, |_a: i32, _b: i32, _c: i32| -> i32 { 0 });
-        env_ns.insert("__syscall_ioctl", syscall_ioctl.clone());
+            env_ns.insert("__syscall_ioctl", syscall_ioctl.clone());
         let syscall_openat =
             Function::new_typed(&mut store, |_a: i32, _b: i32, _c: i32, _d: i32| -> i32 {
                 0
             });
-        env_ns.insert("__syscall_openat", syscall_openat.clone());
+            env_ns.insert("__syscall_openat", syscall_openat.clone());
         let tzset_js = Function::new_typed(&mut store, |_a: i32, _b: i32, _c: i32, _d: i32| {});
         env_ns.insert("_tzset_js", tzset_js.clone());
         let abort_js = Function::new_typed(&mut store, || {});
@@ -803,15 +809,15 @@ impl PGliteRuntime {
             Function::new_typed(&mut store, |_a: i32, _b: i32, _c: i32, _d: i32| -> i32 {
                 0
             });
-        env_ns.insert("__syscall_faccessat", syscall_faccessat.clone());
+            env_ns.insert("__syscall_faccessat", syscall_faccessat.clone());
         let syscall_chdir = Function::new_typed(&mut store, |_a: i32| -> i32 { 0 });
-        env_ns.insert("__syscall_chdir", syscall_chdir.clone());
+            env_ns.insert("__syscall_chdir", syscall_chdir.clone());
         let syscall_chmod = Function::new_typed(&mut store, |_a: i32, _b: i32| -> i32 { 0 });
-        env_ns.insert("__syscall_chmod", syscall_chmod.clone());
+            env_ns.insert("__syscall_chmod", syscall_chmod.clone());
         let syscall_dup = Function::new_typed(&mut store, |a: i32| -> i32 { a });
-        env_ns.insert("__syscall_dup", syscall_dup.clone());
+            env_ns.insert("__syscall_dup", syscall_dup.clone());
         let syscall_dup3 = Function::new_typed(&mut store, |a: i32, _b: i32, _c: i32| -> i32 { a });
-        env_ns.insert("__syscall_dup3", syscall_dup3.clone());
+            env_ns.insert("__syscall_dup3", syscall_dup3.clone());
         let dlopen_js = Function::new_typed(&mut store, |_a: i32| -> i32 { 0 });
         env_ns.insert("_dlopen_js", dlopen_js.clone());
         let dlsym_js = Function::new_typed(&mut store, |_a: i32, _b: i32, _c: i32| -> i32 { 0 });
@@ -871,25 +877,25 @@ impl PGliteRuntime {
         });
         env_ns.insert("emscripten_date_now", date_now);
         let syscall_fdatasync = Function::new_typed(&mut store, |_a: i32| -> i32 { 0 });
-        env_ns.insert("__syscall_fdatasync", syscall_fdatasync);
+            env_ns.insert("__syscall_fdatasync", syscall_fdatasync);
         let syscall_fstat64 = Function::new_typed(&mut store, |_a: i32, _b: i32| -> i32 { 0 });
-        env_ns.insert("__syscall_fstat64", syscall_fstat64);
+            env_ns.insert("__syscall_fstat64", syscall_fstat64);
         let syscall_stat64 = Function::new_typed(&mut store, |_a: i32, _b: i32| -> i32 { 0 });
-        env_ns.insert("__syscall_stat64", syscall_stat64);
+            env_ns.insert("__syscall_stat64", syscall_stat64);
         let syscall_newfstatat =
             Function::new_typed(&mut store, |_a: i32, _b: i32, _c: i32, _d: i32| -> i32 {
                 0
             });
-        env_ns.insert("__syscall_newfstatat", syscall_newfstatat);
+            env_ns.insert("__syscall_newfstatat", syscall_newfstatat);
         let syscall_lstat64 = Function::new_typed(&mut store, |_a: i32, _b: i32| -> i32 { 0 });
-        env_ns.insert("__syscall_lstat64", syscall_lstat64);
+            env_ns.insert("__syscall_lstat64", syscall_lstat64);
         let syscall_ftruncate64 = Function::new_typed(&mut store, |_a: i32, _b: i64| -> i32 { 0 });
-        env_ns.insert("__syscall_ftruncate64", syscall_ftruncate64);
+            env_ns.insert("__syscall_ftruncate64", syscall_ftruncate64);
         let syscall_getcwd = Function::new_typed(&mut store, |_a: i32, _b: i32| -> i32 { 0 });
-        env_ns.insert("__syscall_getcwd", syscall_getcwd);
+            env_ns.insert("__syscall_getcwd", syscall_getcwd);
         let syscall_getdents64 =
             Function::new_typed(&mut store, |_a: i32, _b: i32, _c: i32| -> i32 { 0 });
-        env_ns.insert("__syscall_getdents64", syscall_getdents64);
+            env_ns.insert("__syscall_getdents64", syscall_getdents64);
         let get_now = Function::new_typed(&mut store, || -> f64 {
             use std::time::{SystemTime, UNIX_EPOCH};
             let now = SystemTime::now()
@@ -902,7 +908,7 @@ impl PGliteRuntime {
         env_ns.insert("_emscripten_lookup_name", em_lookup_name);
         let syscall_mkdirat =
             Function::new_typed(&mut store, |_a: i32, _b: i32, _c: i32| -> i32 { 0 });
-        env_ns.insert("__syscall_mkdirat", syscall_mkdirat);
+            env_ns.insert("__syscall_mkdirat", syscall_mkdirat);
         let localtime_js = Function::new_typed(&mut store, |_a: i64, _b: i32| {});
         env_ns.insert("_localtime_js", localtime_js.clone());
         let gmtime_js = Function::new_typed(&mut store, |_a: i64, _b: i32| {});
@@ -944,7 +950,7 @@ impl PGliteRuntime {
                 0
             },
         );
-        env_ns.insert("__syscall_pipe", syscall_pipe.clone());
+            env_ns.insert("__syscall_pipe", syscall_pipe.clone());
         // read(fd, buf, count)
         let syscall_read = Function::new_typed_with_env(
             &mut store,
@@ -999,7 +1005,7 @@ impl PGliteRuntime {
                 0
             },
         );
-        env_ns.insert("__syscall_read", syscall_read.clone());
+            env_ns.insert("__syscall_read", syscall_read.clone());
         // write(fd, buf, count)
         let syscall_write = Function::new_typed_with_env(
             &mut store,
@@ -1046,7 +1052,7 @@ impl PGliteRuntime {
                 count
             },
         );
-        env_ns.insert("__syscall_write", syscall_write.clone());
+            env_ns.insert("__syscall_write", syscall_write.clone());
         let syscall_close = Function::new_typed_with_env(
             &mut store,
             &invoke_env,
@@ -1057,7 +1063,7 @@ impl PGliteRuntime {
                 0
             },
         );
-        env_ns.insert("__syscall_close", syscall_close.clone());
+            env_ns.insert("__syscall_close", syscall_close.clone());
         // socket(domain, type, protocol)
         let syscall_socket = Function::new_typed_with_env(
             &mut store,
@@ -1079,7 +1085,7 @@ impl PGliteRuntime {
                 fd
             },
         );
-        env_ns.insert("__syscall_socket", syscall_socket.clone());
+            env_ns.insert("__syscall_socket", syscall_socket.clone());
         let syscall_connect = Function::new_typed_with_env(
             &mut store,
             &invoke_env,
@@ -1092,12 +1098,12 @@ impl PGliteRuntime {
              _e: i32|
              -> i32 { 0 },
         );
-        env_ns.insert("__syscall_connect", syscall_connect.clone());
+            env_ns.insert("__syscall_connect", syscall_connect.clone());
         let syscall_listen = Function::new_typed(
             &mut store,
             |_a: i32, _b: i32, _c: i32, _d: i32, _e: i32, _f: i32| -> i32 { 0 },
         );
-        env_ns.insert("__syscall_listen", syscall_listen.clone());
+            env_ns.insert("__syscall_listen", syscall_listen.clone());
         let syscall_accept4 = Function::new_typed_with_env(
             &mut store,
             &invoke_env,
@@ -1111,17 +1117,17 @@ impl PGliteRuntime {
                 fd
             },
         );
-        env_ns.insert("__syscall_accept4", syscall_accept4.clone());
+            env_ns.insert("__syscall_accept4", syscall_accept4.clone());
         let syscall_getsockname = Function::new_typed(
             &mut store,
             |_a: i32, _b: i32, _c: i32, _d: i32, _e: i32, _f: i32| -> i32 { 0 },
         );
-        env_ns.insert("__syscall_getsockname", syscall_getsockname.clone());
+            env_ns.insert("__syscall_getsockname", syscall_getsockname.clone());
         let syscall_getsockopt = Function::new_typed(
             &mut store,
             |_a: i32, _b: i32, _c: i32, _d: i32, _e: i32, _f: i32| -> i32 { 0 },
         );
-        env_ns.insert("__syscall_getsockopt", syscall_getsockopt.clone());
+            env_ns.insert("__syscall_getsockopt", syscall_getsockopt.clone());
         // Do not provide __stack_pointer here; keep the one from generate_emscripten_env
         // invoke_j: return i64, no args
         let invoke_j = Function::new_typed_with_env(
@@ -1518,7 +1524,7 @@ impl PGliteRuntime {
                 len
             },
         );
-        env_ns.insert("__syscall_sendto", syscall_sendto.clone());
+            env_ns.insert("__syscall_sendto", syscall_sendto.clone());
         let syscall_recvfrom = Function::new_typed_with_env(
             &mut store,
             &invoke_env,
@@ -1566,20 +1572,20 @@ impl PGliteRuntime {
                 0
             },
         );
-        env_ns.insert("__syscall_recvfrom", syscall_recvfrom.clone());
+            env_ns.insert("__syscall_recvfrom", syscall_recvfrom.clone());
         let syscall_poll =
             Function::new_typed(&mut store, |_a: i32, _b: i32, _c: i32| -> i32 { 0 });
-        env_ns.insert("__syscall_poll", syscall_poll.clone());
+            env_ns.insert("__syscall_poll", syscall_poll.clone());
         let syscall_fadvise64 =
             Function::new_typed(&mut store, |_a: i32, _b: i64, _c: i64, _d: i32| -> i32 {
                 0
             });
-        env_ns.insert("__syscall_fadvise64", syscall_fadvise64);
+            env_ns.insert("__syscall_fadvise64", syscall_fadvise64);
         let syscall_fallocate =
             Function::new_typed(&mut store, |_a: i32, _b: i32, _c: i64, _d: i64| -> i32 {
                 0
             });
-        env_ns.insert("__syscall_fallocate", syscall_fallocate);
+            env_ns.insert("__syscall_fallocate", syscall_fallocate);
         let em_get_progname = Function::new_typed(&mut store, |_a: i32, _b: i32| {});
         env_ns.insert("_emscripten_get_progname", em_get_progname);
         let em_keepalive_clear = Function::new_typed(&mut store, || {});
@@ -1596,70 +1602,71 @@ impl PGliteRuntime {
             Function::new_typed(&mut store, |_a: i32, _b: i32, _c: i32, _d: i32| -> i32 {
                 0
             });
-        env_ns.insert("__syscall_readlinkat", syscall_readlinkat);
+            env_ns.insert("__syscall_readlinkat", syscall_readlinkat);
         let syscall_fdatasync = Function::new_typed(&mut store, |_a: i32| -> i32 { 0 });
-        env_ns.insert("__syscall_fdatasync", syscall_fdatasync.clone());
+            env_ns.insert("__syscall_fdatasync", syscall_fdatasync.clone());
         let syscall_fstat64 = Function::new_typed(&mut store, |_a: i32, _b: i32| -> i32 { 0 });
-        env_ns.insert("__syscall_fstat64", syscall_fstat64.clone());
+            env_ns.insert("__syscall_fstat64", syscall_fstat64.clone());
         let syscall_stat64 = Function::new_typed(&mut store, |_a: i32, _b: i32| -> i32 { 0 });
-        env_ns.insert("__syscall_stat64", syscall_stat64.clone());
+            env_ns.insert("__syscall_stat64", syscall_stat64.clone());
         let syscall_newfstatat =
             Function::new_typed(&mut store, |_a: i32, _b: i32, _c: i32, _d: i32| -> i32 {
                 0
             });
-        env_ns.insert("__syscall_newfstatat", syscall_newfstatat.clone());
+            env_ns.insert("__syscall_newfstatat", syscall_newfstatat.clone());
         let syscall_lstat64 = Function::new_typed(&mut store, |_a: i32, _b: i32| -> i32 { 0 });
-        env_ns.insert("__syscall_lstat64", syscall_lstat64.clone());
+            env_ns.insert("__syscall_lstat64", syscall_lstat64.clone());
         let syscall_ftruncate64 = Function::new_typed(&mut store, |_a: i32, _b: i64| -> i32 { 0 });
-        env_ns.insert("__syscall_ftruncate64", syscall_ftruncate64.clone());
+            env_ns.insert("__syscall_ftruncate64", syscall_ftruncate64.clone());
         let syscall_truncate64 = Function::new_typed(&mut store, |_a: i32, _b: i64| -> i32 { 0 });
-        env_ns.insert("__syscall_truncate64", syscall_truncate64.clone());
+            env_ns.insert("__syscall_truncate64", syscall_truncate64.clone());
         let syscall_getcwd = Function::new_typed(&mut store, |_a: i32, _b: i32| -> i32 { 0 });
-        env_ns.insert("__syscall_getcwd", syscall_getcwd.clone());
+            env_ns.insert("__syscall_getcwd", syscall_getcwd.clone());
         let syscall_getdents64 =
             Function::new_typed(&mut store, |_a: i32, _b: i32, _c: i32| -> i32 { 0 });
-        env_ns.insert("__syscall_getdents64", syscall_getdents64.clone());
+            env_ns.insert("__syscall_getdents64", syscall_getdents64.clone());
         let syscall_mkdirat =
             Function::new_typed(&mut store, |_a: i32, _b: i32, _c: i32| -> i32 { 0 });
-        env_ns.insert("__syscall_mkdirat", syscall_mkdirat.clone());
+            env_ns.insert("__syscall_mkdirat", syscall_mkdirat.clone());
         let syscall_unlinkat =
             Function::new_typed(&mut store, |_a: i32, _b: i32, _c: i32| -> i32 { 0 });
-        env_ns.insert("__syscall_unlinkat", syscall_unlinkat);
+            env_ns.insert("__syscall_unlinkat", syscall_unlinkat);
         let syscall_rmdir = Function::new_typed(&mut store, |_a: i32| -> i32 { 0 });
-        env_ns.insert("__syscall_rmdir", syscall_rmdir);
+            env_ns.insert("__syscall_rmdir", syscall_rmdir);
         let syscall_renameat =
             Function::new_typed(&mut store, |_a: i32, _b: i32, _c: i32, _d: i32| -> i32 {
                 0
             });
-        env_ns.insert("__syscall_renameat", syscall_renameat);
+            env_ns.insert("__syscall_renameat", syscall_renameat);
         let syscall_newselect = Function::new_typed(
             &mut store,
             |_a: i32, _b: i32, _c: i32, _d: i32, _e: i32| -> i32 { 0 },
         );
-        env_ns.insert("__syscall__newselect", syscall_newselect);
+            env_ns.insert("__syscall__newselect", syscall_newselect);
         let setitimer_js = Function::new_typed(&mut store, |_a: i32, _b: f64| -> i32 { 0 });
         env_ns.insert("_setitimer_js", setitimer_js);
         let syscall_symlinkat =
             Function::new_typed(&mut store, |_a: i32, _b: i32, _c: i32| -> i32 { 0 });
-        env_ns.insert("__syscall_symlinkat", syscall_symlinkat);
+            env_ns.insert("__syscall_symlinkat", syscall_symlinkat);
         let get_heap_max = Function::new_typed(&mut store, || -> i32 { i32::MAX });
         env_ns.insert("emscripten_get_heap_max", get_heap_max);
         let em_system = Function::new_typed(&mut store, |_a: i32| -> i32 { 0 });
         env_ns.insert("_emscripten_system", em_system);
         let syscall_truncate64 = Function::new_typed(&mut store, |_a: i32, _b: i64| -> i32 { 0 });
-        env_ns.insert("__syscall_truncate64", syscall_truncate64.clone());
+            env_ns.insert("__syscall_truncate64", syscall_truncate64.clone());
         let em_throw_longjmp = Function::new_typed(&mut store, || {});
         env_ns.insert("_emscripten_throw_longjmp", em_throw_longjmp);
         let syscall_accept4 = Function::new_typed(
             &mut store,
             |_a: i32, _b: i32, _c: i32, _d: i32, _e: i32, _f: i32| -> i32 { 0 },
         );
-        env_ns.insert("__syscall_accept4", syscall_accept4.clone());
+            env_ns.insert("__syscall_accept4", syscall_accept4.clone());
         let syscall_bind = Function::new_typed(
             &mut store,
             |_a: i32, _b: i32, _c: i32, _d: i32, _e: i32, _f: i32| -> i32 { 0 },
         );
-        env_ns.insert("__syscall_bind", syscall_bind);
+            env_ns.insert("__syscall_bind", syscall_bind);
+        }
         // invoke_ij: return i32, args: i64
         let invoke_ij = Function::new_typed_with_env(
             &mut store,
@@ -1683,6 +1690,7 @@ impl PGliteRuntime {
         );
         env_ns.insert("invoke_ij", invoke_ij.clone());
         // Optionally reduce shims to a minimal set to isolate instantiation issues.
+        #[cfg(any())]
         if std::env::var("PGLITE_MIN_ENV").ok().as_deref() == Some("1") {
             let mut minimal = Exports::new();
             minimal.insert(
@@ -1863,7 +1871,7 @@ impl PGliteRuntime {
         shim_imports.register_namespace("env", env_ns);
         import_object.extend(&shim_imports);
         eprintln!("[pglite] shims merged; instantiating");
-        let instance = Instance::new(&mut store, &module, &import_object)?;
+        let mut instance = Instance::new(&mut store, &module, &import_object)?;
         eprintln!("[pglite] instance created");
         {
             eprintln!("[pglite] exports:");
@@ -1871,6 +1879,16 @@ impl PGliteRuntime {
                 eprintln!("  {}", name);
             }
         }
+        // Run Emscripten constructors/startup
+        wasmer_emscripten::run_emscripten_instance(
+            &mut instance,
+            env.clone().into_mut(&mut store),
+            &mut globals,
+            "pglite",
+            vec![],
+            Some("__wasm_call_ctors".to_string()),
+        )
+        .map_err(|e| anyhow!(e.to_string()))?;
 
         // Skip Emscripten constructors; the module exposes direct APIs we call below.
 
