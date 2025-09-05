@@ -10,6 +10,20 @@ use wasmer::{
     Module, Store, Table, TypedFunction, Value,
 };
 use wasmer_emscripten::{generate_emscripten_env, EmEnv, EmscriptenFunctions, EmscriptenGlobals};
+use std::sync::{Arc, Mutex};
+
+// Host-side state for Emscripten shims
+#[derive(Clone)]
+struct InvokeEnv {
+    table: Table,
+    memory: Memory,
+    stack_ptr: Option<Global>,
+    next_fd: i32,
+    pipes: HashMap<i32, i32>, // fd -> peer fd (loopback pipe pair)
+    pipe_bufs: HashMap<i32, VecDeque<u8>>, // readable buffers per fd
+    sockets: HashMap<i32, VecDeque<u8>>, // simple loopback socket queues
+    timers: Arc<Mutex<Vec<(i32, std::time::Instant)>>>,
+}
 
 /// In-memory Postgres backend powered by the PGlite WASM build.
 ///
@@ -23,6 +37,9 @@ pub struct PGliteRuntime {
     _instance: Instance,
     memory: Memory,
     data_dir: PathBuf,
+    channel: i32,
+    invoke_env: FunctionEnv<InvokeEnv>,
+    timers: Arc<Mutex<Vec<(i32, std::time::Instant)>>>,
     interactive_write: TypedFunction<i32, ()>,
     interactive_read: TypedFunction<(), i32>,
     get_channel: TypedFunction<(), i32>,
@@ -30,7 +47,6 @@ pub struct PGliteRuntime {
     get_buffer_size: Option<Function>,
     get_buffer_addr: Option<Function>,
     use_wire: TypedFunction<i32, ()>,
-    backend: TypedFunction<(), ()>,
     shutdown_fn: TypedFunction<(), ()>,
     _table: Table,
 }
@@ -120,16 +136,7 @@ impl PGliteRuntime {
             m_ty.minimum.0, m_ty.maximum
         );
         // Prepare a lightweight env to back some helper shims and WASI
-        #[derive(Clone)]
-        struct InvokeEnv {
-            table: Table,
-            memory: Memory,
-            stack_ptr: Option<Global>,
-            next_fd: i32,
-            pipes: HashMap<i32, i32>, // fd -> peer fd (loopback pipe pair)
-            pipe_bufs: HashMap<i32, VecDeque<u8>>, // readable buffers per fd
-            sockets: HashMap<i32, VecDeque<u8>>, // simple loopback socket queues
-        }
+        let timers: Arc<Mutex<Vec<(i32, std::time::Instant)>>> = Arc::new(Mutex::new(Vec::new()));
         let invoke_env = FunctionEnv::new(
             &mut store,
             InvokeEnv {
@@ -140,6 +147,7 @@ impl PGliteRuntime {
                 pipes: HashMap::new(),
                 pipe_bufs: HashMap::new(),
                 sockets: HashMap::new(),
+                timers: timers.clone(),
             },
         );
 
@@ -403,8 +411,17 @@ impl PGliteRuntime {
         // Provide the imported function table with the minimum size required
         // by the module, if present. We derive the min from the module's
         // declared import type to avoid size mismatches.
-        // Register the Emscripten function table under the expected name.
-        env_ns.insert("__indirect_function_table", globals.table.clone());
+        // Register the Emscripten function table under the expected name, and grow it defensively.
+        let func_table = globals.table.clone();
+        let t_ty = func_table.ty(&store);
+        let cur_min = t_ty.minimum;
+        // Heuristic: ensure the table is generously sized to avoid call_indirect OOB.
+        let target_min: u32 = 65536;
+        if target_min > cur_min {
+            let grow_by = target_min - cur_min;
+            let _ = func_table.grow(&mut store, grow_by, Value::FuncRef(None));
+        }
+        env_ns.insert("__indirect_function_table", func_table.clone());
         let invoke_vji = Function::new_typed_with_env(
             &mut store,
             &invoke_env,
@@ -424,7 +441,8 @@ impl PGliteRuntime {
         );
         env_ns.insert("invoke_vji", invoke_vji);
         // Minimal OS helpers referenced by the JS runtime
-        let os_sched_yield = Function::new_typed(&mut store, || -> i32 { 0 });
+        let os_sched_yield =
+            Function::new_typed(&mut store, || -> i32 { 0 });
         env_ns.insert("os_sched_yield", os_sched_yield);
         let os_system = Function::new_typed(&mut store, |_cmd: i32| -> i32 { 0 });
         env_ns.insert("os_system", os_system);
@@ -1280,8 +1298,10 @@ impl PGliteRuntime {
                 });
             env_ns.insert("__syscall_openat", syscall_openat.clone());
             let tzset_js = Function::new_typed(&mut store, |_a: i32, _b: i32, _c: i32, _d: i32| {});
+            env_ns.insert("__tzset_js", tzset_js.clone());
             env_ns.insert("_tzset_js", tzset_js.clone());
             let abort_js = Function::new_typed(&mut store, || {});
+            env_ns.insert("__abort_js", abort_js.clone());
             env_ns.insert("_abort_js", abort_js.clone());
             let syscall_faccessat =
                 Function::new_typed(&mut store, |_a: i32, _b: i32, _c: i32, _d: i32| -> i32 {
@@ -1298,9 +1318,11 @@ impl PGliteRuntime {
                 Function::new_typed(&mut store, |a: i32, _b: i32, _c: i32| -> i32 { a });
             env_ns.insert("__syscall_dup3", syscall_dup3.clone());
             let dlopen_js = Function::new_typed(&mut store, |_a: i32| -> i32 { 0 });
+            env_ns.insert("__dlopen_js", dlopen_js.clone());
             env_ns.insert("_dlopen_js", dlopen_js.clone());
             let dlsym_js =
                 Function::new_typed(&mut store, |_a: i32, _b: i32, _c: i32| -> i32 { 0 });
+            env_ns.insert("__dlsym_js", dlsym_js.clone());
             env_ns.insert("_dlsym_js", dlsym_js.clone());
             // Implement memcpy using the module memory (defensive bounds checks)
             let memcpy_js = Function::new_typed_with_env(
@@ -1337,16 +1359,19 @@ impl PGliteRuntime {
                     }
                 },
             );
+            env_ns.insert("__emscripten_memcpy_js", memcpy_js.clone());
             env_ns.insert("_emscripten_memcpy_js", memcpy_js.clone());
             let munmap_js = Function::new_typed(
                 &mut store,
                 |_a: i32, _b: i32, _c: i32, _d: i32, _e: i32, _f: i64| -> i32 { 0 },
             );
+            env_ns.insert("__munmap_js", munmap_js.clone());
             env_ns.insert("_munmap_js", munmap_js.clone());
             let mmap_js = Function::new_typed(
                 &mut store,
                 |_a: i32, _b: i32, _c: i32, _d: i32, _e: i64, _f: i32, _g: i32| -> i32 { 0 },
             );
+            env_ns.insert("__mmap_js", mmap_js.clone());
             env_ns.insert("_mmap_js", mmap_js.clone());
             let date_now = Function::new_typed(&mut store, || -> f64 {
                 use std::time::{SystemTime, UNIX_EPOCH};
@@ -1386,13 +1411,16 @@ impl PGliteRuntime {
             });
             env_ns.insert("emscripten_get_now", get_now);
             let em_lookup_name = Function::new_typed(&mut store, |_a: i32| -> i32 { 0 });
+            env_ns.insert("__emscripten_lookup_name", em_lookup_name.clone());
             env_ns.insert("_emscripten_lookup_name", em_lookup_name);
             let syscall_mkdirat =
                 Function::new_typed(&mut store, |_a: i32, _b: i32, _c: i32| -> i32 { 0 });
             env_ns.insert("__syscall_mkdirat", syscall_mkdirat);
             let localtime_js = Function::new_typed(&mut store, |_a: i64, _b: i32| {});
+            env_ns.insert("__localtime_js", localtime_js.clone());
             env_ns.insert("_localtime_js", localtime_js.clone());
             let gmtime_js = Function::new_typed(&mut store, |_a: i64, _b: i32| {});
+            env_ns.insert("__gmtime_js", gmtime_js.clone());
             env_ns.insert("_gmtime_js", gmtime_js.clone());
             let syscall_pipe = Function::new_typed_with_env(
                 &mut store,
@@ -2011,11 +2039,13 @@ impl PGliteRuntime {
                 });
             env_ns.insert("__syscall_fallocate", syscall_fallocate);
             let em_get_progname = Function::new_typed(&mut store, |_a: i32, _b: i32| {});
+            env_ns.insert("__emscripten_get_progname", em_get_progname.clone());
             env_ns.insert("_emscripten_get_progname", em_get_progname);
             let em_keepalive_clear = Function::new_typed(&mut store, || {});
+            env_ns.insert("__emscripten_runtime_keepalive_clear", em_keepalive_clear.clone());
             env_ns.insert("_emscripten_runtime_keepalive_clear", em_keepalive_clear);
             let em_lookup_name = Function::new_typed(&mut store, |_a: i32| -> i32 { 0 });
-            env_ns.insert("_emscripten_lookup_name", em_lookup_name.clone());
+            env_ns.insert("__emscripten_lookup_name", em_lookup_name.clone());
             let emscripten_date_now = Function::new_typed(&mut store, || -> f64 { 0.0 });
             env_ns.insert("emscripten_date_now", emscripten_date_now.clone());
             let emscripten_get_now = Function::new_typed(&mut store, || -> f64 { 0.0 });
@@ -2069,7 +2099,25 @@ impl PGliteRuntime {
                 |_a: i32, _b: i32, _c: i32, _d: i32, _e: i32| -> i32 { 0 },
             );
             env_ns.insert("__syscall__newselect", syscall_newselect);
-            let setitimer_js = Function::new_typed(&mut store, |_a: i32, _b: f64| -> i32 { 0 });
+            // __setitimer_js: schedule a timer id after timeout_ms (double milliseconds)
+            let timers_clone = timers.clone();
+            let setitimer_js = Function::new_typed_with_env(
+                &mut store,
+                &invoke_env,
+                |mut env: FunctionEnvMut<InvokeEnv>, id: i32, timeout_ms: f64| -> i32 {
+                    // Remove existing timer for id
+                    if let Ok(mut q) = env.data().timers.lock() {
+                        q.retain(|(tid, _)| *tid != id);
+                    }
+                    if timeout_ms > 0.0 {
+                        let dur = std::time::Duration::from_millis(timeout_ms.max(0.0) as u64);
+                        let when = std::time::Instant::now() + dur;
+                        if let Ok(mut q) = env.data().timers.lock() { q.push((id, when)); }
+                    }
+                    0
+                },
+            );
+            env_ns.insert("__setitimer_js", setitimer_js.clone());
             env_ns.insert("_setitimer_js", setitimer_js);
             let syscall_symlinkat =
                 Function::new_typed(&mut store, |_a: i32, _b: i32, _c: i32| -> i32 { 0 });
@@ -2077,11 +2125,13 @@ impl PGliteRuntime {
             let get_heap_max = Function::new_typed(&mut store, || -> i32 { i32::MAX });
             env_ns.insert("emscripten_get_heap_max", get_heap_max);
             let em_system = Function::new_typed(&mut store, |_a: i32| -> i32 { 0 });
+            env_ns.insert("__emscripten_system", em_system.clone());
             env_ns.insert("_emscripten_system", em_system);
             let syscall_truncate64 =
                 Function::new_typed(&mut store, |_a: i32, _b: i64| -> i32 { 0 });
             env_ns.insert("__syscall_truncate64", syscall_truncate64.clone());
             let em_throw_longjmp = Function::new_typed(&mut store, || {});
+            env_ns.insert("__emscripten_throw_longjmp", em_throw_longjmp.clone());
             env_ns.insert("_emscripten_throw_longjmp", em_throw_longjmp);
             let syscall_accept4 = Function::new_typed(
                 &mut store,
@@ -2645,18 +2695,28 @@ impl PGliteRuntime {
             .or_else(|_| instance.exports.get_function("_get_buffer_addr"))
             .ok()
             .cloned();
-        let backend = instance
-            .exports
-            .get_typed_function::<(), ()>(&mut store, "pgl_backend")?;
         let shutdown_fn = instance
             .exports
             .get_typed_function::<(), ()>(&mut store, "pgl_shutdown")?;
+
+        // Initialize channel and switch to CMA mode by default to match JS binary path
+        let channel = instance
+            .exports
+            .get_typed_function::<(), i32>(&mut store, "get_channel")?
+            .call(&mut store)?;
+        let use_wire_fn = instance
+            .exports
+            .get_typed_function::<i32, ()>(&mut store, "use_wire")?;
+        let _ = use_wire_fn.call(&mut store, 1);
 
         Ok(Self {
             store,
             _instance: instance,
             memory: globals.memory.clone(),
             data_dir: std::env::temp_dir().join("pglite-db"),
+            channel,
+            invoke_env,
+            timers: timers.clone(),
             interactive_write,
             interactive_read,
             get_channel,
@@ -2664,7 +2724,6 @@ impl PGliteRuntime {
             get_buffer_size,
             get_buffer_addr,
             use_wire,
-            backend,
             shutdown_fn,
             _table: globals.table.clone(),
         })
@@ -2727,79 +2786,75 @@ impl PGliteRuntime {
 
     /// Execute a single protocol message and return the backend response bytes.
     fn exec_protocol(&mut self, message: &[u8]) -> Result<Vec<u8>> {
-        // Prefer CMA when explicitly enabled via env; otherwise use file bridge.
-        if std::env::var("PGLITE_CMA").ok().as_deref() == Some("1") {
-            // Determine channel/port and the base buffer address
-            let ch = self.get_channel.call(&mut self.store)?;
-            if let Some(get_addr) = &self.get_buffer_addr {
-            if let Ok(get_addr_typed) = get_addr.typed::<i32, i32>(&self.store) {
-                let base = get_addr_typed.call(&mut self.store, ch)? as u32;
-                if let Some(get_sz_fn) = &self.get_buffer_size {
-                    if let Ok(get_sz_typed) = get_sz_fn.typed::<i32, i32>(&self.store) {
-                        let sz = get_sz_typed.call(&mut self.store, ch)?;
-                        eprintln!("[pglite] CMA channel={} base=0x{base:x} size={}", ch, sz);
-                    }
-                } else {
-                    eprintln!("[pglite] CMA channel={} base=0x{base:x}", ch);
-                }
-                if base != 0 {
-                    // Enable CMA wire mode
-                    self.use_wire.call(&mut self.store, 1)?;
-                    // Inform runtime of request length
-                    self.interactive_write
-                        .call(&mut self.store, message.len() as i32)?;
-                    // Write request into linear memory at base
-                    {
-                        let view = self.memory.view(&self.store);
-                        let _ = view.write(base as u64, message);
-                    }
-                    // Process one roundtrip
-                    self.interactive_one.call(&mut self.store)?;
-                    // Read response length and bytes starting after request + 2
-                    let rlen = self.interactive_read.call(&mut self.store)? as usize;
-                    // JS runtime reads from offset (len + 2), not adding base
-                    let resp_start = message.len() as u64 + 2;
-                    let mut out = vec![0u8; rlen];
-                    let view = self.memory.view(&self.store);
-                    let _ = view.read(resp_start, &mut out);
-                    return Ok(out);
-                }
-            }
-            }
+        // CMA (binary) path like the JS loader
+        let get_addr = self
+            .get_buffer_addr
+            .as_ref()
+            .ok_or_else(|| anyhow!("get_buffer_addr export not found"))?;
+        let get_addr_typed = get_addr
+            .typed::<i32, i32>(&self.store)
+            .map_err(|_| anyhow!("get_buffer_addr has unexpected type"))?;
+        let ch = self.channel;
+        let base = get_addr_typed.call(&mut self.store, ch)? as u32;
+        if base == 0 {
+            return Err(anyhow!("CMA base is 0"));
         }
-
-        // File-based bridge (mirrors the JS path when not using CMA)
-        self.use_wire.call(&mut self.store, 0)?;
-        self.interactive_write.call(&mut self.store, 0)?;
-        let base_dir = self.data_dir.join("base");
-        let _ = std::fs::create_dir_all(&base_dir);
-        let in_path = base_dir.join(".s.PGSQL.5432.in");
-        let out_path = base_dir.join(".s.PGSQL.5432.out");
-        let lock_in = base_dir.join(".s.PGSQL.5432.lock.in");
-        let _ = std::fs::remove_file(&in_path);
-        let _ = std::fs::remove_file(&out_path);
-        std::fs::write(&lock_in, message)?;
-        // Rename to signal ready input (mirrors JS path)
-        let _ = std::fs::rename(&lock_in, &in_path);
-        // Pump the backend until it writes the reply file
-        // Try a bounded number of iterations to avoid infinite loops
-        for _ in 0..2000 {
+        // Enable CMA wire mode
+        self.use_wire.call(&mut self.store, 1)?;
+        // Inform runtime of request length
+        self.interactive_write
+            .call(&mut self.store, message.len() as i32)?;
+        // Write request into linear memory at base
+        {
+            let view = self.memory.view(&self.store);
+            let _ = view.write(base as u64, message);
+        }
+        // Pump the backend until interactive_read() reports a reply length
+        for _ in 0..4000 {
             self.interactive_one.call(&mut self.store)?;
-            if out_path.exists() {
-                let out = std::fs::read(&out_path).map_err(|e| anyhow!(e))?;
-                let _ = std::fs::remove_file(&out_path);
+            // Drive expired timers
+            if let Ok(timeout_fn) = self
+                ._instance
+                .exports
+                .get_typed_function::<(i32, f64), ()>(&mut self.store, "__emscripten_timeout")
+            {
+                let now_inst = std::time::Instant::now();
+                let now_ms = {
+                    use std::time::{SystemTime, UNIX_EPOCH};
+                    let d = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
+                    d.as_secs_f64() * 1000.0
+                };
+                let mut fired: Vec<i32> = Vec::new();
+                if let Ok(mut q) = self.timers.lock() {
+                    for (id, when) in q.iter() { if *when <= now_inst { fired.push(*id); } }
+                    if !fired.is_empty() { q.retain(|(id, when)| !fired.contains(id) || *when > now_inst); }
+                }
+                for id in fired { let _ = timeout_fn.call(&mut self.store, id, now_ms); }
+            }
+            let rlen = self.interactive_read.call(&mut self.store)? as usize;
+            if rlen > 0 {
+                // JS runtime reads from offset (len + 2), not adding base
+                let resp_start = message.len() as u64 + 2;
+                let mut out = vec![0u8; rlen];
+                let view = self.memory.view(&self.store);
+                let _ = view.read(resp_start, &mut out);
                 return Ok(out);
             }
-            // brief yield to avoid hogging CPU
             std::thread::sleep(std::time::Duration::from_millis(1));
         }
-        Err(anyhow!("pglite: no reply produced on file bridge"))
+        Err(anyhow!("pglite: no CMA reply after pumping"))
     }
 
     /// Perform the initial startup handshake.
     pub fn startup(&mut self) -> Result<()> {
-        // Start the background backend loop like the JS loader
-        self.backend.call(&mut self.store)?;
+        // Start the backend loop like the JS loader; it prepares the REPL protocol machinery.
+        if let Ok(backend) = self
+            ._instance
+            .exports
+            .get_typed_function::<(), ()>(&mut self.store, "pgl_backend")
+        {
+            let _ = backend.call(&mut self.store);
+        }
         let mut buf = BytesMut::new();
         let params = [("user", "postgres"), ("database", "postgres")];
         frontend::startup_message(params.iter().copied(), &mut buf)?;
