@@ -168,11 +168,13 @@ impl PGliteRuntime {
                     &invoke_env,
                     move |mut env: FunctionEnvMut<InvokeEnv>, pcount: i32, psize: i32| -> i32 {
                         let mem = env.data().memory.clone();
-                        let mut store_mut = env.as_store_mut();
+                        let store_mut = env.as_store_mut();
                         let count = env_vars_clone.len() as u32;
                         let total: u32 = env_vars_clone.iter().map(|s| s.len() as u32 + 1).sum();
-                        write_u32(&mem, &mut store_mut, pcount as u32, count);
-                        write_u32(&mem, &mut store_mut, psize as u32, total);
+                        // write_u32 requires &mut StoreMut but does not mutate the binding itself
+                        let mut sm = store_mut;
+                        write_u32(&mem, &mut sm, pcount as u32, count);
+                        write_u32(&mem, &mut sm, psize as u32, total);
                         0
                     },
                 ),
@@ -185,7 +187,7 @@ impl PGliteRuntime {
                     &invoke_env,
                     move |mut env: FunctionEnvMut<InvokeEnv>, penvp: i32, pbuf: i32| -> i32 {
                         let mem = env.data().memory.clone();
-                        let mut store_mut = env.as_store_mut();
+                        let store_mut = env.as_store_mut();
                         let mut buf_off = pbuf as u64;
                         let mut vec_off = penvp as u64;
                         let view = mem.view(&store_mut);
@@ -391,14 +393,9 @@ impl PGliteRuntime {
         // (invoke_env already created)
         let mut env_ns = Exports::new();
         // Important: do not override Emscripten-provided memory or table.
-        // We only provide a mutable `__stack_pointer` Global if the base env
-        // doesn’t expose one (Wasmer `extend` will keep the existing symbol
-        // when present in the base `import_object`).
-        // Provide a mutable stack pointer global expected by Emscripten if missing.
-        // Using a default 0; the module initializes it at runtime.
+        // Provide a mutable __stack_pointer Global expected by Emscripten.
+        // Initialize to 0; the module runtime sets it appropriately.
         let sp = Global::new_mut(&mut store, Value::I32(0));
-        // Link stack pointer global into our helper env
-        invoke_env.as_mut(&mut store).stack_ptr = Some(sp.clone());
         env_ns.insert("__stack_pointer", sp);
         // Provide the imported function table with the minimum size required
         // by the module, if present. We derive the min from the module's
@@ -423,6 +420,11 @@ impl PGliteRuntime {
             },
         );
         env_ns.insert("invoke_vji", invoke_vji);
+        // Minimal OS helpers referenced by the JS runtime
+        let os_sched_yield = Function::new_typed(&mut store, || -> i32 { 0 });
+        env_ns.insert("os_sched_yield", os_sched_yield);
+        let os_system = Function::new_typed(&mut store, |_cmd: i32| -> i32 { 0 });
+        env_ns.insert("os_system", os_system);
         // Basic invoke_* shims used by emscripten
         let invoke_i = Function::new_typed_with_env(
             &mut store,
@@ -1265,7 +1267,6 @@ impl PGliteRuntime {
         // Minimal syscall stubs expected by emscripten
         let syscall_fcntl64 =
             Function::new_typed(&mut store, |_a: i32, _b: i32, _c: i32| -> i32 { 0 });
-        {
             env_ns.insert("__syscall_fcntl64", syscall_fcntl64.clone());
             let syscall_ioctl =
                 Function::new_typed(&mut store, |_a: i32, _b: i32, _c: i32| -> i32 { 0 });
@@ -1898,84 +1899,11 @@ impl PGliteRuntime {
                         },
                     ),
                 );
-                wasi.insert(
-                    "fd_pread",
-                    Function::new_typed_with_env(
-                        &mut store,
-                        &invoke_env,
-                        move |mut env: FunctionEnvMut<InvokeEnv>,
-                              _fd: i32,
-                              _iov: i32,
-                              _ioc: i32,
-                              _off: i64,
-                              nread: i32|
-                              -> i32 {
-                            let mem = env.data().memory.clone();
-                            let mut store_mut = env.as_store_mut();
-                            write_u32(&mem, &mut store_mut, nread as u32, 0);
-                            0
-                        },
-                    ),
-                );
-                wasi.insert(
-                    "fd_pwrite",
-                    Function::new_typed_with_env(
-                        &mut store,
-                        &invoke_env,
-                        move |mut env: FunctionEnvMut<InvokeEnv>,
-                              _fd: i32,
-                              _iov: i32,
-                              _ioc: i32,
-                              _off: i64,
-                              nw: i32|
-                              -> i32 {
-                            let mem = env.data().memory.clone();
-                            let mut store_mut = env.as_store_mut();
-                            write_u32(&mem, &mut store_mut, nw as u32, u32::MAX);
-                            0
-                        },
-                    ),
-                );
-                wasi.insert(
-                    "clock_time_get",
-                    Function::new_typed_with_env(
-                        &mut store,
-                        &invoke_env,
-                        move |mut env: FunctionEnvMut<InvokeEnv>,
-                              _clock: i32,
-                              _prec: i64,
-                              tp: i32|
-                              -> i32 {
-                            if tp != 0 {
-                                let mem = env.data().memory.clone();
-                                let store_mut = env.as_store_mut();
-                                let view = mem.view(&store_mut);
-                                let _ = view.write(tp as u64, &0u64.to_le_bytes());
-                            }
-                            0
-                        },
-                    ),
-                );
-                wasi.insert(
-                    "random_get",
-                    Function::new_typed_with_env(
-                        &mut store,
-                        &invoke_env,
-                        move |mut env: FunctionEnvMut<InvokeEnv>, buf: i32, len: i32| -> i32 {
-                            if len > 0 && buf != 0 {
-                                let mem = env.data().memory.clone();
-                                let store_mut = env.as_store_mut();
-                                let view = mem.view(&store_mut);
-                                let tmp = vec![0u8; len as usize];
-                                let _ = view.write(buf as u64, &tmp);
-                            }
-                            0
-                        },
-                    ),
-                );
-                import_object.register_namespace("wasi_snapshot_preview1", wasi);
-                eprintln!("[pglite] registered wasi_snapshot_preview1 imports");
+                // (omitted) Avoid re-registering WASI here to prevent overwriting earlier entries
             }
+            // Ensure WASI has proc_exit as some earlier registrations can be overwritten
+            // Do not re-register WASI to avoid clobbering the earlier namespace
+
             let syscall_sendto = Function::new_typed_with_env(
                 &mut store,
                 &invoke_env,
@@ -2162,7 +2090,6 @@ impl PGliteRuntime {
                 |_a: i32, _b: i32, _c: i32, _d: i32, _e: i32, _f: i32| -> i32 { 0 },
             );
             env_ns.insert("__syscall_bind", syscall_bind);
-        }
         // invoke_ij: return i32, args: i64
         let invoke_ij = Function::new_typed_with_env(
             &mut store,
@@ -2410,11 +2337,14 @@ impl PGliteRuntime {
             &mut store,
             &invoke_env,
             |mut env: FunctionEnvMut<InvokeEnv>| -> i32 {
-                let spg = env.data().stack_ptr.clone().expect("stack_ptr not set");
-                let mut s = env.as_store_mut();
-                match spg.get(&mut s) {
-                    Value::I32(v) => v,
-                    _ => 0,
+                if let Some(spg) = env.data().stack_ptr.clone() {
+                    let mut s = env.as_store_mut();
+                    match spg.get(&mut s) {
+                        Value::I32(v) => v,
+                        _ => 0,
+                    }
+                } else {
+                    0
                 }
             },
         );
@@ -2422,13 +2352,14 @@ impl PGliteRuntime {
             &mut store,
             &invoke_env,
             |mut env: FunctionEnvMut<InvokeEnv>, sp: i32| {
-                let spg = env.data().stack_ptr.clone().expect("stack_ptr not set");
-                let mut s = env.as_store_mut();
-                spg.set(&mut s, Value::I32(sp)).ok();
+                if let Some(spg) = env.data().stack_ptr.clone() {
+                    let mut s = env.as_store_mut();
+                    let _ = spg.set(&mut s, Value::I32(sp));
+                }
             },
         );
         let set_threw_fn = Function::new_typed(&mut store, |_a: i32, _b: i32| {});
-        // Build minimal EmscriptenFunctions with our stack & dynCall ops
+        // Build EmscriptenFunctions with our stack & dynCall ops
         let mut ef = EmscriptenFunctions::new();
         let ss: wasmer::TypedFunction<(), i32> = stack_save_fn.typed(&store).unwrap();
         let sr: wasmer::TypedFunction<i32, ()> = stack_restore_fn.typed(&store).unwrap();
@@ -2584,11 +2515,13 @@ impl PGliteRuntime {
         let get_buffer_size = instance
             .exports
             .get_function("get_buffer_size")
+            .or_else(|_| instance.exports.get_function("_get_buffer_size"))
             .ok()
             .cloned();
         let get_buffer_addr = instance
             .exports
             .get_function("get_buffer_addr")
+            .or_else(|_| instance.exports.get_function("_get_buffer_addr"))
             .ok()
             .cloned();
         let backend = instance
@@ -2673,7 +2606,48 @@ impl PGliteRuntime {
 
     /// Execute a single protocol message and return the backend response bytes.
     fn exec_protocol(&mut self, message: &[u8]) -> Result<Vec<u8>> {
-        // Use file-based wire protocol (same path as JS)
+        // Prefer CMA when explicitly enabled via env; otherwise use file bridge.
+        if std::env::var("PGLITE_CMA").ok().as_deref() == Some("1") {
+            // Determine channel/port and the base buffer address
+            let ch = self.get_channel.call(&mut self.store)?;
+            if let Some(get_addr) = &self.get_buffer_addr {
+            if let Ok(get_addr_typed) = get_addr.typed::<i32, i32>(&self.store) {
+                let base = get_addr_typed.call(&mut self.store, ch)? as u32;
+                if let Some(get_sz_fn) = &self.get_buffer_size {
+                    if let Ok(get_sz_typed) = get_sz_fn.typed::<i32, i32>(&self.store) {
+                        let sz = get_sz_typed.call(&mut self.store, ch)?;
+                        eprintln!("[pglite] CMA channel={} base=0x{base:x} size={}", ch, sz);
+                    }
+                } else {
+                    eprintln!("[pglite] CMA channel={} base=0x{base:x}", ch);
+                }
+                if base != 0 {
+                    // Enable CMA wire mode
+                    self.use_wire.call(&mut self.store, 1)?;
+                    // Inform runtime of request length
+                    self.interactive_write
+                        .call(&mut self.store, message.len() as i32)?;
+                    // Write request into linear memory at base
+                    {
+                        let view = self.memory.view(&self.store);
+                        let _ = view.write(base as u64, message);
+                    }
+                    // Process one roundtrip
+                    self.interactive_one.call(&mut self.store)?;
+                    // Read response length and bytes starting after request + 2
+                    let rlen = self.interactive_read.call(&mut self.store)? as usize;
+                    // JS runtime reads from offset (len + 2), not adding base
+                    let resp_start = message.len() as u64 + 2;
+                    let mut out = vec![0u8; rlen];
+                    let view = self.memory.view(&self.store);
+                    let _ = view.read(resp_start, &mut out);
+                    return Ok(out);
+                }
+            }
+            }
+        }
+
+        // File-based bridge (mirrors the JS path when not using CMA)
         self.use_wire.call(&mut self.store, 0)?;
         self.interactive_write.call(&mut self.store, 0)?;
         let base_dir = self.data_dir.join("base");
@@ -2693,6 +2667,8 @@ impl PGliteRuntime {
 
     /// Perform the initial startup handshake.
     pub fn startup(&mut self) -> Result<()> {
+        // Start the background backend loop like the JS loader
+        self.backend.call(&mut self.store)?;
         let mut buf = BytesMut::new();
         let params = [("user", "postgres"), ("database", "postgres")];
         frontend::startup_message(params.iter().copied(), &mut buf)?;
