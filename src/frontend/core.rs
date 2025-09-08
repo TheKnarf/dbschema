@@ -523,8 +523,8 @@ pub fn create_eval_context(env: &EnvVars) -> HclContext<'_> {
     }
 
     for (key, value) in &env.locals {
-        // For locals, we'll prefix them to avoid conflicts
-        ctx.declare_var(format!("local_{}", key), value.clone());
+        // Declare locals directly without prefix to match how they're referenced in expressions
+        ctx.declare_var(key.clone(), value.clone());
     }
 
     if let Some((key, value)) = &env.each {
@@ -546,15 +546,22 @@ pub fn evaluate_expr(expr: &hcl::Expression, env: &EnvVars) -> Result<Value> {
         hcl::Expression::FuncCall(_) => {
             // Function calls should be evaluated by HCL's context
             let ctx = create_eval_context(env);
-            // Convert the expression to a string and parse it back as an evaluable expression
-            let expr_str = format!("{}", expr);
-            let body: hcl::Body = hcl::from_str(&format!("temp = {}", expr_str))
-                .map_err(|e| anyhow::anyhow!("Failed to parse expression: {}", e))?;
-            let temp_attr = body.attributes().find(|a| a.key() == "temp").unwrap();
-            let temp_expr = temp_attr.expr();
-            temp_expr
-                .evaluate(&ctx)
-                .map_err(|e| anyhow::anyhow!("Function evaluation error: {}", e))
+            // Try to evaluate the expression directly using HCL's evaluation
+            // This avoids the string conversion and re-parsing that was causing issues
+            match expr.evaluate(&ctx) {
+                Ok(value) => Ok(value),
+                Err(_) => {
+                    // Fallback to the old string conversion approach for compatibility
+                    let expr_str = format!("{}", expr);
+                    let body: hcl::Body = hcl::from_str(&format!("temp = {}", expr_str))
+                        .map_err(|e| anyhow::anyhow!("Failed to parse expression: {}", e))?;
+                    let temp_attr = body.attributes().find(|a| a.key() == "temp").unwrap();
+                    let temp_expr = temp_attr.expr();
+                    temp_expr
+                        .evaluate(&ctx)
+                        .map_err(|e| anyhow::anyhow!("Function evaluation error: {}", e))
+                }
+            }
         }
         hcl::Expression::Traversal(tr) => {
             // Handle our custom traversals (var, local, each)
