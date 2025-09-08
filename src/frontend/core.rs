@@ -370,10 +370,31 @@ fn resolve_traversal_value(tr: &Traversal, env: &EnvVars) -> Result<Value> {
                 other => bail!("unsupported count attribute '{}': expected index", other),
             }
         }
-        _ => bail!(
-            "unsupported traversal root '{}': expected var.*, local.*, module.*, each.*, or count.*",
-            root
-        ),
+        _ => {
+            // Check if the root is a variable in the environment
+            if let Some(mut current) = env.vars.get(root).cloned() {
+                for op in it {
+                    match op {
+                        TraversalOperator::GetAttr(attr) => {
+                            if let Value::Object(map) = current {
+                                current = map.get(attr.as_str()).cloned().ok_or_else(|| {
+                                    anyhow::anyhow!("unknown attribute '{}' on variable '{}'", attr, root)
+                                })?;
+                            } else {
+                                bail!("cannot access attribute '{}' on non-object value for variable '{}'", attr, root);
+                            }
+                        }
+                        _ => bail!("unsupported traversal operator on variable '{}'", root),
+                    }
+                }
+                Ok(current)
+            } else {
+                bail!(
+                    "unsupported traversal root '{}': expected var.*, local.*, module.*, each.*, count.*, or a variable name",
+                    root
+                );
+            }
+        }
     }
 }
 
