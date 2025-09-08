@@ -20,6 +20,8 @@ pub struct Config {
     pub policies: Vec<PolicySpec>,
     pub roles: Vec<RoleSpec>,
     pub grants: Vec<GrantSpec>,
+    pub publications: Vec<PublicationSpec>,
+    pub subscriptions: Vec<SubscriptionSpec>,
     pub tests: Vec<TestSpec>,
     pub outputs: Vec<OutputSpec>,
 }
@@ -212,6 +214,31 @@ pub struct GrantSpec {
     pub function: Option<String>,
     pub database: Option<String>,
     pub sequence: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PublicationSpec {
+    pub name: String,
+    pub alt_name: Option<String>,
+    pub all_tables: bool,
+    pub tables: Vec<PublicationTableSpec>,
+    pub publish: Vec<String>,
+    pub comment: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PublicationTableSpec {
+    pub schema: Option<String>,
+    pub table: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SubscriptionSpec {
+    pub name: String,
+    pub alt_name: Option<String>,
+    pub connection: String,
+    pub publications: Vec<String>,
+    pub comment: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
