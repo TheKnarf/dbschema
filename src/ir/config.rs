@@ -217,7 +217,7 @@ pub struct GrantSpec {
 #[derive(Debug, Clone, Serialize)]
 pub struct TableSpec {
     pub name: String,
-    pub table_name: Option<String>,
+    pub alt_name: Option<String>,
     pub schema: Option<String>,
     pub if_not_exists: bool,
     pub columns: Vec<ColumnSpec>,
@@ -260,6 +260,7 @@ pub struct ColumnSpec {
     pub db_type: Option<String>, // NEW: Database-specific type like "CHAR(32)", "VARCHAR(255)"
     pub lint_ignore: Vec<String>,
     pub comment: Option<String>,
+    pub count: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]

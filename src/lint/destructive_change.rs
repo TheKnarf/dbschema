@@ -53,7 +53,7 @@ mod tests {
     fn detects_cascade_fk() {
         let table = TableSpec {
             name: "t".into(),
-            table_name: None,
+            alt_name: None,
             schema: None,
             if_not_exists: false,
             columns: vec![ColumnSpec {
@@ -64,6 +64,7 @@ mod tests {
                 db_type: None,
                 lint_ignore: vec![],
                 comment: None,
+                count: 1,
             }],
             primary_key: Some(PrimaryKeySpec {
                 name: None,

@@ -267,7 +267,7 @@ impl From<ast::AstTable> for ir::TableSpec {
     fn from(t: ast::AstTable) -> Self {
         Self {
             name: t.name,
-            table_name: t.table_name,
+            alt_name: t.alt_name,
             schema: t.schema,
             if_not_exists: t.if_not_exists,
             columns: t.columns.into_iter().map(Into::into).collect(),
@@ -295,6 +295,7 @@ impl From<ast::AstColumn> for ir::ColumnSpec {
             db_type: c.db_type,
             lint_ignore: c.lint_ignore,
             comment: c.comment,
+            count: c.count,
         }
     }
 }

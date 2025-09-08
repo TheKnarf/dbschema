@@ -726,7 +726,7 @@ impl From<&crate::ir::TableSpec> for Table {
     fn from(t: &crate::ir::TableSpec) -> Self {
         Self {
             schema: t.schema.clone().unwrap_or_else(|| "public".to_string()),
-            name: t.table_name.clone().unwrap_or_else(|| t.name.clone()),
+            name: t.alt_name.clone().unwrap_or_else(|| t.name.clone()),
             if_not_exists: t.if_not_exists,
             columns: t.columns.iter().map(Column::from).collect(),
             primary_key: t.primary_key.as_ref().map(PrimaryKey::from),
@@ -812,7 +812,7 @@ impl Index {
         Self {
             table_schema: table.schema.clone().unwrap_or_else(|| "public".to_string()),
             table_name: table
-                .table_name
+                .alt_name
                 .clone()
                 .unwrap_or_else(|| table.name.clone()),
             name: idx.name.clone(),
@@ -1197,7 +1197,7 @@ mod tests {
     fn partitioned_table_sql() {
         let tspec = crate::ir::TableSpec {
             name: "t".into(),
-            table_name: None,
+            alt_name: None,
             schema: None,
             if_not_exists: false,
             columns: vec![crate::ir::ColumnSpec {
@@ -1208,6 +1208,7 @@ mod tests {
                 db_type: None,
                 lint_ignore: vec![],
                 comment: None,
+                count: 1,
             }],
             primary_key: None,
             indexes: vec![],

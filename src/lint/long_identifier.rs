@@ -89,7 +89,7 @@ mod tests {
         let long_name = "a".repeat(64);
         let table = TableSpec {
             name: long_name.clone(),
-            table_name: None,
+            alt_name: None,
             schema: None,
             if_not_exists: false,
             columns: vec![ColumnSpec {
@@ -100,6 +100,7 @@ mod tests {
                 db_type: None,
                 lint_ignore: vec![],
                 comment: None,
+                count: 1,
             }],
             primary_key: Some(PrimaryKeySpec {
                 name: None,

@@ -638,7 +638,7 @@ mod tests {
             }],
             tables: vec![TableSpec {
                 name: "t".into(),
-                table_name: None,
+                alt_name: None,
                 schema: None,
                 if_not_exists: false,
                 columns: vec![],
@@ -685,7 +685,7 @@ mod tests {
             }],
             tables: vec![TableSpec {
                 name: "t".into(),
-                table_name: None,
+                alt_name: None,
                 schema: None,
                 if_not_exists: false,
                 columns: vec![],

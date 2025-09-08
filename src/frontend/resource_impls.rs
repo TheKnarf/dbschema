@@ -82,7 +82,7 @@ impl ForEachSupport for AstTable {
     type Item = Self;
 
     fn parse_one(name: &str, body: &Body, env: &EnvVars) -> Result<Self::Item> {
-        let table_name = get_attr_string(body, "table_name", env)?;
+        let alt_name = get_attr_string(body, "table_name", env)?;
         let schema = get_attr_string(body, "schema", env)?;
         let if_not_exists = get_attr_bool(body, "if_not_exists", env)?.unwrap_or(true);
         let comment = get_attr_string(body, "comment", env)?;
@@ -108,15 +108,22 @@ impl ForEachSupport for AstTable {
                 Some(attr) => expr_to_string_vec(attr.expr(), env)?,
                 None => Vec::new(),
             };
-            columns.push(AstColumn {
-                name: cname,
-                r#type: ctype,
-                nullable,
-                default,
-                db_type,
-                lint_ignore,
-                comment,
-            });
+            let count = match get_attr_string(cb, "count", env)? {
+                Some(s) => s.parse::<usize>().unwrap_or(1),
+                None => 1,
+            };
+            if count > 0 {
+                columns.push(AstColumn {
+                    name: cname,
+                    r#type: ctype,
+                    nullable,
+                    default,
+                    db_type,
+                    lint_ignore,
+                    comment,
+                    count,
+                });
+            }
         }
 
         // primary_key
@@ -283,7 +290,7 @@ impl ForEachSupport for AstTable {
 
         Ok(AstTable {
             name: name.to_string(),
-            table_name,
+            alt_name,
             schema,
             if_not_exists,
             columns,
@@ -713,6 +720,7 @@ impl ForEachSupport for AstGrant {
     type Item = Self;
 
     fn parse_one(name: &str, body: &Body, env: &EnvVars) -> Result<Self::Item> {
+        let alt_name = get_attr_string(body, "name", env)?;
         let role = get_attr_string(body, "role", env)?.context("grant 'role' is required")?;
         let privileges = match find_attr(body, "privileges") {
             Some(attr) => expr_to_string_vec(attr.expr(), env)?,
@@ -733,6 +741,7 @@ impl ForEachSupport for AstGrant {
         }
         Ok(AstGrant {
             name: name.to_string(),
+            alt_name,
             role,
             privileges,
             schema,

@@ -151,7 +151,7 @@ impl LintCheck for MissingIndex {
             if Self::ignored(&table.lint_ignore, self.name()) {
                 continue;
             }
-            let tbl_name = table.table_name.as_ref().unwrap_or(&table.name);
+            let tbl_name = table.alt_name.as_ref().unwrap_or(&table.name);
             let schema = table.schema.as_deref().unwrap_or("public");
             let has_global = cfg
                 .indexes
@@ -223,7 +223,7 @@ mod tests {
     fn base_table() -> Config {
         let table = TableSpec {
             name: "t".into(),
-            table_name: None,
+            alt_name: None,
             schema: None,
             if_not_exists: false,
             columns: vec![ColumnSpec {
@@ -234,6 +234,7 @@ mod tests {
                 db_type: None,
                 lint_ignore: vec![],
                 comment: None,
+                count: 1,
             }],
             primary_key: Some(PrimaryKeySpec {
                 name: None,

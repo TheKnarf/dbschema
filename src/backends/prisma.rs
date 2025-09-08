@@ -27,7 +27,7 @@ impl Backend for PrismaBackend {
 }
 
 fn model_to_ast(t: &TableSpec, enums: &[EnumSpec], strict: bool) -> Result<ps::Model> {
-    let model_name = to_model_name(&t.name);
+    let model_name = to_model_name(t.alt_name.as_ref().unwrap_or(&t.name));
     let mut model = ps::Model {
         name: model_name,
         fields: Vec::new(),
@@ -73,7 +73,7 @@ fn model_to_ast(t: &TableSpec, enums: &[EnumSpec], strict: bool) -> Result<ps::M
         }
     }
 
-    if let Some(table_name) = &t.table_name {
+    if let Some(table_name) = &t.alt_name {
         model
             .attributes
             .push(ps::BlockAttribute::Map(table_name.clone()));

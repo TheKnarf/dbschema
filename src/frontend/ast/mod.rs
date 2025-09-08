@@ -204,6 +204,7 @@ pub struct AstRole {
 #[derive(Debug, Clone)]
 pub struct AstGrant {
     pub name: String,
+    pub alt_name: Option<String>,
     pub role: String,
     pub privileges: Vec<String>,
     pub schema: Option<String>,
@@ -216,7 +217,7 @@ pub struct AstGrant {
 #[derive(Debug, Clone)]
 pub struct AstTable {
     pub name: String,
-    pub table_name: Option<String>,
+    pub alt_name: Option<String>,
     pub schema: Option<String>,
     pub if_not_exists: bool,
     pub columns: Vec<AstColumn>,
@@ -259,6 +260,7 @@ pub struct AstColumn {
     pub db_type: Option<String>,
     pub lint_ignore: Vec<String>,
     pub comment: Option<String>,
+    pub count: usize,
 }
 
 #[derive(Debug, Clone)]

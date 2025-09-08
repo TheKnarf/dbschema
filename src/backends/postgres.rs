@@ -114,7 +114,7 @@ fn to_sql(cfg: &Config) -> Result<String> {
     for t in &cfg.tables {
         out.push_str(&format!("{}\n\n", pg::Table::from(t)));
         let schema = t.schema.clone().unwrap_or_else(|| "public".to_string());
-        let table_name = t.table_name.clone().unwrap_or_else(|| t.name.clone());
+        let table_name = t.alt_name.clone().unwrap_or_else(|| t.name.clone());
         for idx in &t.indexes {
             out.push_str(&format!("{}\n\n", pg::Index::from_specs(t, idx)));
         }
