@@ -49,39 +49,7 @@ Prisma ORM support custom migrations, so you can use this tool to generate an SQ
 cargo build --release
 ```
 
-### Optional: PGlite in-memory backend
 
-The PGlite runtime enables running tests without a real Postgres server. It is
-gated behind the `pglite` feature and requires installing the WebAssembly
-package:
-
-```bash
-just pglite-assets        # install @electric-sql/pglite into node_modules
-cargo build --features pglite
-```
-
-Run tests with the PGlite backend:
-
-```bash
-cargo test --features pglite
-```
-
-Start an interactive PGlite shell:
-
-```bash
-./target/debug/dbschema pglite
-```
-
-Run HCL tests with PGlite either by passing the backend on the command line or
-through `dbschema.toml`:
-
-```bash
-./target/debug/dbschema --input examples/table.hcl test --backend pglite
-
-# dbschema.toml
-[settings]
-test_backend = "pglite"
-```
 
 ## Usage
 
@@ -197,7 +165,7 @@ vars = { generate_client = "true" }
 - `input`: The root HCL file to use. Defaults to `main.hcl`.
 - `var_files`: A list of variable files to load.
 - `env`: A map of environment variables to set before running a target.
-- `test_backend`: Optional default backend for the `test` command (`postgres` or `pglite`).
+- `test_backend`: Optional default backend for the `test` command (`postgres`).
 - `test_dsn`: Optional default database connection string for tests when using Postgres.
 
 ### `[[targets]]` block

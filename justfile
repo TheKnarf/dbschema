@@ -1,9 +1,5 @@
 set shell := ["bash", "-cu"]
 
-# Download the PGlite runtime artifacts via the crate's helper
-pglite-assets:
-  just --justfile crates/pglite/justfile pglite-assets
-
 # Format HCL files in place
 fmt *paths:
   cargo run -- fmt {{paths}}

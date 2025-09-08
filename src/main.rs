@@ -7,12 +7,8 @@ use dbschema::{
     config::{self, Config as DbschemaConfig, ResourceKind, TargetConfig},
     load_config, validate, Loader, OutputSpec,
 };
-#[cfg(feature = "pglite")]
-use fallible_iterator::FallibleIterator;
 use log::{error, info};
 use postgres::{Client, NoTls};
-#[cfg(feature = "pglite")]
-use postgres_protocol::message::backend;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -65,8 +61,6 @@ struct Cli {
 #[derive(Copy, Clone, ValueEnum)]
 enum TestBackendKind {
     Postgres,
-    #[cfg(feature = "pglite")]
-    Pglite,
 }
 
 #[derive(Subcommand)]
@@ -105,7 +99,7 @@ enum Commands {
         /// Database connection string (falls back to env DATABASE_URL)
         #[arg(long)]
         dsn: Option<String>,
-        /// Test backend: postgres or pglite
+        /// Test backend: postgres
         #[arg(long, value_enum, default_value = "postgres")]
         backend: TestBackendKind,
         /// Names of tests to run (repeatable). If omitted, runs all.
@@ -124,9 +118,7 @@ enum Commands {
         #[arg(long)]
         verbose: bool,
     },
-    /// Start an in-memory PGlite database REPL
-    #[cfg(feature = "pglite")]
-    Pglite {},
+
 }
 
 fn main() -> Result<()> {
@@ -344,8 +336,6 @@ fn main() -> Result<()> {
                         if let Some(be) = &dbschema_config.settings.test_backend {
                             backend_choice = match be.as_str() {
                                 "postgres" => TestBackendKind::Postgres,
-                                #[cfg(feature = "pglite")]
-                                "pglite" => TestBackendKind::Pglite,
                                 other => return Err(anyhow!("unknown test backend '{other}'")),
                             };
                         }
@@ -373,13 +363,9 @@ fn main() -> Result<()> {
                         .with_context(|| format!("loading root HCL {}", cli.input.display()))?;
                     (dsn, backend, cfg)
                 };
-                let mut dsn = match backend {
-                    TestBackendKind::Postgres => dsn
-                        .or_else(|| std::env::var("DATABASE_URL").ok())
-                        .ok_or_else(|| anyhow!("missing DSN: pass --dsn or set DATABASE_URL"))?,
-                    #[cfg(feature = "pglite")]
-                    TestBackendKind::Pglite => dsn.unwrap_or_else(|| "pglite".to_string()),
-                };
+                let mut dsn = dsn
+                    .or_else(|| std::env::var("DATABASE_URL").ok())
+                    .ok_or_else(|| anyhow!("missing DSN: pass --dsn or set DATABASE_URL"))?;
 
                 // Optionally create and later drop a temporary database for Postgres
                 if let (TestBackendKind::Postgres, Some(dbname)) = (backend, create_db.clone()) {
@@ -423,36 +409,17 @@ fn main() -> Result<()> {
                                 .batch_execute(&artifact)
                                 .with_context(|| "applying generated migration to database")?;
                         }
-                        #[cfg(feature = "pglite")]
-                        TestBackendKind::Pglite => {
-                            info!("--apply ignored for pglite backend");
-                        }
+
                     }
                 }
 
                 dbschema::test_runner::set_verbose(verbose);
-                let runner: Box<dyn TestBackend> = match backend {
-                    TestBackendKind::Postgres => {
-                        Box::new(dbschema::test_runner::postgres::PostgresTestBackend)
-                    }
-                    #[cfg(feature = "pglite")]
-                    TestBackendKind::Pglite => {
-                        Box::new(dbschema::test_runner::pglite::PGliteTestBackend)
-                    }
-                };
+                let runner: Box<dyn TestBackend> = Box::new(dbschema::test_runner::postgres::PostgresTestBackend);
                 let only: Option<std::collections::HashSet<String>> = if names.is_empty() {
                     None
                 } else {
                     Some(names.into_iter().collect())
                 };
-                #[cfg(feature = "pglite")]
-                let summary = if matches!(backend, TestBackendKind::Pglite) {
-                    tokio::runtime::Runtime::new()?
-                        .block_on(async { runner.run(&config, &dsn, only.as_ref()) })?
-                } else {
-                    runner.run(&config, &dsn, only.as_ref())?
-                };
-                #[cfg(not(feature = "pglite"))]
                 let summary = runner.run(&config, &dsn, only.as_ref())?;
                 for r in summary.results {
                     if r.passed {
@@ -494,57 +461,7 @@ fn main() -> Result<()> {
                     }
                 }
             }
-            #[cfg(feature = "pglite")]
-            Commands::Pglite {} => {
-                use std::io::{self, Write};
-                eprintln!("[dbschema] starting pglite repl (sync)");
-                let mut pg = dbschema::test_runner::pglite::PGliteRuntime::new()?;
-                eprintln!("[dbschema] calling startup");
-                pg.startup()?;
-                let stdin = io::stdin();
-                let mut line = String::new();
-                loop {
-                    print!("pglite=> ");
-                    io::stdout().flush()?;
-                    line.clear();
-                    if stdin.read_line(&mut line)? == 0 {
-                        break;
-                    }
-                    let sql = line.trim();
-                    if sql.eq_ignore_ascii_case("\\q") {
-                        break;
-                    }
-                    match pg.simple_query(sql) {
-                        Ok(msgs) => {
-                            for m in msgs {
-                                if let backend::Message::DataRow(row) = m {
-                                    let buf = row.buffer();
-                                    let mut fields = row.ranges();
-                                    let mut out = Vec::new();
-                                    while let Some(res) = fields.next()? {
-                                        match res {
-                                            Some(range) => {
-                                                let val = &buf[range];
-                                                out.push(String::from_utf8_lossy(val).to_string());
-                                            }
-                                            None => out.push("NULL".into()),
-                                        }
-                                    }
-                                    println!("{}", out.join(" | "));
-                                } else if let backend::Message::CommandComplete(c) = m {
-                                    if let Ok(tag) = c.tag() {
-                                        println!("{}", tag);
-                                    } else {
-                                        println!("<command complete>");
-                                    }
-                                }
-                            }
-                        }
-                        Err(e) => eprintln!("error: {e}"),
-                    }
-                }
-                pg.shutdown()?;
-            }
+
         }
     }
 
