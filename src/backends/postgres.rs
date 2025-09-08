@@ -290,5 +290,29 @@ fn to_sql(cfg: &Config) -> Result<String> {
         out.push_str(&format!("{}\n\n", pg::Grant::from(g)));
     }
 
+    for p in &cfg.publications {
+        out.push_str(&format!("{}\n\n", pg::Publication::from(p)));
+        if let Some(comment) = &p.comment {
+            let name = p.alt_name.clone().unwrap_or_else(|| p.name.clone());
+            out.push_str(&format!(
+                "COMMENT ON PUBLICATION {} IS {};\n\n",
+                pg::ident(&name),
+                pg::literal(comment)
+            ));
+        }
+    }
+
+    for s in &cfg.subscriptions {
+        out.push_str(&format!("{}\n\n", pg::Subscription::from(s)));
+        if let Some(comment) = &s.comment {
+            let name = s.alt_name.clone().unwrap_or_else(|| s.name.clone());
+            out.push_str(&format!(
+                "COMMENT ON SUBSCRIPTION {} IS {};\n\n",
+                pg::ident(&name),
+                pg::literal(comment)
+            ));
+        }
+    }
+
     Ok(out)
 }

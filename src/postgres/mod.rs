@@ -1124,6 +1124,107 @@ impl From<&crate::ir::GrantSpec> for Grant {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct PublicationTable {
+    pub schema: Option<String>,
+    pub table: String,
+}
+
+impl From<&crate::ir::PublicationTableSpec> for PublicationTable {
+    fn from(t: &crate::ir::PublicationTableSpec) -> Self {
+        Self {
+            schema: t.schema.clone(),
+            table: t.table.clone(),
+        }
+    }
+}
+
+impl fmt::Display for PublicationTable {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(schema) = &self.schema {
+            write!(f, "{}.{}", ident(schema), ident(&self.table))
+        } else {
+            write!(f, "{}", ident(&self.table))
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Publication {
+    pub name: String,
+    pub all_tables: bool,
+    pub tables: Vec<PublicationTable>,
+    pub publish: Vec<String>,
+}
+
+impl From<&crate::ir::PublicationSpec> for Publication {
+    fn from(p: &crate::ir::PublicationSpec) -> Self {
+        Self {
+            name: p.alt_name.clone().unwrap_or_else(|| p.name.clone()),
+            all_tables: p.all_tables,
+            tables: p.tables.iter().map(Into::into).collect(),
+            publish: p.publish.clone(),
+        }
+    }
+}
+
+impl fmt::Display for Publication {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "CREATE PUBLICATION {}", ident(&self.name))?;
+        if self.all_tables {
+            write!(f, " FOR ALL TABLES")?;
+        } else if !self.tables.is_empty() {
+            let tables = self
+                .tables
+                .iter()
+                .map(|t| t.to_string())
+                .collect::<Vec<_>>()
+                .join(", ");
+            write!(f, " FOR TABLE {}", tables)?;
+        }
+        if !self.publish.is_empty() {
+            let publish = self.publish.join(", ");
+            write!(f, " WITH (publish = '{}')", publish)?;
+        }
+        write!(f, ";")
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Subscription {
+    pub name: String,
+    pub connection: String,
+    pub publications: Vec<String>,
+}
+
+impl From<&crate::ir::SubscriptionSpec> for Subscription {
+    fn from(s: &crate::ir::SubscriptionSpec) -> Self {
+        Self {
+            name: s.alt_name.clone().unwrap_or_else(|| s.name.clone()),
+            connection: s.connection.clone(),
+            publications: s.publications.clone(),
+        }
+    }
+}
+
+impl fmt::Display for Subscription {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let publications = self
+            .publications
+            .iter()
+            .map(|p| ident(p))
+            .collect::<Vec<_>>()
+            .join(", ");
+        write!(
+            f,
+            "CREATE SUBSCRIPTION {} CONNECTION {} PUBLICATION {};",
+            ident(&self.name),
+            literal(&self.connection),
+            publications
+        )
+    }
+}
+
 impl fmt::Display for Grant {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let privs = if self.privileges.len() == 1 && self.privileges[0].eq_ignore_ascii_case("all")
@@ -1284,6 +1385,42 @@ mod tests {
         assert_eq!(
             grant_seq.to_string(),
             "GRANT USAGE ON SEQUENCE \"public\".\"s\" TO \"r\";"
+        );
+    }
+
+    #[test]
+    fn publication_sql_with_tables() {
+        let pspec = crate::ir::PublicationSpec {
+            name: "p".into(),
+            alt_name: None,
+            all_tables: false,
+            tables: vec![crate::ir::PublicationTableSpec {
+                schema: Some("public".into()),
+                table: "t".into(),
+            }],
+            publish: vec!["insert".into(), "update".into()],
+            comment: None,
+        };
+        let publication = Publication::from(&pspec);
+        assert_eq!(
+            publication.to_string(),
+            "CREATE PUBLICATION \"p\" FOR TABLE \"public\".\"t\" WITH (publish = 'insert, update');",
+        );
+    }
+
+    #[test]
+    fn subscription_sql_basic() {
+        let sspec = crate::ir::SubscriptionSpec {
+            name: "s".into(),
+            alt_name: None,
+            connection: "host=localhost".into(),
+            publications: vec!["p".into()],
+            comment: None,
+        };
+        let subscription = Subscription::from(&sspec);
+        assert_eq!(
+            subscription.to_string(),
+            "CREATE SUBSCRIPTION \"s\" CONNECTION 'host=localhost' PUBLICATION \"p\";",
         );
     }
 }

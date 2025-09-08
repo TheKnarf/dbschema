@@ -20,6 +20,8 @@ pub fn lower_config(ast: ast::Config) -> ir::Config {
         policies: ast.policies.into_iter().map(Into::into).collect(),
         roles: ast.roles.into_iter().map(Into::into).collect(),
         grants: ast.grants.into_iter().map(Into::into).collect(),
+        publications: vec![],
+        subscriptions: vec![],
         tests: ast.tests.into_iter().map(Into::into).collect(),
         outputs: ast.outputs.into_iter().map(Into::into).collect(),
     }
