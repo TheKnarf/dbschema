@@ -86,6 +86,7 @@ mod tests {
             back_references: vec![],
             lint_ignore: vec![],
             comment: None,
+            map: None,
         };
         let cfg = Config {
             tables: vec![table],

@@ -86,6 +86,7 @@ impl ForEachSupport for AstTable {
         let schema = get_attr_string(body, "schema", env)?;
         let if_not_exists = get_attr_bool(body, "if_not_exists", env)?.unwrap_or(true);
         let comment = get_attr_string(body, "comment", env)?;
+        let map = get_attr_string(body, "map", env)?;
 
         // columns
         let mut columns = Vec::new();
@@ -295,6 +296,7 @@ impl ForEachSupport for AstTable {
             back_references: Vec::new(),
             lint_ignore,
             comment,
+            map,
         })
     }
 

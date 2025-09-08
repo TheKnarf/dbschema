@@ -1224,6 +1224,7 @@ mod tests {
             back_references: vec![],
             lint_ignore: vec![],
             comment: None,
+            map: None,
         };
         let table = Table::from(&tspec);
         let sql = table.to_string();

@@ -77,6 +77,10 @@ fn model_to_ast(t: &TableSpec, enums: &[EnumSpec], strict: bool) -> Result<ps::M
         model
             .attributes
             .push(ps::BlockAttribute::Map(table_name.clone()));
+    } else if let Some(map) = &t.map {
+        model
+            .attributes
+            .push(ps::BlockAttribute::Map(map.clone()));
     }
 
     Ok(model)
@@ -173,7 +177,7 @@ fn column_to_fields(
             on_update: fk.on_update.as_ref().map(|s| map_fk_action(s).to_string()),
         };
         fields.push(ps::Field {
-            name: fk.ref_table.clone(),
+            name: fk.name.clone().unwrap_or(fk.ref_table.clone()),
             r#type: ps::Type {
                 name: to_model_name(&fk.ref_table),
                 optional: c.nullable,
@@ -251,9 +255,21 @@ fn prisma_type(pg: &str, db_specific: Option<&str>) -> (String, Option<String>) 
         s if s.contains("serial") => ("Int".into(), None),
         "int" | "integer" | "int4" => ("Int".into(), Some("@db.Integer".into())),
         "bigint" | "int8" | "bigserial" => ("BigInt".into(), Some("@db.BigInt".into())),
-        s if s.starts_with("varchar") || s.starts_with("char") || s == "text" || s == "citext" => {
-            ("String".into(), None)
+        s if s.starts_with("varchar") => {
+            if let Some(len) = parse_length(s, "varchar(") {
+                ("String".into(), Some(format!("@db.VarChar({})", len)))
+            } else {
+                ("String".into(), None)
+            }
         }
+        s if s.starts_with("char") => {
+            if let Some(len) = parse_length(s, "char(") {
+                ("String".into(), Some(format!("@db.Char({})", len)))
+            } else {
+                ("String".into(), None)
+            }
+        }
+        "text" | "citext" => ("String".into(), None),
         "uuid" => ("String".into(), Some("@db.Uuid".into())),
         "bool" | "boolean" => ("Boolean".into(), None),
         s if s.starts_with("timestamp with time zone") || s == "timestamptz" => {
@@ -268,6 +284,20 @@ fn prisma_type(pg: &str, db_specific: Option<&str>) -> (String, Option<String>) 
         "float4" | "real" | "float8" => ("Float".into(), None),
         s if s.contains("double") => ("Float".into(), None),
         _ => (format!("Unsupported(\"{}\")", pg), None),
+    }
+}
+
+fn parse_length(s: &str, prefix: &str) -> Option<String> {
+    if let Some(start) = s.find(prefix) {
+        let rest = &s[start + prefix.len()..];
+        if let Some(end) = rest.find(')') {
+            let len = &rest[..end];
+            Some(len.to_string())
+        } else {
+            None
+        }
+    } else {
+        None
     }
 }
 

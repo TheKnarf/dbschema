@@ -230,6 +230,7 @@ pub struct TableSpec {
     pub back_references: Vec<BackReferenceSpec>,
     pub lint_ignore: Vec<String>,
     pub comment: Option<String>,
+    pub map: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

@@ -280,6 +280,7 @@ impl From<ast::AstTable> for ir::TableSpec {
             back_references: t.back_references.into_iter().map(Into::into).collect(),
             lint_ignore: t.lint_ignore,
             comment: t.comment,
+            map: t.map,
         }
     }
 }
