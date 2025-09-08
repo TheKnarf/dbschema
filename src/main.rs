@@ -46,9 +46,9 @@ struct Cli {
     #[arg(long)]
     config: bool,
 
-    /// Target name to run (when using config file)
+    /// Target name(s) to run (when using config file). Can specify multiple.
     #[arg(long)]
-    target: Option<String>,
+    target: Vec<String>,
 
     /// Enable strict mode (errors on undefined enums)
     #[arg(long)]
@@ -131,14 +131,21 @@ fn main() -> Result<()> {
             .with_context(|| "failed to load dbschema.toml")?
             .ok_or_else(|| anyhow!("dbschema.toml not found"))?;
 
-        let targets_to_run = if let Some(name) = cli.target {
-            vec![dbschema_config
-                .targets
+        let targets_to_run = if !cli.target.is_empty() {
+            // Multiple targets specified
+            cli.target
                 .iter()
-                .find(|t| t.name == name)
-                .ok_or_else(|| anyhow!("target '{}' not found in dbschema.toml", name))?
-                .clone()]
+                .map(|name| {
+                    dbschema_config
+                        .targets
+                        .iter()
+                        .find(|t| t.name == *name)
+                        .ok_or_else(|| anyhow!("target '{}' not found in dbschema.toml", name))
+                        .cloned()
+                })
+                .collect::<Result<Vec<_>>>()?
         } else {
+            // No targets specified, run all
             dbschema_config.targets.clone()
         };
 
