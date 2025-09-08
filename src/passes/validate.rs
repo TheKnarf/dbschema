@@ -11,7 +11,8 @@ pub fn validate(cfg: &Config, strict: bool) -> Result<()> {
         );
         let found = cfg.functions.iter().any(|f| {
             let fs = f.schema.as_deref().unwrap_or("public");
-            f.name == t.function && (t.function_schema.as_deref().unwrap_or(fs) == fs)
+            let effective_name = f.alt_name.as_deref().unwrap_or(&f.name);
+            effective_name == t.function && (t.function_schema.as_deref().unwrap_or(fs) == fs)
         });
         if !found {
             bail!(
@@ -29,7 +30,8 @@ pub fn validate(cfg: &Config, strict: bool) -> Result<()> {
         );
         let found = cfg.functions.iter().any(|f| {
             let fs = f.schema.as_deref().unwrap_or("public");
-            f.name == t.function && (t.function_schema.as_deref().unwrap_or(fs) == fs)
+            let effective_name = f.alt_name.as_deref().unwrap_or(&f.name);
+            effective_name == t.function && (t.function_schema.as_deref().unwrap_or(fs) == fs)
         });
         if !found {
             bail!(
