@@ -1,4 +1,4 @@
-use super::Backend;
+use super::{Backend, CommentStyle, generate_header_comment};
 use crate::ir::{ColumnSpec, Config, EnumSpec, TableSpec};
 use crate::passes::validate::{find_enum_for_type, is_likely_enum};
 use crate::prisma as ps;
@@ -15,6 +15,7 @@ impl Backend for PrismaBackend {
         "prisma"
     }
     fn generate(&self, cfg: &Config, strict: bool) -> Result<String> {
+        let header = generate_header_comment("Prisma", CommentStyle::Prisma);
         let mut schema = ps::Schema::default();
         for e in &cfg.enums {
             schema.enums.push(enum_to_ast(e));
@@ -22,7 +23,7 @@ impl Backend for PrismaBackend {
         for t in &cfg.tables {
             schema.models.push(model_to_ast(t, &cfg.enums, strict)?);
         }
-        Ok(schema.to_string())
+        Ok(format!("{}{}", header, schema.to_string()))
     }
 }
 

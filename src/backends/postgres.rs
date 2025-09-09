@@ -1,4 +1,4 @@
-use super::Backend;
+use super::{Backend, CommentStyle, generate_header_comment};
 use crate::{ir::*, postgres as pg};
 use anyhow::Result;
 
@@ -17,7 +17,8 @@ impl Backend for PostgresBackend {
 }
 
 fn to_sql(cfg: &Config) -> Result<String> {
-    let mut out = String::new();
+    let header = generate_header_comment("PostgreSQL", CommentStyle::Sql);
+    let mut out = header;
 
     for r in &cfg.roles {
         out.push_str(&format!("{}\n\n", pg::Role::from(r)));
