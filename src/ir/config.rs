@@ -21,6 +21,9 @@ pub struct Config {
     pub policies: Vec<PolicySpec>,
     pub roles: Vec<RoleSpec>,
     pub grants: Vec<GrantSpec>,
+    pub foreign_data_wrappers: Vec<ForeignDataWrapperSpec>,
+    pub foreign_servers: Vec<ForeignServerSpec>,
+    pub foreign_tables: Vec<ForeignTableSpec>,
     pub publications: Vec<PublicationSpec>,
     pub subscriptions: Vec<SubscriptionSpec>,
     pub tests: Vec<TestSpec>,
@@ -231,6 +234,38 @@ pub struct GrantSpec {
     pub function: Option<String>,
     pub database: Option<String>,
     pub sequence: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ForeignDataWrapperSpec {
+    pub name: String,
+    pub alt_name: Option<String>,
+    pub handler: Option<String>,
+    pub validator: Option<String>,
+    pub options: Vec<String>,
+    pub comment: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ForeignServerSpec {
+    pub name: String,
+    pub alt_name: Option<String>,
+    pub wrapper: String,
+    pub r#type: Option<String>,
+    pub version: Option<String>,
+    pub options: Vec<String>,
+    pub comment: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ForeignTableSpec {
+    pub name: String,
+    pub alt_name: Option<String>,
+    pub schema: Option<String>,
+    pub server: String,
+    pub columns: Vec<ColumnSpec>,
+    pub options: Vec<String>,
+    pub comment: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

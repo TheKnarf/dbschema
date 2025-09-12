@@ -1306,6 +1306,63 @@ fn load_file(
         )?;
     }
 
+    for blk in body.blocks().filter(|b| b.identifier() == "foreign_data_wrapper") {
+        let name = blk
+            .labels()
+            .get(0)
+            .ok_or_else(|| anyhow::anyhow!("foreign_data_wrapper block missing name label"))?
+            .as_str()
+            .to_string();
+        let for_each_expr = find_attr(blk.body(), "for_each");
+        let count_expr = find_attr(blk.body(), "count");
+        execute_for_each::<ast::AstForeignDataWrapper>(
+            &name,
+            blk.body(),
+            &env,
+            &mut cfg,
+            for_each_expr,
+            count_expr,
+        )?;
+    }
+
+    for blk in body.blocks().filter(|b| b.identifier() == "foreign_server") {
+        let name = blk
+            .labels()
+            .get(0)
+            .ok_or_else(|| anyhow::anyhow!("foreign_server block missing name label"))?
+            .as_str()
+            .to_string();
+        let for_each_expr = find_attr(blk.body(), "for_each");
+        let count_expr = find_attr(blk.body(), "count");
+        execute_for_each::<ast::AstForeignServer>(
+            &name,
+            blk.body(),
+            &env,
+            &mut cfg,
+            for_each_expr,
+            count_expr,
+        )?;
+    }
+
+    for blk in body.blocks().filter(|b| b.identifier() == "foreign_table") {
+        let name = blk
+            .labels()
+            .get(0)
+            .ok_or_else(|| anyhow::anyhow!("foreign_table block missing name label"))?
+            .as_str()
+            .to_string();
+        let for_each_expr = find_attr(blk.body(), "for_each");
+        let count_expr = find_attr(blk.body(), "count");
+        execute_for_each::<ast::AstForeignTable>(
+            &name,
+            blk.body(),
+            &env,
+            &mut cfg,
+            for_each_expr,
+            count_expr,
+        )?;
+    }
+
     for blk in body.blocks().filter(|b| b.identifier() == "role") {
         let name = blk
             .labels()
