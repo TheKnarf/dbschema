@@ -7,6 +7,7 @@ pub struct Config {
     pub triggers: Vec<AstTrigger>,
     pub event_triggers: Vec<AstEventTrigger>,
     pub extensions: Vec<AstExtension>,
+    pub collations: Vec<AstCollation>,
     pub sequences: Vec<AstSequence>,
     pub schemas: Vec<AstSchema>,
     pub enums: Vec<AstEnum>,
@@ -86,6 +87,22 @@ pub struct AstExtension {
     pub alt_name: Option<String>,
     pub if_not_exists: bool,
     pub schema: Option<String>,
+    pub version: Option<String>,
+    pub comment: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AstCollation {
+    pub name: String,
+    pub alt_name: Option<String>,
+    pub schema: Option<String>,
+    pub if_not_exists: bool,
+    pub from: Option<String>,
+    pub locale: Option<String>,
+    pub lc_collate: Option<String>,
+    pub lc_ctype: Option<String>,
+    pub provider: Option<String>,
+    pub deterministic: Option<bool>,
     pub version: Option<String>,
     pub comment: Option<String>,
 }

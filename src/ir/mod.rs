@@ -3,6 +3,7 @@ pub mod config;
 pub use config::{
     AggregateSpec, BackReferenceSpec, CheckSpec, ColumnSpec, CompositeTypeFieldSpec,
     CompositeTypeSpec, Config, DomainSpec, EnumSpec, EventTriggerSpec, ExtensionSpec,
+    CollationSpec,
     ForeignKeySpec, FunctionSpec, GrantSpec, IndexSpec, MaterializedViewSpec, OutputSpec,
     PartitionBySpec, PartitionSpec, PolicySpec, PrimaryKeySpec, PublicationSpec,
     PublicationTableSpec, RoleSpec, SchemaSpec, SequenceSpec, StandaloneIndexSpec,

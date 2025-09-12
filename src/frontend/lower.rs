@@ -8,6 +8,7 @@ pub fn lower_config(ast: ast::Config) -> ir::Config {
         triggers: ast.triggers.into_iter().map(Into::into).collect(),
         event_triggers: ast.event_triggers.into_iter().map(Into::into).collect(),
         extensions: ast.extensions.into_iter().map(Into::into).collect(),
+        collations: ast.collations.into_iter().map(Into::into).collect(),
         sequences: ast.sequences.into_iter().map(Into::into).collect(),
         schemas: ast.schemas.into_iter().map(Into::into).collect(),
         enums: ast.enums.into_iter().map(Into::into).collect(),
@@ -105,6 +106,25 @@ impl From<ast::AstExtension> for ir::ExtensionSpec {
             schema: e.schema,
             version: e.version,
             comment: e.comment,
+        }
+    }
+}
+
+impl From<ast::AstCollation> for ir::CollationSpec {
+    fn from(c: ast::AstCollation) -> Self {
+        Self {
+            name: c.name,
+            alt_name: c.alt_name,
+            schema: c.schema,
+            if_not_exists: c.if_not_exists,
+            from: c.from,
+            locale: c.locale,
+            lc_collate: c.lc_collate,
+            lc_ctype: c.lc_ctype,
+            provider: c.provider,
+            deterministic: c.deterministic,
+            version: c.version,
+            comment: c.comment,
         }
     }
 }

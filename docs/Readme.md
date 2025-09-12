@@ -31,6 +31,7 @@ We aim to support all major PostgreSQL features. See the reference docs:
 - [Trigger](postgres/trigger.md)
 - [Event Trigger](postgres/event_trigger.md)
 - [Extension](postgres/extension.md)
+- [Collation](postgres/collation.md)
 - [Policy](postgres/policy.md)
 - [Role](postgres/role.md)
 - [Grant](postgres/grant.md)

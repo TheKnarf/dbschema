@@ -1,4 +1,8 @@
+pub mod collation;
+
 use std::fmt;
+
+pub use collation::Collation;
 
 pub fn ident(s: &str) -> String {
     let escaped = s.replace('"', "\"");
