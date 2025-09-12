@@ -4,13 +4,17 @@ use std::collections::HashMap;
 
 mod destructive_change;
 mod long_identifier;
+mod column_type_mismatch;
 mod sql_syntax;
 mod unused_index;
+mod missing_foreign_key_index;
 
 use destructive_change::DestructiveChange;
 use long_identifier::LongIdentifier;
+use column_type_mismatch::ColumnTypeMismatch;
 use sql_syntax::SqlSyntax;
 use unused_index::UnusedIndex;
+use missing_foreign_key_index::MissingForeignKeyIndex;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -42,6 +46,8 @@ pub fn run(cfg: &Config, settings: &LintSettings) -> Vec<LintMessage> {
     let checks: Vec<Box<dyn LintCheck>> = vec![
         Box::new(NamingConvention),
         Box::new(MissingIndex),
+        Box::new(MissingForeignKeyIndex),
+        Box::new(ColumnTypeMismatch),
         Box::new(ForbidSerial),
         Box::new(PrimaryKeyNotNull),
         Box::new(DestructiveChange),
