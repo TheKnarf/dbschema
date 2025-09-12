@@ -40,3 +40,7 @@ We aim to support all major PostgreSQL features. See the reference docs:
 - [Foreign Data Wrapper](postgres/foreign_data_wrapper.md)
 - [Foreign Server](postgres/foreign_server.md)
 - [Foreign Table](postgres/foreign_table.md)
+- [Text Search Dictionary](postgres/text_search_dictionary.md)
+- [Text Search Configuration](postgres/text_search_configuration.md)
+- [Text Search Template](postgres/text_search_template.md)
+- [Text Search Parser](postgres/text_search_parser.md)

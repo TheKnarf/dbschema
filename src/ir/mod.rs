@@ -8,5 +8,7 @@ pub use config::{
     FunctionSpec, GrantSpec, IndexSpec, MaterializedViewSpec, OutputSpec,
     PartitionBySpec, PartitionSpec, PolicySpec, PrimaryKeySpec, PublicationSpec,
     PublicationTableSpec, RoleSpec, SchemaSpec, SequenceSpec, StandaloneIndexSpec,
-    SubscriptionSpec, TableSpec, TestSpec, TriggerSpec, ViewSpec,
+    SubscriptionSpec, TableSpec, TestSpec, TextSearchConfigurationMappingSpec,
+    TextSearchConfigurationSpec, TextSearchDictionarySpec, TextSearchParserSpec,
+    TextSearchTemplateSpec, TriggerSpec, ViewSpec,
 };

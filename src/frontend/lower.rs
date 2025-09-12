@@ -36,6 +36,26 @@ pub fn lower_config(ast: ast::Config) -> ir::Config {
             .into_iter()
             .map(Into::into)
             .collect(),
+        text_search_dictionaries: ast
+            .text_search_dictionaries
+            .into_iter()
+            .map(Into::into)
+            .collect(),
+        text_search_configurations: ast
+            .text_search_configurations
+            .into_iter()
+            .map(Into::into)
+            .collect(),
+        text_search_templates: ast
+            .text_search_templates
+            .into_iter()
+            .map(Into::into)
+            .collect(),
+        text_search_parsers: ast
+            .text_search_parsers
+            .into_iter()
+            .map(Into::into)
+            .collect(),
         publications: vec![],
         subscriptions: vec![],
         tests: ast.tests.into_iter().map(Into::into).collect(),
@@ -337,6 +357,72 @@ impl From<ast::AstForeignTable> for ir::ForeignTableSpec {
             columns: t.columns.into_iter().map(Into::into).collect(),
             options: t.options,
             comment: t.comment,
+        }
+    }
+}
+
+impl From<ast::AstTextSearchDictionary> for ir::TextSearchDictionarySpec {
+    fn from(d: ast::AstTextSearchDictionary) -> Self {
+        Self {
+            name: d.name,
+            alt_name: d.alt_name,
+            schema: d.schema,
+            template: d.template,
+            options: d.options,
+            comment: d.comment,
+        }
+    }
+}
+
+impl From<ast::AstTextSearchConfigurationMapping>
+    for ir::TextSearchConfigurationMappingSpec
+{
+    fn from(m: ast::AstTextSearchConfigurationMapping) -> Self {
+        Self {
+            tokens: m.tokens,
+            dictionaries: m.dictionaries,
+        }
+    }
+}
+
+impl From<ast::AstTextSearchConfiguration> for ir::TextSearchConfigurationSpec {
+    fn from(c: ast::AstTextSearchConfiguration) -> Self {
+        Self {
+            name: c.name,
+            alt_name: c.alt_name,
+            schema: c.schema,
+            parser: c.parser,
+            mappings: c.mappings.into_iter().map(Into::into).collect(),
+            comment: c.comment,
+        }
+    }
+}
+
+impl From<ast::AstTextSearchTemplate> for ir::TextSearchTemplateSpec {
+    fn from(t: ast::AstTextSearchTemplate) -> Self {
+        Self {
+            name: t.name,
+            alt_name: t.alt_name,
+            schema: t.schema,
+            init: t.init,
+            lexize: t.lexize,
+            comment: t.comment,
+        }
+    }
+}
+
+impl From<ast::AstTextSearchParser> for ir::TextSearchParserSpec {
+    fn from(p: ast::AstTextSearchParser) -> Self {
+        Self {
+            name: p.name,
+            alt_name: p.alt_name,
+            schema: p.schema,
+            start: p.start,
+            gettoken: p.gettoken,
+            end: p.end,
+            headline: p.headline,
+            lextypes: p.lextypes,
+            comment: p.comment,
         }
     }
 }

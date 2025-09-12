@@ -964,3 +964,133 @@ impl ForEachSupport for AstForeignTable {
         config.foreign_tables.push(item);
     }
 }
+
+// Text Search Dictionary implementation
+impl ForEachSupport for AstTextSearchDictionary {
+    type Item = Self;
+
+    fn parse_one(name: &str, body: &Body, env: &EnvVars) -> Result<Self::Item> {
+        let alt_name = get_attr_string(body, "name", env)?;
+        let schema = get_attr_string(body, "schema", env)?;
+        let template = get_attr_string(body, "template", env)?
+            .context("text_search_dictionary 'template' is required")?;
+        let options = match find_attr(body, "options") {
+            Some(attr) => expr_to_string_vec(attr.expr(), env)?,
+            None => Vec::new(),
+        };
+        let comment = get_attr_string(body, "comment", env)?;
+        Ok(AstTextSearchDictionary {
+            name: name.to_string(),
+            alt_name,
+            schema,
+            template,
+            options,
+            comment,
+        })
+    }
+
+    fn add_to_config(item: Self::Item, config: &mut Config) {
+        config.text_search_dictionaries.push(item);
+    }
+}
+
+// Text Search Configuration implementation
+impl ForEachSupport for AstTextSearchConfiguration {
+    type Item = Self;
+
+    fn parse_one(name: &str, body: &Body, env: &EnvVars) -> Result<Self::Item> {
+        let alt_name = get_attr_string(body, "name", env)?;
+        let schema = get_attr_string(body, "schema", env)?;
+        let parser = get_attr_string(body, "parser", env)?
+            .context("text_search_configuration 'parser' is required")?;
+        let comment = get_attr_string(body, "comment", env)?;
+
+        let mut mappings = Vec::new();
+        for mblk in body.blocks().filter(|bb| bb.identifier() == "mapping") {
+            let mb = mblk.body();
+            let tokens = match find_attr(mb, "for") {
+                Some(attr) => expr_to_string_vec(attr.expr(), env)?,
+                None => bail!("mapping missing 'for' attribute"),
+            };
+            let dictionaries = match find_attr(mb, "with") {
+                Some(attr) => expr_to_string_vec(attr.expr(), env)?,
+                None => bail!("mapping missing 'with' attribute"),
+            };
+            mappings.push(AstTextSearchConfigurationMapping { tokens, dictionaries });
+        }
+
+        Ok(AstTextSearchConfiguration {
+            name: name.to_string(),
+            alt_name,
+            schema,
+            parser,
+            mappings,
+            comment,
+        })
+    }
+
+    fn add_to_config(item: Self::Item, config: &mut Config) {
+        config.text_search_configurations.push(item);
+    }
+}
+
+// Text Search Template implementation
+impl ForEachSupport for AstTextSearchTemplate {
+    type Item = Self;
+
+    fn parse_one(name: &str, body: &Body, env: &EnvVars) -> Result<Self::Item> {
+        let alt_name = get_attr_string(body, "name", env)?;
+        let schema = get_attr_string(body, "schema", env)?;
+        let lexize = get_attr_string(body, "lexize", env)?
+            .context("text_search_template 'lexize' is required")?;
+        let init = get_attr_string(body, "init", env)?;
+        let comment = get_attr_string(body, "comment", env)?;
+        Ok(AstTextSearchTemplate {
+            name: name.to_string(),
+            alt_name,
+            schema,
+            init,
+            lexize,
+            comment,
+        })
+    }
+
+    fn add_to_config(item: Self::Item, config: &mut Config) {
+        config.text_search_templates.push(item);
+    }
+}
+
+// Text Search Parser implementation
+impl ForEachSupport for AstTextSearchParser {
+    type Item = Self;
+
+    fn parse_one(name: &str, body: &Body, env: &EnvVars) -> Result<Self::Item> {
+        let alt_name = get_attr_string(body, "name", env)?;
+        let schema = get_attr_string(body, "schema", env)?;
+        let start = get_attr_string(body, "start", env)?
+            .context("text_search_parser 'start' is required")?;
+        let gettoken = get_attr_string(body, "gettoken", env)?
+            .context("text_search_parser 'gettoken' is required")?;
+        let end = get_attr_string(body, "end", env)?
+            .context("text_search_parser 'end' is required")?;
+        let headline = get_attr_string(body, "headline", env)?;
+        let lextypes = get_attr_string(body, "lextypes", env)?
+            .context("text_search_parser 'lextypes' is required")?;
+        let comment = get_attr_string(body, "comment", env)?;
+        Ok(AstTextSearchParser {
+            name: name.to_string(),
+            alt_name,
+            schema,
+            start,
+            gettoken,
+            end,
+            headline,
+            lextypes,
+            comment,
+        })
+    }
+
+    fn add_to_config(item: Self::Item, config: &mut Config) {
+        config.text_search_parsers.push(item);
+    }
+}

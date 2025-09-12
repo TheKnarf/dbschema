@@ -2,6 +2,7 @@ pub mod collation;
 pub mod foreign_data_wrapper;
 pub mod foreign_server;
 pub mod foreign_table;
+pub mod text_search;
 
 use std::fmt;
 
@@ -9,6 +10,10 @@ pub use collation::Collation;
 pub use foreign_data_wrapper::ForeignDataWrapper;
 pub use foreign_server::ForeignServer;
 pub use foreign_table::ForeignTable;
+pub use text_search::{
+    TextSearchConfiguration, TextSearchDictionary, TextSearchParser,
+    TextSearchTemplate,
+};
 
 pub fn ident(s: &str) -> String {
     let escaped = s.replace('"', "\"");
