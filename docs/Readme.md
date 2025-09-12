@@ -4,13 +4,14 @@ dbschema lets you define database schemas in HCL and generate SQL/Prisma artifac
 
 ## Features
 
-Links to non-Postgres specific features and guides:
-
-- [Configuration](configuration.md)
-- [Linting](linting.md)
-- [Variables, Locals, and Repetition](variables.md)
-- [Modules and Output](modules.md)
-- [Tests](tests.md)
+- [Configuration](configuration.md) — Configure `dbschema.toml` targets and global settings.
+- [Linting](linting.md) — Run built-in checks and tune severities per rule.
+- [Variables, Locals, and Repetition](variables.md) — Parameterize HCL, loop with `for_each`/`count`, and use dynamic blocks.
+- [Modules and Output](modules.md) — Reuse HCL modules and return values via `output` blocks.
+- [Tests](tests.md) — Define setup/assert SQL and run tests transactionally against Postgres.
+- [create-migration](create-migration.md) — Generate SQL/Prisma/JSON artifacts from HCL.
+- [validate](validate.md) — Validate HCL and summarize discovered resources.
+- [fmt](fmt.md) — Format HCL files in place for consistent style.
 
 ## Postgres
 
