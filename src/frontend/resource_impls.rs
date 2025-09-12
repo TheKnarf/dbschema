@@ -449,6 +449,42 @@ impl ForEachSupport for AstFunction {
     }
 }
 
+// Procedure implementation
+impl ForEachSupport for AstProcedure {
+    type Item = Self;
+
+    fn parse_one(name: &str, body: &Body, env: &EnvVars) -> Result<Self::Item> {
+        let alt_name = get_attr_string(body, "name", env)?;
+        let language =
+            get_attr_string(body, "language", env)?.unwrap_or_else(|| "plpgsql".to_string());
+        let body_sql =
+            get_attr_string(body, "body", env)?.context("procedure 'body' is required")?;
+        let schema = get_attr_string(body, "schema", env)?;
+        let parameters = match find_attr(body, "parameters") {
+            Some(attr) => expr_to_string_vec(attr.expr(), env)?,
+            None => Vec::new(),
+        };
+        let replace = get_attr_bool(body, "replace", env)?.unwrap_or(true);
+        let security = get_attr_string(body, "security", env)?;
+        let comment = get_attr_string(body, "comment", env)?;
+        Ok(AstProcedure {
+            name: name.to_string(),
+            alt_name,
+            schema,
+            language,
+            parameters,
+            replace,
+            security,
+            body: body_sql,
+            comment,
+        })
+    }
+
+    fn add_to_config(item: Self::Item, config: &mut Config) {
+        config.procedures.push(item);
+    }
+}
+
 // Aggregate implementation
 impl ForEachSupport for AstAggregate {
     type Item = Self;

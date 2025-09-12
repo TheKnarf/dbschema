@@ -5,7 +5,7 @@ pub use config::{
     CompositeTypeSpec, Config, DomainSpec, EnumSpec, EventTriggerSpec, ExtensionSpec,
     CollationSpec,
     ForeignDataWrapperSpec, ForeignKeySpec, ForeignServerSpec, ForeignTableSpec,
-    FunctionSpec, GrantSpec, IndexSpec, MaterializedViewSpec, OutputSpec,
+    FunctionSpec, ProcedureSpec, GrantSpec, IndexSpec, MaterializedViewSpec, OutputSpec,
     PartitionBySpec, PartitionSpec, PolicySpec, PrimaryKeySpec, PublicationSpec,
     PublicationTableSpec, RoleSpec, TablespaceSpec, SchemaSpec, SequenceSpec, StandaloneIndexSpec,
     SubscriptionSpec, TableSpec, TestSpec, TextSearchConfigurationMappingSpec,
