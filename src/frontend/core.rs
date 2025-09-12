@@ -610,14 +610,27 @@ fn populate_back_references(cfg: &mut ir::Config) -> Result<()> {
     for table in &mut cfg.tables {
         for other_table in &tables {
             for fk in &other_table.foreign_keys {
-                if fk.ref_table == table.name {
+                // Match either the resource name or the explicit table_name (alt_name)
+                let matches_name = fk.ref_table == table.name;
+                let matches_alt = table
+                    .alt_name
+                    .as_ref()
+                    .map(|an| fk.ref_table == *an)
+                    .unwrap_or(false);
+                if matches_name || matches_alt {
                     let name = fk
                         .back_reference_name
                         .clone()
                         .unwrap_or_else(|| other_table.name.clone().to_lowercase() + "s");
+                    // Prefer the concrete table name when present so downstream backends
+                    // (like Prisma) can use it directly for model naming.
+                    let target_table = other_table
+                        .alt_name
+                        .clone()
+                        .unwrap_or_else(|| other_table.name.clone());
                     table.back_references.push(crate::ir::BackReferenceSpec {
                         name,
-                        table: other_table.name.clone(),
+                        table: target_table,
                     });
                 }
             }
