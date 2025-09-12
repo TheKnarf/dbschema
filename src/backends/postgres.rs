@@ -70,6 +70,62 @@ fn to_sql(cfg: &Config) -> Result<String> {
         }
     }
 
+    for d in &cfg.text_search_dictionaries {
+        out.push_str(&format!("{}\n\n", pg::TextSearchDictionary::from(d)));
+        if let Some(comment) = &d.comment {
+            let schema = d.schema.clone().unwrap_or_else(|| "public".to_string());
+            let name = d.alt_name.clone().unwrap_or_else(|| d.name.clone());
+            out.push_str(&format!(
+                "COMMENT ON TEXT SEARCH DICTIONARY {}.{} IS {};\n\n",
+                pg::ident(&schema),
+                pg::ident(&name),
+                pg::literal(comment)
+            ));
+        }
+    }
+
+    for t in &cfg.text_search_templates {
+        out.push_str(&format!("{}\n\n", pg::TextSearchTemplate::from(t)));
+        if let Some(comment) = &t.comment {
+            let schema = t.schema.clone().unwrap_or_else(|| "public".to_string());
+            let name = t.alt_name.clone().unwrap_or_else(|| t.name.clone());
+            out.push_str(&format!(
+                "COMMENT ON TEXT SEARCH TEMPLATE {}.{} IS {};\n\n",
+                pg::ident(&schema),
+                pg::ident(&name),
+                pg::literal(comment)
+            ));
+        }
+    }
+
+    for p in &cfg.text_search_parsers {
+        out.push_str(&format!("{}\n\n", pg::TextSearchParser::from(p)));
+        if let Some(comment) = &p.comment {
+            let schema = p.schema.clone().unwrap_or_else(|| "public".to_string());
+            let name = p.alt_name.clone().unwrap_or_else(|| p.name.clone());
+            out.push_str(&format!(
+                "COMMENT ON TEXT SEARCH PARSER {}.{} IS {};\n\n",
+                pg::ident(&schema),
+                pg::ident(&name),
+                pg::literal(comment)
+            ));
+        }
+    }
+
+    for c in &cfg.text_search_configurations {
+        out.push_str(&format!("{}\n\n", pg::TextSearchConfiguration::from(c)));
+        if let Some(comment) = &c.comment {
+            let schema = c.schema.clone().unwrap_or_else(|| "public".to_string());
+            let name = c.alt_name.clone().unwrap_or_else(|| c.name.clone());
+            out.push_str(&format!(
+                "COMMENT ON TEXT SEARCH CONFIGURATION {}.{} IS {};\n\n",
+                pg::ident(&schema),
+                pg::ident(&name),
+                pg::literal(comment)
+            ));
+        }
+    }
+
     for s in &cfg.sequences {
         out.push_str(&format!("{}\n\n", pg::Sequence::from(s)));
         if let Some(comment) = &s.comment {

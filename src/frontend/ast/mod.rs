@@ -23,6 +23,10 @@ pub struct Config {
     pub foreign_data_wrappers: Vec<AstForeignDataWrapper>,
     pub foreign_servers: Vec<AstForeignServer>,
     pub foreign_tables: Vec<AstForeignTable>,
+    pub text_search_dictionaries: Vec<AstTextSearchDictionary>,
+    pub text_search_configurations: Vec<AstTextSearchConfiguration>,
+    pub text_search_templates: Vec<AstTextSearchTemplate>,
+    pub text_search_parsers: Vec<AstTextSearchParser>,
     pub tests: Vec<AstTest>,
     pub outputs: Vec<AstOutput>,
 }
@@ -361,6 +365,55 @@ pub struct AstStandaloneIndex {
     pub orders: Vec<String>,
     pub operator_classes: Vec<String>,
     pub unique: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct AstTextSearchDictionary {
+    pub name: String,
+    pub alt_name: Option<String>,
+    pub schema: Option<String>,
+    pub template: String,
+    pub options: Vec<String>,
+    pub comment: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AstTextSearchConfigurationMapping {
+    pub tokens: Vec<String>,
+    pub dictionaries: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AstTextSearchConfiguration {
+    pub name: String,
+    pub alt_name: Option<String>,
+    pub schema: Option<String>,
+    pub parser: String,
+    pub mappings: Vec<AstTextSearchConfigurationMapping>,
+    pub comment: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AstTextSearchTemplate {
+    pub name: String,
+    pub alt_name: Option<String>,
+    pub schema: Option<String>,
+    pub init: Option<String>,
+    pub lexize: String,
+    pub comment: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AstTextSearchParser {
+    pub name: String,
+    pub alt_name: Option<String>,
+    pub schema: Option<String>,
+    pub start: String,
+    pub gettoken: String,
+    pub end: String,
+    pub headline: Option<String>,
+    pub lextypes: String,
+    pub comment: Option<String>,
 }
 
 #[derive(Debug, Clone)]

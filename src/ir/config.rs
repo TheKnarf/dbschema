@@ -24,6 +24,10 @@ pub struct Config {
     pub foreign_data_wrappers: Vec<ForeignDataWrapperSpec>,
     pub foreign_servers: Vec<ForeignServerSpec>,
     pub foreign_tables: Vec<ForeignTableSpec>,
+    pub text_search_dictionaries: Vec<TextSearchDictionarySpec>,
+    pub text_search_configurations: Vec<TextSearchConfigurationSpec>,
+    pub text_search_templates: Vec<TextSearchTemplateSpec>,
+    pub text_search_parsers: Vec<TextSearchParserSpec>,
     pub publications: Vec<PublicationSpec>,
     pub subscriptions: Vec<SubscriptionSpec>,
     pub tests: Vec<TestSpec>,
@@ -388,6 +392,55 @@ pub struct StandaloneIndexSpec {
     pub orders: Vec<String>,
     pub operator_classes: Vec<String>,
     pub unique: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TextSearchDictionarySpec {
+    pub name: String,
+    pub alt_name: Option<String>,
+    pub schema: Option<String>,
+    pub template: String,
+    pub options: Vec<String>,
+    pub comment: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TextSearchConfigurationMappingSpec {
+    pub tokens: Vec<String>,
+    pub dictionaries: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TextSearchConfigurationSpec {
+    pub name: String,
+    pub alt_name: Option<String>,
+    pub schema: Option<String>,
+    pub parser: String,
+    pub mappings: Vec<TextSearchConfigurationMappingSpec>,
+    pub comment: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TextSearchTemplateSpec {
+    pub name: String,
+    pub alt_name: Option<String>,
+    pub schema: Option<String>,
+    pub init: Option<String>,
+    pub lexize: String,
+    pub comment: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TextSearchParserSpec {
+    pub name: String,
+    pub alt_name: Option<String>,
+    pub schema: Option<String>,
+    pub start: String,
+    pub gettoken: String,
+    pub end: String,
+    pub headline: Option<String>,
+    pub lextypes: String,
+    pub comment: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
