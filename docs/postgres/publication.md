@@ -8,6 +8,7 @@ publication "pub" {
     { schema = "public", table = "t" }
   ]
   publish = ["insert", "update"]
+  comment = "main publication"
 }
 ```
 
@@ -29,5 +30,6 @@ publication "pub_some" {
     { table = "posts" }
   ]
   publish = ["insert", "update"]
+  comment = "replicate some tables"
 }
 ```

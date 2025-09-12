@@ -96,6 +96,8 @@ pub enum ResourceKind {
     Roles,
     Tablespaces,
     Grants,
+    Publications,
+    Subscriptions,
     Tests,
 }
 
@@ -121,6 +123,8 @@ impl fmt::Display for ResourceKind {
             ResourceKind::Roles => "roles",
             ResourceKind::Tablespaces => "tablespaces",
             ResourceKind::Grants => "grants",
+            ResourceKind::Publications => "publications",
+            ResourceKind::Subscriptions => "subscriptions",
             ResourceKind::Tests => "tests",
         };
         write!(f, "{}", s)
@@ -151,6 +155,8 @@ impl std::str::FromStr for ResourceKind {
             "roles" => Ok(ResourceKind::Roles),
             "tablespaces" => Ok(ResourceKind::Tablespaces),
             "grants" => Ok(ResourceKind::Grants),
+            "publications" => Ok(ResourceKind::Publications),
+            "subscriptions" => Ok(ResourceKind::Subscriptions),
             "tests" => Ok(ResourceKind::Tests),
             _ => Err(format!("invalid resource kind: {}", s)),
         }
@@ -182,6 +188,8 @@ impl TargetConfig {
                 ResourceKind::Roles,
                 ResourceKind::Tablespaces,
                 ResourceKind::Grants,
+                ResourceKind::Publications,
+                ResourceKind::Subscriptions,
                 ResourceKind::Tests,
             ]
             .into_iter()
@@ -250,7 +258,7 @@ mod tests {
         assert!(include_set.contains(&ResourceKind::EventTriggers));
         assert!(include_set.contains(&ResourceKind::Aggregates));
         assert!(include_set.contains(&ResourceKind::Collations));
-        assert_eq!(include_set.len(), 18); // All resource types
+        assert_eq!(include_set.len(), 22); // All resource types
     }
 
     #[test]

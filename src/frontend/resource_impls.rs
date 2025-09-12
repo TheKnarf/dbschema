@@ -1,8 +1,10 @@
 use anyhow::{bail, Context, Result};
-use hcl::Body;
+use hcl::{Body, Value};
 
 use crate::frontend::ast::*;
-use crate::frontend::core::{expr_to_string_vec, find_attr, get_attr_bool, get_attr_string};
+use crate::frontend::core::{
+    expr_to_string_vec, expr_to_value, find_attr, get_attr_bool, get_attr_string,
+};
 use crate::frontend::env::EnvVars;
 use crate::frontend::for_each::ForEachSupport;
 
@@ -1157,5 +1159,91 @@ impl ForEachSupport for AstTextSearchParser {
 
     fn add_to_config(item: Self::Item, config: &mut Config) {
         config.text_search_parsers.push(item);
+    }
+}
+
+// Publication implementation
+impl ForEachSupport for AstPublication {
+    type Item = Self;
+
+    fn parse_one(name: &str, body: &Body, env: &EnvVars) -> Result<Self::Item> {
+        let alt_name = get_attr_string(body, "name", env)?;
+        let all_tables = get_attr_bool(body, "all_tables", env)?.unwrap_or(false);
+        let tables = match find_attr(body, "tables") {
+            Some(attr) => {
+                let val = expr_to_value(attr.expr(), env)?;
+                match val {
+                    Value::Array(arr) => {
+                        let mut out = Vec::new();
+                        for v in arr {
+                            match v {
+                                Value::Object(mut obj) => {
+                                    let table = match obj.swap_remove("table") {
+                                        Some(Value::String(s)) => s,
+                                        _ => bail!("tables[].table is required"),
+                                    };
+                                    let schema = match obj.swap_remove("schema") {
+                                        Some(Value::String(s)) => Some(s),
+                                        None => None,
+                                        Some(other) => bail!(
+                                            "tables[].schema must be string, got {other:?}"
+                                        ),
+                                    };
+                                    out.push(AstPublicationTable { schema, table });
+                                }
+                                _ => bail!("tables must be array of objects"),
+                            }
+                        }
+                        out
+                    }
+                    _ => bail!("tables must be array of objects"),
+                }
+            }
+            None => Vec::new(),
+        };
+        let publish = match find_attr(body, "publish") {
+            Some(attr) => expr_to_string_vec(attr.expr(), env)?,
+            None => Vec::new(),
+        };
+        let comment = get_attr_string(body, "comment", env)?;
+        Ok(AstPublication {
+            name: name.to_string(),
+            alt_name,
+            all_tables,
+            tables,
+            publish,
+            comment,
+        })
+    }
+
+    fn add_to_config(item: Self::Item, config: &mut Config) {
+        config.publications.push(item);
+    }
+}
+
+// Subscription implementation
+impl ForEachSupport for AstSubscription {
+    type Item = Self;
+
+    fn parse_one(name: &str, body: &Body, env: &EnvVars) -> Result<Self::Item> {
+        let alt_name = get_attr_string(body, "name", env)?;
+        let connection = get_attr_string(body, "connection", env)?
+            .context("subscription 'connection' is required")?;
+        let publications = match find_attr(body, "publications") {
+            Some(attr) => expr_to_string_vec(attr.expr(), env)?,
+            None => bail!("subscription requires publications = [..]"),
+        };
+        let comment = get_attr_string(body, "comment", env)?;
+        Ok(AstSubscription {
+            name: name.to_string(),
+            alt_name,
+            connection,
+            publications,
+            comment,
+        })
+    }
+
+    fn add_to_config(item: Self::Item, config: &mut Config) {
+        config.subscriptions.push(item);
     }
 }

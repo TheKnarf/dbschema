@@ -29,6 +29,8 @@ pub struct Config {
     pub text_search_configurations: Vec<AstTextSearchConfiguration>,
     pub text_search_templates: Vec<AstTextSearchTemplate>,
     pub text_search_parsers: Vec<AstTextSearchParser>,
+    pub publications: Vec<AstPublication>,
+    pub subscriptions: Vec<AstSubscription>,
     pub tests: Vec<AstTest>,
     pub outputs: Vec<AstOutput>,
 }
@@ -438,6 +440,31 @@ pub struct AstTextSearchParser {
     pub end: String,
     pub headline: Option<String>,
     pub lextypes: String,
+    pub comment: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AstPublication {
+    pub name: String,
+    pub alt_name: Option<String>,
+    pub all_tables: bool,
+    pub tables: Vec<AstPublicationTable>,
+    pub publish: Vec<String>,
+    pub comment: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AstPublicationTable {
+    pub schema: Option<String>,
+    pub table: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct AstSubscription {
+    pub name: String,
+    pub alt_name: Option<String>,
+    pub connection: String,
+    pub publications: Vec<String>,
     pub comment: Option<String>,
 }
 

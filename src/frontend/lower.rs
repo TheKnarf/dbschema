@@ -58,8 +58,8 @@ pub fn lower_config(ast: ast::Config) -> ir::Config {
             .into_iter()
             .map(Into::into)
             .collect(),
-        publications: vec![],
-        subscriptions: vec![],
+        publications: ast.publications.into_iter().map(Into::into).collect(),
+        subscriptions: ast.subscriptions.into_iter().map(Into::into).collect(),
         tests: ast.tests.into_iter().map(Into::into).collect(),
         outputs: ast.outputs.into_iter().map(Into::into).collect(),
     }
@@ -572,6 +572,40 @@ impl From<ast::AstStandaloneIndex> for ir::StandaloneIndexSpec {
             orders: i.orders,
             operator_classes: i.operator_classes,
             unique: i.unique,
+        }
+    }
+}
+
+impl From<ast::AstPublication> for ir::PublicationSpec {
+    fn from(p: ast::AstPublication) -> Self {
+        Self {
+            name: p.name,
+            alt_name: p.alt_name,
+            all_tables: p.all_tables,
+            tables: p.tables.into_iter().map(Into::into).collect(),
+            publish: p.publish,
+            comment: p.comment,
+        }
+    }
+}
+
+impl From<ast::AstPublicationTable> for ir::PublicationTableSpec {
+    fn from(t: ast::AstPublicationTable) -> Self {
+        Self {
+            schema: t.schema,
+            table: t.table,
+        }
+    }
+}
+
+impl From<ast::AstSubscription> for ir::SubscriptionSpec {
+    fn from(s: ast::AstSubscription) -> Self {
+        Self {
+            name: s.name,
+            alt_name: s.alt_name,
+            connection: s.connection,
+            publications: s.publications,
+            comment: s.comment,
         }
     }
 }
