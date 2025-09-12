@@ -971,6 +971,40 @@ impl ForEachSupport for AstStandaloneIndex {
     }
 }
 
+// Statistics implementation
+impl ForEachSupport for AstStatistics {
+    type Item = Self;
+
+    fn parse_one(name: &str, body: &Body, env: &EnvVars) -> Result<Self::Item> {
+        let alt_name = get_attr_string(body, "name", env)?;
+        let schema = get_attr_string(body, "schema", env)?;
+        let table = get_attr_string(body, "table", env)?
+            .context("statistics 'table' is required")?;
+        let columns = match find_attr(body, "columns") {
+            Some(attr) => expr_to_string_vec(attr.expr(), env)?,
+            None => bail!("statistics requires columns = [..]"),
+        };
+        let kinds = match find_attr(body, "kinds") {
+            Some(attr) => expr_to_string_vec(attr.expr(), env)?,
+            None => Vec::new(),
+        };
+        let comment = get_attr_string(body, "comment", env)?;
+        Ok(AstStatistics {
+            name: name.to_string(),
+            alt_name,
+            schema,
+            table,
+            columns,
+            kinds,
+            comment,
+        })
+    }
+
+    fn add_to_config(item: Self::Item, config: &mut Config) {
+        config.statistics.push(item);
+    }
+}
+
 // Foreign Data Wrapper implementation
 impl ForEachSupport for AstForeignDataWrapper {
     type Item = Self;

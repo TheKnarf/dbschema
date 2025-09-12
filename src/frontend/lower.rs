@@ -19,6 +19,7 @@ pub fn lower_config(ast: ast::Config) -> ir::Config {
         types: ast.types.into_iter().map(Into::into).collect(),
         tables: ast.tables.into_iter().map(Into::into).collect(),
         indexes: ast.indexes.into_iter().map(Into::into).collect(),
+        statistics: ast.statistics.into_iter().map(Into::into).collect(),
         views: ast.views.into_iter().map(Into::into).collect(),
         materialized: ast.materialized.into_iter().map(Into::into).collect(),
         policies: ast.policies.into_iter().map(Into::into).collect(),
@@ -608,6 +609,20 @@ impl From<ast::AstStandaloneIndex> for ir::StandaloneIndexSpec {
             orders: i.orders,
             operator_classes: i.operator_classes,
             unique: i.unique,
+        }
+    }
+}
+
+impl From<ast::AstStatistics> for ir::StatisticsSpec {
+    fn from(s: ast::AstStatistics) -> Self {
+        Self {
+            name: s.name,
+            alt_name: s.alt_name,
+            schema: s.schema,
+            table: s.table,
+            columns: s.columns,
+            kinds: s.kinds,
+            comment: s.comment,
         }
     }
 }

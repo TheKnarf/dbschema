@@ -1070,6 +1070,54 @@ impl fmt::Display for Index {
 }
 
 #[derive(Debug, Clone)]
+pub struct Statistics {
+    pub schema: String,
+    pub name: String,
+    pub table: String,
+    pub columns: Vec<String>,
+    pub kinds: Vec<String>,
+}
+
+impl From<&crate::ir::StatisticsSpec> for Statistics {
+    fn from(s: &crate::ir::StatisticsSpec) -> Self {
+        Self {
+            schema: s.schema.clone().unwrap_or_else(|| "public".to_string()),
+            name: s.alt_name.clone().unwrap_or_else(|| s.name.clone()),
+            table: s.table.clone(),
+            columns: s.columns.clone(),
+            kinds: s.kinds.clone(),
+        }
+    }
+}
+
+impl fmt::Display for Statistics {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "CREATE STATISTICS {}.{}",
+            ident(&self.schema),
+            ident(&self.name)
+        )?;
+        if !self.kinds.is_empty() {
+            write!(f, " ({})", self.kinds.join(", "))?;
+        }
+        let cols = self
+            .columns
+            .iter()
+            .map(|c| ident(c))
+            .collect::<Vec<_>>()
+            .join(", ");
+        write!(
+            f,
+            " ON {cols} FROM {}.{};",
+            ident(&self.schema),
+            ident(&self.table),
+            cols = cols
+        )
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct Trigger {
     pub schema: String,
     pub table: String,

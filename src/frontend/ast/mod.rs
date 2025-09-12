@@ -18,6 +18,7 @@ pub struct Config {
     pub types: Vec<AstCompositeType>,
     pub tables: Vec<AstTable>,
     pub indexes: Vec<AstStandaloneIndex>,
+    pub statistics: Vec<AstStatistics>,
     pub views: Vec<AstView>,
     pub materialized: Vec<AstMaterializedView>,
     pub policies: Vec<AstPolicy>,
@@ -422,6 +423,17 @@ pub struct AstStandaloneIndex {
     pub orders: Vec<String>,
     pub operator_classes: Vec<String>,
     pub unique: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct AstStatistics {
+    pub name: String,
+    pub alt_name: Option<String>,
+    pub schema: Option<String>,
+    pub table: String,
+    pub columns: Vec<String>,
+    pub kinds: Vec<String>,
+    pub comment: Option<String>,
 }
 
 #[derive(Debug, Clone)]

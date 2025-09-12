@@ -269,6 +269,20 @@ fn to_sql(cfg: &Config) -> Result<String> {
         out.push_str(&format!("{}\n\n", pg::Index::from_standalone(idx)));
     }
 
+    for s in &cfg.statistics {
+        out.push_str(&format!("{}\n\n", pg::Statistics::from(s)));
+        if let Some(comment) = &s.comment {
+            let schema = s.schema.clone().unwrap_or_else(|| "public".to_string());
+            let name = s.alt_name.clone().unwrap_or_else(|| s.name.clone());
+            out.push_str(&format!(
+                "COMMENT ON STATISTICS {}.{} IS {};\n\n",
+                pg::ident(&schema),
+                pg::ident(&name),
+                pg::literal(comment)
+            ));
+        }
+    }
+
     for p in &cfg.policies {
         out.push_str(&format!("{}\n\n", pg::Policy::from(p)));
         if let Some(comment) = &p.comment {

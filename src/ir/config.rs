@@ -19,6 +19,7 @@ pub struct Config {
     pub types: Vec<CompositeTypeSpec>,
     pub tables: Vec<TableSpec>,
     pub indexes: Vec<StandaloneIndexSpec>,
+    pub statistics: Vec<StatisticsSpec>,
     pub views: Vec<ViewSpec>,
     pub materialized: Vec<MaterializedViewSpec>,
     pub policies: Vec<PolicySpec>,
@@ -447,6 +448,17 @@ pub struct StandaloneIndexSpec {
     pub orders: Vec<String>,
     pub operator_classes: Vec<String>,
     pub unique: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct StatisticsSpec {
+    pub name: String,
+    pub alt_name: Option<String>,
+    pub schema: Option<String>,
+    pub table: String,
+    pub columns: Vec<String>,
+    pub kinds: Vec<String>,
+    pub comment: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
