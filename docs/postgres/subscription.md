@@ -6,6 +6,7 @@ Creates a replication subscription.
 subscription "sub" {
   connection   = "host=localhost"
   publications = ["pub"]
+  comment      = "subscribes to pub"
 }
 ```
 
@@ -21,5 +22,6 @@ subscription "sub" {
 subscription "sub_main" {
   connection = "host=replica dbname=app user=rep password=secret"
   publications = ["pub_all"]
+  comment     = "main subscription"
 }
 ```
