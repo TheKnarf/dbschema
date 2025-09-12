@@ -93,6 +93,7 @@ pub enum ResourceKind {
     Sequences,
     Policies,
     Roles,
+    Tablespaces,
     Grants,
     Tests,
 }
@@ -116,6 +117,7 @@ impl fmt::Display for ResourceKind {
             ResourceKind::Sequences => "sequences",
             ResourceKind::Policies => "policies",
             ResourceKind::Roles => "roles",
+            ResourceKind::Tablespaces => "tablespaces",
             ResourceKind::Grants => "grants",
             ResourceKind::Tests => "tests",
         };
@@ -144,6 +146,7 @@ impl std::str::FromStr for ResourceKind {
             "sequences" => Ok(ResourceKind::Sequences),
             "policies" => Ok(ResourceKind::Policies),
             "roles" => Ok(ResourceKind::Roles),
+            "tablespaces" => Ok(ResourceKind::Tablespaces),
             "grants" => Ok(ResourceKind::Grants),
             "tests" => Ok(ResourceKind::Tests),
             _ => Err(format!("invalid resource kind: {}", s)),
@@ -173,6 +176,7 @@ impl TargetConfig {
                 ResourceKind::Sequences,
                 ResourceKind::Policies,
                 ResourceKind::Roles,
+                ResourceKind::Tablespaces,
                 ResourceKind::Grants,
                 ResourceKind::Tests,
             ]

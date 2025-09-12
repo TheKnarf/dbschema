@@ -20,6 +20,7 @@ pub fn lower_config(ast: ast::Config) -> ir::Config {
         materialized: ast.materialized.into_iter().map(Into::into).collect(),
         policies: ast.policies.into_iter().map(Into::into).collect(),
         roles: ast.roles.into_iter().map(Into::into).collect(),
+        tablespaces: ast.tablespaces.into_iter().map(Into::into).collect(),
         grants: ast.grants.into_iter().map(Into::into).collect(),
         foreign_data_wrappers: ast
             .foreign_data_wrappers
@@ -301,6 +302,19 @@ impl From<ast::AstRole> for ir::RoleSpec {
             password: r.password,
             in_role: r.in_role,
             comment: r.comment,
+        }
+    }
+}
+
+impl From<ast::AstTablespace> for ir::TablespaceSpec {
+    fn from(t: ast::AstTablespace) -> Self {
+        Self {
+            name: t.name,
+            alt_name: t.alt_name,
+            location: t.location,
+            owner: t.owner,
+            options: t.options,
+            comment: t.comment,
         }
     }
 }

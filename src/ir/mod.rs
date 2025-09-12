@@ -7,7 +7,7 @@ pub use config::{
     ForeignDataWrapperSpec, ForeignKeySpec, ForeignServerSpec, ForeignTableSpec,
     FunctionSpec, GrantSpec, IndexSpec, MaterializedViewSpec, OutputSpec,
     PartitionBySpec, PartitionSpec, PolicySpec, PrimaryKeySpec, PublicationSpec,
-    PublicationTableSpec, RoleSpec, SchemaSpec, SequenceSpec, StandaloneIndexSpec,
+    PublicationTableSpec, RoleSpec, TablespaceSpec, SchemaSpec, SequenceSpec, StandaloneIndexSpec,
     SubscriptionSpec, TableSpec, TestSpec, TextSearchConfigurationMappingSpec,
     TextSearchConfigurationSpec, TextSearchDictionarySpec, TextSearchParserSpec,
     TextSearchTemplateSpec, TriggerSpec, ViewSpec,

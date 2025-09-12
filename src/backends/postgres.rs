@@ -32,6 +32,18 @@ fn to_sql(cfg: &Config) -> Result<String> {
         }
     }
 
+    for t in &cfg.tablespaces {
+        out.push_str(&format!("{}\n\n", pg::Tablespace::from(t)));
+        if let Some(comment) = &t.comment {
+            let name = t.alt_name.clone().unwrap_or_else(|| t.name.clone());
+            out.push_str(&format!(
+                "COMMENT ON TABLESPACE {} IS {};\n\n",
+                pg::ident(&name),
+                pg::literal(comment)
+            ));
+        }
+    }
+
     for s in &cfg.schemas {
         out.push_str(&format!("{}\n\n", pg::Schema::from(s)));
         if let Some(comment) = &s.comment {

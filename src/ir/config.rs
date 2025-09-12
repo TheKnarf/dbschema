@@ -20,6 +20,7 @@ pub struct Config {
     pub materialized: Vec<MaterializedViewSpec>,
     pub policies: Vec<PolicySpec>,
     pub roles: Vec<RoleSpec>,
+    pub tablespaces: Vec<TablespaceSpec>,
     pub grants: Vec<GrantSpec>,
     pub foreign_data_wrappers: Vec<ForeignDataWrapperSpec>,
     pub foreign_servers: Vec<ForeignServerSpec>,
@@ -225,6 +226,16 @@ pub struct RoleSpec {
     pub replication: bool,
     pub password: Option<String>,
     pub in_role: Vec<String>,
+    pub comment: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TablespaceSpec {
+    pub name: String,
+    pub alt_name: Option<String>,
+    pub location: String,
+    pub owner: Option<String>,
+    pub options: Vec<String>,
     pub comment: Option<String>,
 }
 

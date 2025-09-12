@@ -752,6 +752,35 @@ impl ForEachSupport for AstRole {
     }
 }
 
+// Tablespace implementation
+impl ForEachSupport for AstTablespace {
+    type Item = Self;
+
+    fn parse_one(name: &str, body: &Body, env: &EnvVars) -> Result<Self::Item> {
+        let alt_name = get_attr_string(body, "name", env)?;
+        let location = get_attr_string(body, "location", env)?
+            .context("tablespace 'location' is required")?;
+        let owner = get_attr_string(body, "owner", env)?;
+        let options = match find_attr(body, "options") {
+            Some(attr) => expr_to_string_vec(attr.expr(), env)?,
+            None => Vec::new(),
+        };
+        let comment = get_attr_string(body, "comment", env)?;
+        Ok(AstTablespace {
+            name: name.to_string(),
+            alt_name,
+            location,
+            owner,
+            options,
+            comment,
+        })
+    }
+
+    fn add_to_config(item: Self::Item, config: &mut Config) {
+        config.tablespaces.push(item);
+    }
+}
+
 // Grant implementation
 impl ForEachSupport for AstGrant {
     type Item = Self;
