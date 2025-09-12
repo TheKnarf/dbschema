@@ -9,6 +9,8 @@
 - destructive-change: foreign keys using ON DELETE/ON UPDATE CASCADE.
 - unused-index: indexes that duplicate a table's primary key.
 - long-identifier: table, column, or index names longer than 63 characters.
+- missing-foreign-key-index: foreign key columns should be indexed.
+- column-type-mismatch: foreign key column types must match referenced columns.
 
 Suppress a rule for a specific table or column with `lint_ignore`:
 
@@ -19,6 +21,25 @@ table "users" {
   column "ID" {
     type = "int"
     lint_ignore = ["naming-convention"]
+  }
+}
+```
+
+Additional suppressions:
+
+```hcl
+table "orders" {
+  lint_ignore = ["missing-foreign-key-index"]
+
+  column "user_id" {
+    type = "text"
+    lint_ignore = ["column-type-mismatch"]
+  }
+
+  foreign_key {
+    columns = ["user_id"]
+    ref_table = "users"
+    ref_columns = ["id"]
   }
 }
 ```
