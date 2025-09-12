@@ -1192,6 +1192,25 @@ fn load_file(
         )?;
     }
 
+    for blk in body.blocks().filter(|b| b.identifier() == "operator") {
+        let name = blk
+            .labels()
+            .get(0)
+            .ok_or_else(|| anyhow::anyhow!("operator block missing name label"))?
+            .as_str()
+            .to_string();
+        let for_each_expr = find_attr(blk.body(), "for_each");
+        let count_expr = find_attr(blk.body(), "count");
+        execute_for_each::<ast::AstOperator>(
+            &name,
+            blk.body(),
+            &env,
+            &mut cfg,
+            for_each_expr,
+            count_expr,
+        )?;
+    }
+
     for blk in body.blocks().filter(|b| b.identifier() == "trigger") {
         let name = blk
             .labels()
@@ -1202,6 +1221,25 @@ fn load_file(
         let for_each_expr = find_attr(blk.body(), "for_each");
         let count_expr = find_attr(blk.body(), "count");
         execute_for_each::<ast::AstTrigger>(
+            &name,
+            blk.body(),
+            &env,
+            &mut cfg,
+            for_each_expr,
+            count_expr,
+        )?;
+    }
+
+    for blk in body.blocks().filter(|b| b.identifier() == "rule") {
+        let name = blk
+            .labels()
+            .get(0)
+            .ok_or_else(|| anyhow::anyhow!("rule block missing name label"))?
+            .as_str()
+            .to_string();
+        let for_each_expr = find_attr(blk.body(), "for_each");
+        let count_expr = find_attr(blk.body(), "count");
+        execute_for_each::<ast::AstRule>(
             &name,
             blk.body(),
             &env,

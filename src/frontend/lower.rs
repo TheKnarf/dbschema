@@ -6,7 +6,9 @@ pub fn lower_config(ast: ast::Config) -> ir::Config {
         functions: ast.functions.into_iter().map(Into::into).collect(),
         procedures: ast.procedures.into_iter().map(Into::into).collect(),
         aggregates: ast.aggregates.into_iter().map(Into::into).collect(),
+        operators: ast.operators.into_iter().map(Into::into).collect(),
         triggers: ast.triggers.into_iter().map(Into::into).collect(),
+        rules: ast.rules.into_iter().map(Into::into).collect(),
         event_triggers: ast.event_triggers.into_iter().map(Into::into).collect(),
         extensions: ast.extensions.into_iter().map(Into::into).collect(),
         collations: ast.collations.into_iter().map(Into::into).collect(),
@@ -118,6 +120,24 @@ impl From<ast::AstAggregate> for ir::AggregateSpec {
     }
 }
 
+impl From<ast::AstOperator> for ir::OperatorSpec {
+    fn from(o: ast::AstOperator) -> Self {
+        Self {
+            name: o.name,
+            alt_name: o.alt_name,
+            schema: o.schema,
+            left: o.left,
+            right: o.right,
+            procedure: o.procedure,
+            commutator: o.commutator,
+            negator: o.negator,
+            restrict: o.restrict,
+            join: o.join,
+            comment: o.comment,
+        }
+    }
+}
+
 impl From<ast::AstTrigger> for ir::TriggerSpec {
     fn from(t: ast::AstTrigger) -> Self {
         Self {
@@ -132,6 +152,22 @@ impl From<ast::AstTrigger> for ir::TriggerSpec {
             function_schema: t.function_schema,
             when: t.when,
             comment: t.comment,
+        }
+    }
+}
+
+impl From<ast::AstRule> for ir::RuleSpec {
+    fn from(r: ast::AstRule) -> Self {
+        Self {
+            name: r.name,
+            alt_name: r.alt_name,
+            schema: r.schema,
+            table: r.table,
+            event: r.event,
+            r#where: r.r#where,
+            instead: r.instead,
+            command: r.command,
+            comment: r.comment,
         }
     }
 }

@@ -328,6 +328,24 @@ fn to_sql(cfg: &Config) -> Result<String> {
         }
     }
 
+    for o in &cfg.operators {
+        out.push_str(&format!("{}\n\n", pg::Operator::from(o)));
+        if let Some(comment) = &o.comment {
+            let schema = o.schema.clone().unwrap_or_else(|| "public".to_string());
+            let name = o.alt_name.clone().unwrap_or_else(|| o.name.clone());
+            let left = o.left.clone().unwrap_or_else(|| "NONE".to_string());
+            let right = o.right.clone().unwrap_or_else(|| "NONE".to_string());
+            out.push_str(&format!(
+                "COMMENT ON OPERATOR OPERATOR({}.{}) ({}, {}) IS {};\n\n",
+                pg::ident(&schema),
+                pg::ident(&name),
+                left,
+                right,
+                pg::literal(comment)
+            ));
+        }
+    }
+
     for v in &cfg.views {
         out.push_str(&format!("{}\n\n", pg::View::from(v)));
         if let Some(comment) = &v.comment {
@@ -378,6 +396,21 @@ fn to_sql(cfg: &Config) -> Result<String> {
                 pg::ident(&name),
                 pg::ident(&schema),
                 pg::ident(&t.table),
+                pg::literal(comment)
+            ));
+        }
+    }
+
+    for r in &cfg.rules {
+        out.push_str(&format!("{}\n\n", pg::Rule::from(r)));
+        if let Some(comment) = &r.comment {
+            let schema = r.schema.clone().unwrap_or_else(|| "public".to_string());
+            let name = r.alt_name.clone().unwrap_or_else(|| r.name.clone());
+            out.push_str(&format!(
+                "COMMENT ON RULE {} ON {}.{} IS {};\n\n",
+                pg::ident(&name),
+                pg::ident(&schema),
+                pg::ident(&r.table),
                 pg::literal(comment)
             ));
         }

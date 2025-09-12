@@ -6,7 +6,9 @@ pub struct Config {
     pub functions: Vec<FunctionSpec>,
     pub procedures: Vec<ProcedureSpec>,
     pub aggregates: Vec<AggregateSpec>,
+    pub operators: Vec<OperatorSpec>,
     pub triggers: Vec<TriggerSpec>,
+    pub rules: Vec<RuleSpec>,
     pub event_triggers: Vec<EventTriggerSpec>,
     pub extensions: Vec<ExtensionSpec>,
     pub collations: Vec<CollationSpec>,
@@ -81,6 +83,21 @@ pub struct AggregateSpec {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct OperatorSpec {
+    pub name: String,
+    pub alt_name: Option<String>,
+    pub schema: Option<String>,
+    pub left: Option<String>,
+    pub right: Option<String>,
+    pub procedure: String,
+    pub commutator: Option<String>,
+    pub negator: Option<String>,
+    pub restrict: Option<String>,
+    pub join: Option<String>,
+    pub comment: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct TriggerSpec {
     pub name: String,
     pub alt_name: Option<String>,
@@ -92,6 +109,19 @@ pub struct TriggerSpec {
     pub function: String,    // function name (unqualified)
     pub function_schema: Option<String>,
     pub when: Option<String>, // optional condition, raw SQL
+    pub comment: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct RuleSpec {
+    pub name: String,
+    pub alt_name: Option<String>,
+    pub schema: Option<String>,
+    pub table: String,
+    pub event: String,
+    pub r#where: Option<String>,
+    pub instead: bool,
+    pub command: String,
     pub comment: Option<String>,
 }
 

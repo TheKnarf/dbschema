@@ -491,6 +491,67 @@ impl fmt::Display for Aggregate {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct Operator {
+    pub schema: String,
+    pub name: String,
+    pub left: Option<String>,
+    pub right: Option<String>,
+    pub procedure: String,
+    pub commutator: Option<String>,
+    pub negator: Option<String>,
+    pub restrict: Option<String>,
+    pub join: Option<String>,
+}
+
+impl From<&crate::ir::OperatorSpec> for Operator {
+    fn from(o: &crate::ir::OperatorSpec) -> Self {
+        Self {
+            schema: o.schema.clone().unwrap_or_else(|| "public".to_string()),
+            name: o.alt_name.clone().unwrap_or_else(|| o.name.clone()),
+            left: o.left.clone(),
+            right: o.right.clone(),
+            procedure: o.procedure.clone(),
+            commutator: o.commutator.clone(),
+            negator: o.negator.clone(),
+            restrict: o.restrict.clone(),
+            join: o.join.clone(),
+        }
+    }
+}
+
+impl fmt::Display for Operator {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut parts = Vec::new();
+        if let Some(l) = &self.left {
+            parts.push(format!("LEFTARG = {}", l));
+        }
+        if let Some(r) = &self.right {
+            parts.push(format!("RIGHTARG = {}", r));
+        }
+        parts.push(format!("PROCEDURE = {}", self.procedure));
+        if let Some(c) = &self.commutator {
+            parts.push(format!("COMMUTATOR = {}", c));
+        }
+        if let Some(n) = &self.negator {
+            parts.push(format!("NEGATOR = {}", n));
+        }
+        if let Some(rst) = &self.restrict {
+            parts.push(format!("RESTRICT = {}", rst));
+        }
+        if let Some(j) = &self.join {
+            parts.push(format!("JOIN = {}", j));
+        }
+        write!(
+            f,
+            "CREATE OPERATOR {}.{} ({});",
+            ident(&self.schema),
+            ident(&self.name),
+            parts.join(", ")
+        )
+    }
+}
+
 impl From<&crate::ir::FunctionSpec> for Function {
     fn from(f: &crate::ir::FunctionSpec) -> Self {
         Self {
@@ -1068,6 +1129,53 @@ impl fmt::Display for Trigger {
             table_ident = ident(&self.table),
             fn_schema_ident = ident(&self.function_schema),
             fn_name = ident(&self.function),
+        )
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Rule {
+    pub schema: String,
+    pub table: String,
+    pub name: String,
+    pub event: String,
+    pub r#where: Option<String>,
+    pub instead: bool,
+    pub command: String,
+}
+
+impl From<&crate::ir::RuleSpec> for Rule {
+    fn from(r: &crate::ir::RuleSpec) -> Self {
+        Self {
+            schema: r.schema.clone().unwrap_or_else(|| "public".to_string()),
+            table: r.table.clone(),
+            name: r.alt_name.clone().unwrap_or_else(|| r.name.clone()),
+            event: r.event.clone(),
+            r#where: r.r#where.clone(),
+            instead: r.instead,
+            command: r.command.clone(),
+        }
+    }
+}
+
+impl fmt::Display for Rule {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let where_clause = self
+            .r#where
+            .as_ref()
+            .map(|w| format!(" WHERE {}", w))
+            .unwrap_or_default();
+        let action = if self.instead { "INSTEAD" } else { "ALSO" };
+        write!(
+            f,
+            "CREATE RULE {name} AS ON {event} TO {schema}.{table}{where_clause} DO {action} {command};",
+            name = ident(&self.name),
+            event = self.event.to_uppercase(),
+            schema = ident(&self.schema),
+            table = ident(&self.table),
+            where_clause = where_clause,
+            action = action,
+            command = self.command,
         )
     }
 }
