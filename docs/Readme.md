@@ -47,3 +47,4 @@ We aim to support all major PostgreSQL features. See the reference docs:
 - [Text Search Configuration](postgres/text_search_configuration.md)
 - [Text Search Template](postgres/text_search_template.md)
 - [Text Search Parser](postgres/text_search_parser.md)
+- [Statistics](postgres/statistics.md)
