@@ -19,6 +19,7 @@ pub struct Config {
     pub materialized: Vec<AstMaterializedView>,
     pub policies: Vec<AstPolicy>,
     pub roles: Vec<AstRole>,
+    pub tablespaces: Vec<AstTablespace>,
     pub grants: Vec<AstGrant>,
     pub foreign_data_wrappers: Vec<AstForeignDataWrapper>,
     pub foreign_servers: Vec<AstForeignServer>,
@@ -222,6 +223,16 @@ pub struct AstRole {
     pub replication: bool,
     pub password: Option<String>,
     pub in_role: Vec<String>,
+    pub comment: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AstTablespace {
+    pub name: String,
+    pub alt_name: Option<String>,
+    pub location: String,
+    pub owner: Option<String>,
+    pub options: Vec<String>,
     pub comment: Option<String>,
 }
 

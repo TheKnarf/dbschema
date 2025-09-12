@@ -21,7 +21,7 @@ use crate::frontend::env::EnvVars;
 pub use ir::{
     AggregateSpec, CollationSpec, CompositeTypeSpec, Config, DomainSpec, EnumSpec, EventTriggerSpec,
     ExtensionSpec, FunctionSpec, GrantSpec, MaterializedViewSpec, OutputSpec, PolicySpec, RoleSpec,
-    SchemaSpec, SequenceSpec, TableSpec, TriggerSpec, ViewSpec,
+    TablespaceSpec, SchemaSpec, SequenceSpec, TableSpec, TriggerSpec, ViewSpec,
 };
 
 // Loader abstraction: lets callers control how files are read.
@@ -70,6 +70,7 @@ where
         materialized: maybe!(Materialized, materialized),
         policies: maybe!(Policies, policies),
         roles: maybe!(Roles, roles),
+        tablespaces: maybe!(Tablespaces, tablespaces),
         grants: maybe!(Grants, grants),
         tests: maybe!(Tests, tests),
         outputs: cfg.outputs.clone(),

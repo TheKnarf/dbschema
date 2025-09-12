@@ -98,6 +98,43 @@ impl fmt::Display for Role {
 }
 
 #[derive(Debug, Clone)]
+pub struct Tablespace {
+    pub name: String,
+    pub location: String,
+    pub owner: Option<String>,
+    pub options: Vec<String>,
+}
+
+impl From<&crate::ir::TablespaceSpec> for Tablespace {
+    fn from(t: &crate::ir::TablespaceSpec) -> Self {
+        Self {
+            name: t.alt_name.clone().unwrap_or_else(|| t.name.clone()),
+            location: t.location.clone(),
+            owner: t.owner.clone(),
+            options: t.options.clone(),
+        }
+    }
+}
+
+impl fmt::Display for Tablespace {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "CREATE TABLESPACE {} LOCATION {}",
+            ident(&self.name),
+            literal(&self.location)
+        )?;
+        if let Some(owner) = &self.owner {
+            write!(f, " OWNER {}", ident(owner))?;
+        }
+        if !self.options.is_empty() {
+            write!(f, " WITH ({})", self.options.join(", "))?;
+        }
+        write!(f, ";")
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct Extension {
     pub name: String,
     pub if_not_exists: bool,
