@@ -525,6 +525,42 @@ impl ForEachSupport for AstAggregate {
     }
 }
 
+// Operator implementation
+impl ForEachSupport for AstOperator {
+    type Item = Self;
+
+    fn parse_one(name: &str, body: &Body, env: &EnvVars) -> Result<Self::Item> {
+        let alt_name = get_attr_string(body, "name", env)?;
+        let schema = get_attr_string(body, "schema", env)?;
+        let left = get_attr_string(body, "left", env)?;
+        let right = get_attr_string(body, "right", env)?;
+        let procedure =
+            get_attr_string(body, "procedure", env)?.context("operator 'procedure' is required")?;
+        let commutator = get_attr_string(body, "commutator", env)?;
+        let negator = get_attr_string(body, "negator", env)?;
+        let restrict = get_attr_string(body, "restrict", env)?;
+        let join = get_attr_string(body, "join", env)?;
+        let comment = get_attr_string(body, "comment", env)?;
+        Ok(AstOperator {
+            name: name.to_string(),
+            alt_name,
+            schema,
+            left,
+            right,
+            procedure,
+            commutator,
+            negator,
+            restrict,
+            join,
+            comment,
+        })
+    }
+
+    fn add_to_config(item: Self::Item, config: &mut Config) {
+        config.operators.push(item);
+    }
+}
+
 // Trigger implementation
 impl ForEachSupport for AstTrigger {
     type Item = Self;
@@ -561,6 +597,37 @@ impl ForEachSupport for AstTrigger {
 
     fn add_to_config(item: Self::Item, config: &mut Config) {
         config.triggers.push(item);
+    }
+}
+
+// Rule implementation
+impl ForEachSupport for AstRule {
+    type Item = Self;
+
+    fn parse_one(name: &str, body: &Body, env: &EnvVars) -> Result<Self::Item> {
+        let alt_name = get_attr_string(body, "name", env)?;
+        let schema = get_attr_string(body, "schema", env)?;
+        let table = get_attr_string(body, "table", env)?.context("rule 'table' is required")?;
+        let event = get_attr_string(body, "event", env)?.context("rule 'event' is required")?;
+        let r#where = get_attr_string(body, "where", env)?;
+        let instead = get_attr_bool(body, "instead", env)?.unwrap_or(false);
+        let command = get_attr_string(body, "command", env)?.context("rule 'command' is required")?;
+        let comment = get_attr_string(body, "comment", env)?;
+        Ok(AstRule {
+            name: name.to_string(),
+            alt_name,
+            schema,
+            table,
+            event,
+            r#where,
+            instead,
+            command,
+            comment,
+        })
+    }
+
+    fn add_to_config(item: Self::Item, config: &mut Config) {
+        config.rules.push(item);
     }
 }
 

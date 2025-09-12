@@ -5,7 +5,9 @@ pub struct Config {
     pub functions: Vec<AstFunction>,
     pub procedures: Vec<AstProcedure>,
     pub aggregates: Vec<AstAggregate>,
+    pub operators: Vec<AstOperator>,
     pub triggers: Vec<AstTrigger>,
+    pub rules: Vec<AstRule>,
     pub event_triggers: Vec<AstEventTrigger>,
     pub extensions: Vec<AstExtension>,
     pub collations: Vec<AstCollation>,
@@ -80,6 +82,21 @@ pub struct AstAggregate {
 }
 
 #[derive(Debug, Clone)]
+pub struct AstOperator {
+    pub name: String,
+    pub alt_name: Option<String>,
+    pub schema: Option<String>,
+    pub left: Option<String>,
+    pub right: Option<String>,
+    pub procedure: String,
+    pub commutator: Option<String>,
+    pub negator: Option<String>,
+    pub restrict: Option<String>,
+    pub join: Option<String>,
+    pub comment: Option<String>,
+}
+
+#[derive(Debug, Clone)]
 pub struct AstTrigger {
     pub name: String,
     pub alt_name: Option<String>,
@@ -91,6 +108,19 @@ pub struct AstTrigger {
     pub function: String,
     pub function_schema: Option<String>,
     pub when: Option<String>,
+    pub comment: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AstRule {
+    pub name: String,
+    pub alt_name: Option<String>,
+    pub schema: Option<String>,
+    pub table: String,
+    pub event: String,
+    pub r#where: Option<String>,
+    pub instead: bool,
+    pub command: String,
     pub comment: Option<String>,
 }
 
