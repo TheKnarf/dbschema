@@ -56,6 +56,20 @@ fn to_sql(cfg: &Config) -> Result<String> {
         }
     }
 
+    for c in &cfg.collations {
+        out.push_str(&format!("{}\n\n", pg::Collation::from(c)));
+        if let Some(comment) = &c.comment {
+            let schema = c.schema.clone().unwrap_or_else(|| "public".to_string());
+            let name = c.alt_name.clone().unwrap_or_else(|| c.name.clone());
+            out.push_str(&format!(
+                "COMMENT ON COLLATION {}.{} IS {};\n\n",
+                pg::ident(&schema),
+                pg::ident(&name),
+                pg::literal(comment)
+            ));
+        }
+    }
+
     for s in &cfg.sequences {
         out.push_str(&format!("{}\n\n", pg::Sequence::from(s)));
         if let Some(comment) = &s.comment {

@@ -19,7 +19,7 @@ use std::path::Path;
 // Public re-exports
 use crate::frontend::env::EnvVars;
 pub use ir::{
-    AggregateSpec, CompositeTypeSpec, Config, DomainSpec, EnumSpec, EventTriggerSpec,
+    AggregateSpec, CollationSpec, CompositeTypeSpec, Config, DomainSpec, EnumSpec, EventTriggerSpec,
     ExtensionSpec, FunctionSpec, GrantSpec, MaterializedViewSpec, OutputSpec, PolicySpec, RoleSpec,
     SchemaSpec, SequenceSpec, TableSpec, TriggerSpec, ViewSpec,
 };
@@ -59,6 +59,7 @@ where
         triggers: maybe!(Triggers, triggers),
         event_triggers: maybe!(EventTriggers, event_triggers),
         extensions: maybe!(Extensions, extensions),
+        collations: maybe!(Collations, collations),
         sequences: maybe!(Sequences, sequences),
         schemas: maybe!(Schemas, schemas),
         enums: maybe!(Enums, enums),

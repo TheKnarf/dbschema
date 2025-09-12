@@ -583,6 +583,43 @@ impl ForEachSupport for AstExtension {
     }
 }
 
+// Collation implementation
+impl ForEachSupport for AstCollation {
+    type Item = Self;
+
+    fn parse_one(name: &str, body: &Body, env: &EnvVars) -> Result<Self::Item> {
+        let alt_name = get_attr_string(body, "name", env)?;
+        let schema = get_attr_string(body, "schema", env)?;
+        let if_not_exists = get_attr_bool(body, "if_not_exists", env)?.unwrap_or(true);
+        let from = get_attr_string(body, "from", env)?;
+        let locale = get_attr_string(body, "locale", env)?;
+        let lc_collate = get_attr_string(body, "lc_collate", env)?;
+        let lc_ctype = get_attr_string(body, "lc_ctype", env)?;
+        let provider = get_attr_string(body, "provider", env)?;
+        let deterministic = get_attr_bool(body, "deterministic", env)?;
+        let version = get_attr_string(body, "version", env)?;
+        let comment = get_attr_string(body, "comment", env)?;
+        Ok(AstCollation {
+            name: name.to_string(),
+            alt_name,
+            schema,
+            if_not_exists,
+            from,
+            locale,
+            lc_collate,
+            lc_ctype,
+            provider,
+            deterministic,
+            version,
+            comment,
+        })
+    }
+
+    fn add_to_config(item: Self::Item, config: &mut Config) {
+        config.collations.push(item);
+    }
+}
+
 // Enum implementation
 impl ForEachSupport for AstEnum {
     type Item = Self;

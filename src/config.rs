@@ -89,6 +89,7 @@ pub enum ResourceKind {
     Triggers,
     EventTriggers,
     Extensions,
+    Collations,
     Sequences,
     Policies,
     Roles,
@@ -111,6 +112,7 @@ impl fmt::Display for ResourceKind {
             ResourceKind::Triggers => "triggers",
             ResourceKind::EventTriggers => "event_triggers",
             ResourceKind::Extensions => "extensions",
+            ResourceKind::Collations => "collations",
             ResourceKind::Sequences => "sequences",
             ResourceKind::Policies => "policies",
             ResourceKind::Roles => "roles",
@@ -138,6 +140,7 @@ impl std::str::FromStr for ResourceKind {
             "triggers" => Ok(ResourceKind::Triggers),
             "event_triggers" => Ok(ResourceKind::EventTriggers),
             "extensions" => Ok(ResourceKind::Extensions),
+            "collations" => Ok(ResourceKind::Collations),
             "sequences" => Ok(ResourceKind::Sequences),
             "policies" => Ok(ResourceKind::Policies),
             "roles" => Ok(ResourceKind::Roles),
@@ -166,6 +169,7 @@ impl TargetConfig {
                 ResourceKind::Triggers,
                 ResourceKind::EventTriggers,
                 ResourceKind::Extensions,
+                ResourceKind::Collations,
                 ResourceKind::Sequences,
                 ResourceKind::Policies,
                 ResourceKind::Roles,
@@ -237,7 +241,8 @@ mod tests {
         assert!(include_set.contains(&ResourceKind::Enums));
         assert!(include_set.contains(&ResourceKind::EventTriggers));
         assert!(include_set.contains(&ResourceKind::Aggregates));
-        assert_eq!(include_set.len(), 17); // All resource types
+        assert!(include_set.contains(&ResourceKind::Collations));
+        assert_eq!(include_set.len(), 18); // All resource types
     }
 
     #[test]

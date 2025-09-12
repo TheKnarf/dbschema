@@ -1230,6 +1230,25 @@ fn load_file(
         )?;
     }
 
+    for blk in body.blocks().filter(|b| b.identifier() == "collation") {
+        let name = blk
+            .labels()
+            .get(0)
+            .ok_or_else(|| anyhow::anyhow!("collation block missing name label"))?
+            .as_str()
+            .to_string();
+        let for_each_expr = find_attr(blk.body(), "for_each");
+        let count_expr = find_attr(blk.body(), "count");
+        execute_for_each::<ast::AstCollation>(
+            &name,
+            blk.body(),
+            &env,
+            &mut cfg,
+            for_each_expr,
+            count_expr,
+        )?;
+    }
+
     for blk in body.blocks().filter(|b| b.identifier() == "enum") {
         let name = blk
             .labels()

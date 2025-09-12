@@ -8,6 +8,7 @@ pub struct Config {
     pub triggers: Vec<TriggerSpec>,
     pub event_triggers: Vec<EventTriggerSpec>,
     pub extensions: Vec<ExtensionSpec>,
+    pub collations: Vec<CollationSpec>,
     pub sequences: Vec<SequenceSpec>,
     pub schemas: Vec<SchemaSpec>,
     pub enums: Vec<EnumSpec>,
@@ -89,6 +90,22 @@ pub struct ExtensionSpec {
     pub alt_name: Option<String>,
     pub if_not_exists: bool,
     pub schema: Option<String>,
+    pub version: Option<String>,
+    pub comment: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CollationSpec {
+    pub name: String,
+    pub alt_name: Option<String>,
+    pub schema: Option<String>,
+    pub if_not_exists: bool,
+    pub from: Option<String>,
+    pub locale: Option<String>,
+    pub lc_collate: Option<String>,
+    pub lc_ctype: Option<String>,
+    pub provider: Option<String>,
+    pub deterministic: Option<bool>,
     pub version: Option<String>,
     pub comment: Option<String>,
 }
