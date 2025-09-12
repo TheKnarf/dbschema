@@ -429,6 +429,17 @@ pub struct Function {
 }
 
 #[derive(Debug, Clone)]
+pub struct Procedure {
+    pub schema: String,
+    pub name: String,
+    pub language: String,
+    pub parameters: Vec<String>,
+    pub replace: bool,
+    pub security: Option<String>,
+    pub body: String,
+}
+
+#[derive(Debug, Clone)]
 pub struct Aggregate {
     pub schema: String,
     pub name: String,
@@ -530,6 +541,43 @@ impl fmt::Display for Function {
             volatility = volatility,
             strict = strict,
             cost = cost,
+            body = self.body,
+        )
+    }
+}
+
+impl From<&crate::ir::ProcedureSpec> for Procedure {
+    fn from(p: &crate::ir::ProcedureSpec) -> Self {
+        Self {
+            schema: p.schema.clone().unwrap_or_else(|| "public".to_string()),
+            name: p.alt_name.clone().unwrap_or_else(|| p.name.clone()),
+            language: p.language.clone(),
+            parameters: p.parameters.clone(),
+            replace: p.replace,
+            security: p.security.clone(),
+            body: p.body.clone(),
+        }
+    }
+}
+
+impl fmt::Display for Procedure {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let params = self.parameters.join(", ");
+        let security = self
+            .security
+            .as_ref()
+            .map(|s| format!(" SECURITY {}", s.to_uppercase()))
+            .unwrap_or_default();
+        let or_replace = if self.replace { "OR REPLACE " } else { "" };
+        write!(
+            f,
+            "CREATE {or_replace}PROCEDURE {schema}.{name}({params}) LANGUAGE {lang}{security} AS $$\n{body}\n$$;",
+            or_replace = or_replace,
+            schema = ident(&self.schema),
+            name = ident(&self.name),
+            params = params,
+            lang = self.language.to_lowercase(),
+            security = security,
             body = self.body,
         )
     }

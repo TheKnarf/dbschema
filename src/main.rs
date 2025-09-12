@@ -16,7 +16,7 @@ use walkdir::WalkDir;
 
 #[derive(Parser)]
 #[command(name = "dbschema")]
-#[command(about = "HCL-driven tables, functions & triggers for Postgres", long_about = None)]
+#[command(about = "HCL-driven tables, functions, procedures & triggers for Postgres", long_about = None)]
 struct Cli {
     /// Root HCL file (default: main.hcl)
     #[arg(long, default_value = "main.hcl")]
@@ -182,13 +182,14 @@ fn main() -> Result<()> {
 
                 dbschema::validate(&filtered, cli.strict)?;
                 info!(
-                    "Valid: {} schema(s), {} enum(s), {} table(s), {} view(s), {} materialized view(s), {} function(s), {} trigger(s)",
+                    "Valid: {} schema(s), {} enum(s), {} table(s), {} view(s), {} materialized view(s), {} function(s), {} procedure(s), {} trigger(s)",
                     filtered.schemas.len(),
                     filtered.enums.len(),
                     filtered.tables.len(),
                     filtered.views.len(),
                     filtered.materialized.len(),
                     filtered.functions.len(),
+                    filtered.procedures.len(),
                     filtered.triggers.len()
                 );
                 print_outputs(&filtered.outputs);

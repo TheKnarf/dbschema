@@ -298,6 +298,20 @@ fn to_sql(cfg: &Config) -> Result<String> {
         }
     }
 
+    for p in &cfg.procedures {
+        out.push_str(&format!("{}\n\n", pg::Procedure::from(p)));
+        if let Some(comment) = &p.comment {
+            let schema = p.schema.clone().unwrap_or_else(|| "public".to_string());
+            let name = p.alt_name.clone().unwrap_or_else(|| p.name.clone());
+            out.push_str(&format!(
+                "COMMENT ON PROCEDURE {}.{}() IS {};\n\n",
+                pg::ident(&schema),
+                pg::ident(&name),
+                pg::literal(comment)
+            ));
+        }
+    }
+
     for a in &cfg.aggregates {
         out.push_str(&format!("{}\n\n", pg::Aggregate::from(a)));
         if let Some(comment) = &a.comment {

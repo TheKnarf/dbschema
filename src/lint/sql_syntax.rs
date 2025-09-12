@@ -82,6 +82,11 @@ impl LintCheck for SqlSyntax {
                 self.check_stmt(&mut msgs, &func.body, &format!("function '{}'", func.name));
             }
         }
+        for proc in &cfg.procedures {
+            if proc.language.to_lowercase() == "sql" {
+                self.check_stmt(&mut msgs, &proc.body, &format!("procedure '{}'", proc.name));
+            }
+        }
         for test in &cfg.tests {
             for stmt in test
                 .setup

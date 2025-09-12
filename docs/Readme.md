@@ -27,6 +27,7 @@ We aim to support all major PostgreSQL features. See the reference docs:
 - [View](postgres/view.md)
 - [Materialized View](postgres/materialized.md)
 - [Function](postgres/function.md)
+- [Procedure](postgres/procedure.md)
 - [Aggregate](postgres/aggregate.md)
 - [Trigger](postgres/trigger.md)
 - [Event Trigger](postgres/event_trigger.md)
