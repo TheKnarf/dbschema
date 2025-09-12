@@ -14,4 +14,4 @@ test "users_table" {
 }
 ```
 
-When run against Postgres, each test executes inside a transaction and rolls back automatically. The PGlite backend runs tests in-memory for fast feedback.
+When run against Postgres, each test executes inside a transaction and rolls back automatically.

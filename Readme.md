@@ -3,65 +3,78 @@
 A Rust CLI to define database schema's in a small HCL dialect, and generate idempotent SQL migrations.
 It aims to support all PostgreSQL features (like extensions, functions, triggers, etc).
 
+Designed to complement Prisma (or any tool) when you want to declaratively define features the ORM might not support out of the box (for example: Postgres triggers).
+Prisma supports custom migrations, so you can generate SQL with this tool and ship it alongside your Prisma migrations.
 
-Designed to complement Prisma (or any tool) when you want to declaratively define features that the ORM might not support out of the box (ex. postgres triggers).
-Prisma ORM support custom migrations, so you can use this tool to generate an SQL migration to add together with the other Prisma migrations.
+## Docs
 
-## Features
-
-### Postgres resources
-
-- [schema](docs/postgres/schema.md)
-- [enum](docs/postgres/enum.md)
-- [domain](docs/postgres/domain.md)
-- [type](docs/postgres/type.md)
-- [sequence](docs/postgres/sequence.md)
-- [table](docs/postgres/table.md)
-- [index](docs/postgres/index.md)
-- [view](docs/postgres/view.md)
-- [materialized view](docs/postgres/materialized.md)
-- [function](docs/postgres/function.md)
-- [aggregate](docs/postgres/aggregate.md)
-- [trigger](docs/postgres/trigger.md)
-- [event trigger](docs/postgres/event_trigger.md)
-- [extension](docs/postgres/extension.md)
-- [policy](docs/postgres/policy.md)
-- [role](docs/postgres/role.md)
-- [grant](docs/postgres/grant.md)
-
-### Generic HCL
-
-- [variables and repetition](docs/variables.md)
-- [locals](docs/locals.md)
-- [modules](docs/modules.md)
-- [output](docs/output.md)
-- [tests](docs/tests.md)
-
-- Full HCL expression support: numbers, booleans, arrays, objects, traversals (`var.*`, `local.*`), function calls, and `${...}` templates.
-- Validate config, then generate SQL with safe `CREATE OR REPLACE FUNCTION` and idempotent guards for triggers/enums/materialized views.
+[Read full docs](./docs/Readme.md)
 
 ## Install
+
+- Ensure Rust toolchain is installed.
+- Build & install:
+
+```bash
+cargo install --path .
+```
+
+## Usage
+
+Example: a small HCL file that defines an enum, a table, a trigger function, and a trigger.
+
+```hcl
+extension "pgcrypto" {}
+
+enum "Status" {
+  values = ["ACTIVE", "INACTIVE"]
+}
+
+table "users" {
+  column "id"           { type = "uuid"      nullable = false default = "gen_random_uuid()" }
+  column "email"        { type = "text"      nullable = false }
+  column "status"       { type = "Status"    nullable = false }
+  column "createdDate"  { type = "timestamp" nullable = false default = "now()" }
+  column "updatedDate"  { type = "timestamp" nullable = true }
+
+  primary_key { columns = ["id"] }
+  index "users_email_key" { columns = ["email"] unique = true }
+}
+
+function "set_updated_at" {
+  language = "plpgsql"
+  returns  = "trigger"
+  body = <<-SQL
+  BEGIN
+    NEW."updatedDate" := now();
+    RETURN NEW;
+  END;
+  SQL
+}
+
+trigger "users_set_updated_at" {
+  table = "users"
+  timing = "BEFORE"
+  events = ["UPDATE"]
+  level  = "ROW"
+  function = "set_updated_at"
+}
+```
+
+Create a migration (writes SQL to the given directory):
+
+```bash
+dbschema --input main.hcl create-migration --out-dir migrations --name init
+```
+
+## Development
 
 - Ensure Rust toolchain is installed.
 - Build:
 
 ```bash
-cargo build --release
+cargo build
 ```
-
-
-
-## Usage
-
-- Format HCL files: `./target/release/dbschema fmt [path]`
-- Validate: `./target/release/dbschema --input examples/table.hcl validate`
-- Create migration (Postgres SQL): `./target/release/dbschema --input examples/table.hcl create-migration --out-dir migrations --name tables`
-- Create Prisma models/enums only (no generator/datasource): `./target/release/dbschema --backend prisma --input examples/table.hcl create-migration --out-dir prisma --name schema`
-- Lint schema: `./target/release/dbschema --input examples/table.hcl lint`
-- Variables: `--var schema=public` or `--var-file .env.hcl`
-- Using config file: `dbschema --config` or `dbschema --config --target <target_name>`
-- Event triggers: see `examples/event_trigger.hcl`
-
 
 ### Examples
 
@@ -70,49 +83,7 @@ cargo build --release
 - Run tests for a single example against Docker Postgres: `just example-test file=examples/table.hcl`
 - Run tests for all examples against Docker Postgres: `just examples-test`
 
-## Linting
-
-`dbschema lint` runs built-in checks against your schema. The default checks are:
-
-- `naming-convention`: table and column names must be `snake_case`.
-- `missing-index`: tables should define at least one index or primary key.
-
-- `forbid-serial`: disallow use of `serial`/`bigserial` column types.
-- `primary-key-not-null`: columns in a primary key must be `NOT NULL`.
-- `destructive-change`: foreign keys using `ON DELETE`/`ON UPDATE CASCADE`.
-- `unused-index`: indexes that duplicate a table's primary key.
-- `long-identifier`: table, column, or index names longer than 63 characters.
-
-Suppress a rule for a specific table or column with `lint_ignore`:
-
-```hcl
-table "users" {
-  lint_ignore = ["missing-index"]
-
-  column "ID" {
-    type = "int"
-    lint_ignore = ["naming-convention"]
-  }
-}
-```
-
-Configure rule severity globally in `dbschema.toml`:
-
-```toml
-[settings.lint.severity]
-missing-index = "warn"
-forbid-serial = "error"
-```
-
-Setting a rule's severity to `allow` suppresses it entirely.
-Severity can also be overridden on the command line using `--allow`,
-`--warn`, or `--error` flags:
-
-```sh
-dbschema lint --warn missing-index --allow long-identifier
-```
-
-## Logging
+### Logging
 
 This project uses [`env_logger`](https://docs.rs/env_logger) with `info` output enabled by default.
 Set the `RUST_LOG` environment variable to control verbosity:
@@ -122,250 +93,3 @@ RUST_LOG=debug dbschema --input examples/table.hcl validate
 ```
 
 Use `warn` or `error` to reduce output, e.g. `RUST_LOG=warn`.
-
-## Configuration File
-
-dbschema can be configured using a `dbschema.toml` file in the root of your project. This file allows you to define multiple generation targets, each with its own settings.
-
-### Structure
-
-The configuration file consists of a global `[settings]` block and one or more `[[targets]]` blocks.
-
-```toml
-# Global settings (optional)
-[settings]
-input = "main.hcl"
-var_files = ["vars.tfvars"]
-env = { DATABASE_URL = "postgres://localhost:5432/mydb" }
-
-# Target definitions
-[[targets]]
-name = "postgres_schema"
-description = "Generate PostgreSQL schema for production"
-backend = "postgres"
-input = "main.hcl"
-output = "schema.sql"
-include = ["schemas", "tables", "views", "functions", "triggers", "extensions", "policies"]
-exclude = []
-vars = { environment = "production" }
-
-[[targets]]
-name = "prisma_client"
-description = "Generate Prisma schema for client applications"
-backend = "prisma"
-input = "main.hcl"
-output = "prisma/schema.prisma"
-include = ["tables", "enums"]
-exclude = ["functions", "triggers", "extensions", "policies", "views", "materialized"]
-vars = { generate_client = "true" }
-```
-
-### `[settings]` block
-
-- `input`: The root HCL file to use. Defaults to `main.hcl`.
-- `var_files`: A list of variable files to load.
-- `env`: A map of environment variables to set before running a target.
-- `test_backend`: Optional default backend for the `test` command (`postgres`).
-- `test_dsn`: Optional default database connection string for tests when using Postgres.
-
-### `[[targets]]` block
-
-- `name`: A unique name for the target.
-- `description`: A description of the target.
-- `backend`: The backend to use for generation (`postgres`, `prisma`, or `json`).
-- `input`: The root HCL file for this target. Overrides the global `input` setting.
-- `output`: The output file path. If not specified, the output is printed to stdout.
-- `include`: A list of resource types to include.
-- `exclude`: A list of resource types to exclude.
-- `vars`: A map of variables to pass to the HCL evaluation context.
-- `var_files`: A list of variable files to load for this target. These are loaded in addition to the global `var_files`.
-
-## HCL Schema
-
-```hcl
-variable "<name>" {
-  default = "value"
-}
-
-locals {
-  some = "${var.name}-suffix"
-}
-
-function "<name>" {
-  name     = "<new_name>"     # optional, overrides the block name
-  schema   = "public"         # optional, default "public"
-  language = "plpgsql"         # required (default plpgsql)
-  returns  = "trigger"         # optional (default trigger)
-  replace  = true               # optional (default true)
-  parameters = ["arg1 int"]   # optional
-  volatility = "volatile"     # optional
-  strict     = false           # optional
-  security   = "invoker"      # optional
-  cost       = 100             # optional
-  body     = <<-SQL
-    BEGIN
-      NEW.updated_at = now();
-      RETURN NEW;
-    END;
-  SQL
-}
-
-enum "<name>" {
-  name   = "<new_name>"     # optional, overrides the block name
-  schema = "public"    # optional, default "public"
-  values = ["a", "b"]  # required
-}
-
-domain "<name>" {
-  name      = "<new_name>"   # optional, overrides the block name
-  schema    = "public"       # optional, default "public"
-  type      = "text"         # required base type
-  not_null  = false           # optional
-  default   = null            # optional
-  constraint = null           # optional constraint name
-  check     = "VALUE <> ''"  # optional CHECK expression
-}
-
-type "<name>" {
-  name   = "<new_name>"   # optional, overrides the block name
-  schema = "public"       # optional, default "public"
-  field "a" { type = "int" }
-  field "b" { type = "text" }
-}
-
-sequence "<name>" {
-  name        = "<new_name>"   # optional, overrides the block name
-  schema      = "public"       # optional, default "public"
-  if_not_exists = true          # optional, default true
-  as          = "bigint"       # optional
-  increment   = 1               # optional
-  min_value   = 1               # optional
-  max_value   = null            # optional
-  start       = 1               # optional
-  cache       = 1               # optional
-  cycle       = false           # optional
-  owned_by    = "table.column" # optional
-}
-
-trigger "<name>" {
-  name     = "<new_name>"     # optional, overrides the block name
-  schema     = "public"        # optional, default "public"
-  table      = "users"         # required
-  timing     = "BEFORE"        # default BEFORE
-  events     = ["UPDATE"]      # INSERT | UPDATE | DELETE (any combination)
-  level      = "ROW"           # ROW | STATEMENT
-  function   = "set_updated_at"# required (unqualified name)
-  function_schema = "public"   # optional, defaults to trigger schema
-  when       = null             # optional raw SQL condition
-}
-
-policy "<name>" {
-  name    = "<new_name>"     # optional, overrides the block name
-  schema  = "public"          # optional, default "public" (table schema)
-  table   = "users"           # required
-  as      = "permissive"       # optional: permissive|restrictive (default permissive)
-  command = "select"           # optional: all|select|insert|update|delete (default all)
-  roles   = ["app_user"]       # optional: omit for PUBLIC
-  using   = "email is not null"# optional: USING (...) predicate
-  check   = null               # optional: WITH CHECK (...) predicate
-}
-
-role "<name>" {
-  name  = "<new_name>"  # optional, overrides the block name
-  login = true           # optional, default false
-}
-
-grant "<name>" {
-  role       = "app_user"           # grantee role (required)
-  schema     = "public"             # optional, default "public"
-  table      = "users"              # optional table target
-  function   = null                  # optional function target
-  privileges = ["SELECT"]          # required privileges
-}
-
-view "<name>" {
-  name    = "<new_name>"     # optional, overrides the block name
-  schema  = "public"     # optional, default "public"
-  replace = true          # optional, default true (OR REPLACE)
-  sql     = <<-SQL        # required SELECT ... body (no trailing semicolon needed)
-    SELECT * FROM public.some_table
-  SQL
-}
-
-materialized "<name>" {
-  name      = "<new_name>"   # optional, overrides the block name
-  schema    = "public"   # optional, default "public"
-  with_data = true        # optional, default true (WITH [NO] DATA)
-  sql       = <<-SQL      # required SELECT ... body
-    SELECT ...
-  SQL
-}
-
-table "<name>" {
-  name          = "<new_name>"  # optional, overrides the block name
-  schema        = "public"      # optional, default "public"
-  if_not_exists = true          # optional, default true
-
-  # Columns
-  column "id" {
-    type     = "serial"         # required (raw SQL type string)
-    nullable = false            # optional (default true)
-    default  = null             # optional raw SQL expression (e.g., "now()")
-  }
-  column "email" { type = "text" nullable = false }
-
-  # Primary key (created inline only on CREATE TABLE)
-  primary_key { columns = ["id"] }
-
-  # Check constraints
-  check "email_not_empty" { expression = "email <> ''" }
-
-  # Indexes can be defined inline or at top level
-  index  "users_created_idx" { columns = ["created_at"] }
-
-  # Foreign keys (created inline only on CREATE TABLE)
-  foreign_key {
-    columns = ["org_id"]
-    ref { schema = "public" table = "orgs" columns = ["id"] }
-    on_delete = "CASCADE"      # optional
-    on_update = "NO ACTION"    # optional
-  }
-}
-
-index "users_email_key" {
-  table   = "users"
-  columns = ["email"]
-  unique  = true
-}
-
-extension "<name>" {
-  name          = "<new_name>" # optional, overrides the block name
-  # Creates `CREATE EXTENSION IF NOT EXISTS "<name>" [WITH SCHEMA "..." VERSION '...'];`
-  if_not_exists = true     # optional, default true
-  schema        = "public" # optional
-  version       = "1.1"    # optional
-}
-
-module "<name>" {
-  source = "./modules/timestamps"  # directory containing main.hcl
-  schema = var.schema
-  table  = "orders"
-}
-```
-
-## Resource Filters
-
-- Control which resources are included per run:
-  - `--include tables --include functions` (repeatable)
-  - `--exclude tables` (repeatable)
-  - Resource kinds: `schemas, sequences, enums, tables, views, materialized, functions, triggers, event_triggers, extensions, policies, tests`
-- Example split-output workflow:
-  - Prisma models for tables: `dbschema --backend prisma --include tables --input path/to/schema.hcl create-migration --out-dir prisma --name schema`
-  - SQL for everything else: `dbschema --backend postgres --exclude tables --input path/to/schema.hcl create-migration --out-dir migrations --name non_tables`
-- Tests can run against a real Postgres server or the in-memory PGlite backend; each test executes inside a transaction and is rolled back when using Postgres.
-  - Assertion queries may return `bool`, any signed or unsigned integer (non-zero is treated as `true`), or text values `"t"`/`"true"` (case-insensitive).
-
-## Expression Language
-
- dbschema evaluates HCL expressions with support for strings, numbers, booleans, arrays, objects, function calls, traversals like `var.*` and `local.*`, `${...}` string templates, list comprehensions (`[for x in list : expr]`), and conditional expressions (`a ? b : c`).
-
