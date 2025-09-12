@@ -21,6 +21,21 @@ pub fn lower_config(ast: ast::Config) -> ir::Config {
         policies: ast.policies.into_iter().map(Into::into).collect(),
         roles: ast.roles.into_iter().map(Into::into).collect(),
         grants: ast.grants.into_iter().map(Into::into).collect(),
+        foreign_data_wrappers: ast
+            .foreign_data_wrappers
+            .into_iter()
+            .map(Into::into)
+            .collect(),
+        foreign_servers: ast
+            .foreign_servers
+            .into_iter()
+            .map(Into::into)
+            .collect(),
+        foreign_tables: ast
+            .foreign_tables
+            .into_iter()
+            .map(Into::into)
+            .collect(),
         publications: vec![],
         subscriptions: vec![],
         tests: ast.tests.into_iter().map(Into::into).collect(),
@@ -281,6 +296,47 @@ impl From<ast::AstGrant> for ir::GrantSpec {
             function: g.function,
             database: g.database,
             sequence: g.sequence,
+        }
+    }
+}
+
+impl From<ast::AstForeignDataWrapper> for ir::ForeignDataWrapperSpec {
+    fn from(f: ast::AstForeignDataWrapper) -> Self {
+        Self {
+            name: f.name,
+            alt_name: f.alt_name,
+            handler: f.handler,
+            validator: f.validator,
+            options: f.options,
+            comment: f.comment,
+        }
+    }
+}
+
+impl From<ast::AstForeignServer> for ir::ForeignServerSpec {
+    fn from(s: ast::AstForeignServer) -> Self {
+        Self {
+            name: s.name,
+            alt_name: s.alt_name,
+            wrapper: s.wrapper,
+            r#type: s.r#type,
+            version: s.version,
+            options: s.options,
+            comment: s.comment,
+        }
+    }
+}
+
+impl From<ast::AstForeignTable> for ir::ForeignTableSpec {
+    fn from(t: ast::AstForeignTable) -> Self {
+        Self {
+            name: t.name,
+            alt_name: t.alt_name,
+            schema: t.schema,
+            server: t.server,
+            columns: t.columns.into_iter().map(Into::into).collect(),
+            options: t.options,
+            comment: t.comment,
         }
     }
 }

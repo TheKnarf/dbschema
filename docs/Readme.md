@@ -37,3 +37,6 @@ We aim to support all major PostgreSQL features. See the reference docs:
 - [Grant](postgres/grant.md)
 - [Publication](postgres/publication.md)
 - [Subscription](postgres/subscription.md)
+- [Foreign Data Wrapper](postgres/foreign_data_wrapper.md)
+- [Foreign Server](postgres/foreign_server.md)
+- [Foreign Table](postgres/foreign_table.md)

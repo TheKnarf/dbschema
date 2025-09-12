@@ -20,6 +20,9 @@ pub struct Config {
     pub policies: Vec<AstPolicy>,
     pub roles: Vec<AstRole>,
     pub grants: Vec<AstGrant>,
+    pub foreign_data_wrappers: Vec<AstForeignDataWrapper>,
+    pub foreign_servers: Vec<AstForeignServer>,
+    pub foreign_tables: Vec<AstForeignTable>,
     pub tests: Vec<AstTest>,
     pub outputs: Vec<AstOutput>,
 }
@@ -229,6 +232,38 @@ pub struct AstGrant {
     pub function: Option<String>,
     pub database: Option<String>,
     pub sequence: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AstForeignDataWrapper {
+    pub name: String,
+    pub alt_name: Option<String>,
+    pub handler: Option<String>,
+    pub validator: Option<String>,
+    pub options: Vec<String>,
+    pub comment: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AstForeignServer {
+    pub name: String,
+    pub alt_name: Option<String>,
+    pub wrapper: String,
+    pub r#type: Option<String>,
+    pub version: Option<String>,
+    pub options: Vec<String>,
+    pub comment: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AstForeignTable {
+    pub name: String,
+    pub alt_name: Option<String>,
+    pub schema: Option<String>,
+    pub server: String,
+    pub columns: Vec<AstColumn>,
+    pub options: Vec<String>,
+    pub comment: Option<String>,
 }
 
 #[derive(Debug, Clone)]

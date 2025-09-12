@@ -1,8 +1,14 @@
 pub mod collation;
+pub mod foreign_data_wrapper;
+pub mod foreign_server;
+pub mod foreign_table;
 
 use std::fmt;
 
 pub use collation::Collation;
+pub use foreign_data_wrapper::ForeignDataWrapper;
+pub use foreign_server::ForeignServer;
+pub use foreign_table::ForeignTable;
 
 pub fn ident(s: &str) -> String {
     let escaped = s.replace('"', "\"");

@@ -836,3 +836,131 @@ impl ForEachSupport for AstStandaloneIndex {
         config.indexes.push(item);
     }
 }
+
+// Foreign Data Wrapper implementation
+impl ForEachSupport for AstForeignDataWrapper {
+    type Item = Self;
+
+    fn parse_one(name: &str, body: &Body, env: &EnvVars) -> Result<Self::Item> {
+        let alt_name = get_attr_string(body, "name", env)?;
+        let handler = get_attr_string(body, "handler", env)?;
+        let validator = get_attr_string(body, "validator", env)?;
+        let options = match find_attr(body, "options") {
+            Some(attr) => expr_to_string_vec(attr.expr(), env)?,
+            None => Vec::new(),
+        };
+        let comment = get_attr_string(body, "comment", env)?;
+        Ok(AstForeignDataWrapper {
+            name: name.to_string(),
+            alt_name,
+            handler,
+            validator,
+            options,
+            comment,
+        })
+    }
+
+    fn add_to_config(item: Self::Item, config: &mut Config) {
+        config.foreign_data_wrappers.push(item);
+    }
+}
+
+// Foreign Server implementation
+impl ForEachSupport for AstForeignServer {
+    type Item = Self;
+
+    fn parse_one(name: &str, body: &Body, env: &EnvVars) -> Result<Self::Item> {
+        let alt_name = get_attr_string(body, "name", env)?;
+        let wrapper = get_attr_string(body, "wrapper", env)?
+            .context("foreign_server 'wrapper' is required")?;
+        let r#type = get_attr_string(body, "type", env)?;
+        let version = get_attr_string(body, "version", env)?;
+        let options = match find_attr(body, "options") {
+            Some(attr) => expr_to_string_vec(attr.expr(), env)?,
+            None => Vec::new(),
+        };
+        let comment = get_attr_string(body, "comment", env)?;
+        Ok(AstForeignServer {
+            name: name.to_string(),
+            alt_name,
+            wrapper,
+            r#type,
+            version,
+            options,
+            comment,
+        })
+    }
+
+    fn add_to_config(item: Self::Item, config: &mut Config) {
+        config.foreign_servers.push(item);
+    }
+}
+
+// Foreign Table implementation
+impl ForEachSupport for AstForeignTable {
+    type Item = Self;
+
+    fn parse_one(name: &str, body: &Body, env: &EnvVars) -> Result<Self::Item> {
+        let alt_name = get_attr_string(body, "name", env)?;
+        let schema = get_attr_string(body, "schema", env)?;
+        let server = get_attr_string(body, "server", env)?
+            .context("foreign_table 'server' is required")?;
+        let comment = get_attr_string(body, "comment", env)?;
+
+        let mut columns = Vec::new();
+        for cblk in body.blocks().filter(|bb| bb.identifier() == "column") {
+            let cname = cblk
+                .labels()
+                .get(0)
+                .ok_or_else(|| anyhow::anyhow!("column block missing name label"))?
+                .as_str()
+                .to_string();
+            let cb = cblk.body();
+            let ctype = get_attr_string(cb, "type", env)?
+                .with_context(|| format!("column '{}' missing type", cname))?;
+            let nullable = get_attr_bool(cb, "nullable", env)?.unwrap_or(true);
+            let default = get_attr_string(cb, "default", env)?;
+            let db_type = get_attr_string(cb, "db_type", env)?;
+            let comment = get_attr_string(cb, "comment", env)?;
+            let lint_ignore = match find_attr(cb, "lint_ignore") {
+                Some(attr) => expr_to_string_vec(attr.expr(), env)?,
+                None => Vec::new(),
+            };
+            let count = match get_attr_string(cb, "count", env)? {
+                Some(s) => s.parse::<usize>().unwrap_or(1),
+                None => 1,
+            };
+            if count > 0 {
+                columns.push(AstColumn {
+                    name: cname,
+                    r#type: ctype,
+                    nullable,
+                    default,
+                    db_type,
+                    lint_ignore,
+                    comment,
+                    count,
+                });
+            }
+        }
+
+        let options = match find_attr(body, "options") {
+            Some(attr) => expr_to_string_vec(attr.expr(), env)?,
+            None => Vec::new(),
+        };
+
+        Ok(AstForeignTable {
+            name: name.to_string(),
+            alt_name,
+            schema,
+            server,
+            columns,
+            options,
+            comment,
+        })
+    }
+
+    fn add_to_config(item: Self::Item, config: &mut Config) {
+        config.foreign_tables.push(item);
+    }
+}
