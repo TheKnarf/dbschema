@@ -8,8 +8,7 @@ Links to non-Postgres specific features and guides:
 
 - [Configuration](configuration.md)
 - [Linting](linting.md)
-- [Variables and Repetition](variables.md)
-- [Locals](locals.md)
+- [Variables, Locals, and Repetition](variables.md)
 - [Modules and Output](modules.md)
 - [Tests](tests.md)
 

@@ -14,3 +14,11 @@ extension "pgcrypto" {
 - `schema` (string, optional): target schema for extension objects.
 - `version` (string, optional): specific version to install.
 - `comment` (string, optional): documentation comment.
+
+## Examples
+
+```hcl
+extension "pgcrypto" {}
+
+extension "uuid-ossp" { if_not_exists = true }
+```

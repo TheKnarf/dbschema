@@ -18,3 +18,18 @@ domain "email" {
 - `constraint` (string, optional): name of a constraint.
 - `check` (string, optional): `CHECK` expression using `VALUE`.
 - `comment` (string, optional): documentation comment.
+
+## Examples
+
+```hcl
+domain "email" {
+  type = "text"
+  not_null = true
+  check = "VALUE ~ '^[^@]+@[^@]+\.[^@]+$'"
+}
+
+domain "nonempty_text" {
+  type = "text"
+  check = "VALUE <> ''"
+}
+```

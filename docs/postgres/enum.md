@@ -14,3 +14,16 @@ enum "status" {
 - `schema` (string, optional): schema for the type. Defaults to `public`.
 - `values` (array of strings): ordered list of allowed values.
 - `comment` (string, optional): documentation comment.
+
+## Examples
+
+```hcl
+enum "Status" {
+  values = ["ACTIVE", "INACTIVE"]
+}
+
+enum "Priority" {
+  schema = "app"
+  values = ["LOW", "MEDIUM", "HIGH"]
+}
+```

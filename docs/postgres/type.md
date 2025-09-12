@@ -14,3 +14,12 @@ type "address" {
 - `schema` (string, optional): schema for the type. Defaults to `public`.
 - `field` blocks: each adds a field with a `type`.
 - `comment` (string, optional): documentation comment.
+
+## Examples
+
+```hcl
+type "money_with_currency" {
+  field "amount"   { type = "numeric(12,2)" }
+  field "currency" { type = "char(3)" }
+}
+```

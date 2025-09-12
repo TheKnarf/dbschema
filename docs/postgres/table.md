@@ -42,3 +42,28 @@ table "users" {
 - `back_reference` blocks: create foreign keys on another table.
 - `lint_ignore` (array of strings, optional): suppress lint rules.
 - `comment` (string, optional): documentation comment.
+
+## Examples
+
+```hcl
+table "users" {
+  column "id"    { type = "uuid", nullable = false, default = "gen_random_uuid()" }
+  column "email" { type = "text", nullable = false }
+  column "role"  { type = "text", nullable = false, default = "user" }
+  primary_key { columns = ["id"] }
+  index "users_email_key" { columns = ["email"], unique = true }
+}
+
+table "posts" {
+  column "id"       { type = "uuid", nullable = false, default = "gen_random_uuid()" }
+  column "authorId" { type = "uuid", nullable = false }
+  column "title"    { type = "text", nullable = false }
+  column "body"     { type = "text", nullable = true }
+  primary_key { columns = ["id"] }
+  foreign_key {
+    columns = ["authorId"]
+    ref { table = "users" columns = ["id"] }
+    on_delete = "CASCADE"
+  }
+}
+```

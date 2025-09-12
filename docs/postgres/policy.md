@@ -22,3 +22,28 @@ policy "user_select" {
 - `using` (string, optional): expression for row visibility.
 - `check` (string, optional): expression for permitted values on write.
 - `comment` (string, optional): documentation comment.
+
+## Examples
+
+```hcl
+table "docs" {
+  column "id"     { type = "uuid", nullable = false, default = "gen_random_uuid()" }
+  column "owner"  { type = "text", nullable = false }
+  column "title"  { type = "text", nullable = false }
+  primary_key { columns = ["id"] }
+}
+
+-- Enable RLS and allow owners to read their docs
+policy "docs_select_own" {
+  table = "docs"
+  command = "select"
+  using = "owner = current_user"
+}
+
+-- Allow owners to insert/update their rows
+policy "docs_write_own" {
+  table = "docs"
+  command = "all"
+  check = "owner = current_user"
+}
+```

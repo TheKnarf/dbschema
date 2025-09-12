@@ -30,3 +30,25 @@ function "now_utc" {
 - `cost` (number, optional): estimated execution cost.
 - `body` (string): function body.
 - `comment` (string, optional): documentation comment.
+
+## Examples
+
+```hcl
+function "set_updated_at" {
+  language = "plpgsql"
+  returns  = "trigger"
+  body = <<-SQL
+  BEGIN
+    NEW."updatedDate" := now();
+    RETURN NEW;
+  END;
+  SQL
+}
+
+function "add" {
+  language = "sql"
+  returns  = "int"
+  parameters = ["a int", "b int"]
+  body = "SELECT a + b"
+}
+```

@@ -24,3 +24,33 @@ trigger "users_updated_at" {
 - `function_schema` (string, optional): schema of the function.
 - `when` (string, optional): optional WHEN condition.
 - `comment` (string, optional): documentation comment.
+
+## Examples
+
+```hcl
+table "users" {
+  column "id"          { type = "uuid", nullable = false, default = "gen_random_uuid()" }
+  column "email"       { type = "text", nullable = false }
+  column "updatedDate" { type = "timestamp", nullable = true }
+  primary_key { columns = ["id"] }
+}
+
+function "set_updated_at" {
+  language = "plpgsql"
+  returns  = "trigger"
+  body = <<-SQL
+  BEGIN
+    NEW."updatedDate" := now();
+    RETURN NEW;
+  END;
+  SQL
+}
+
+trigger "users_set_updated_at" {
+  table = "users"
+  timing = "BEFORE"
+  events = ["UPDATE"]
+  level  = "ROW"
+  function = "set_updated_at"
+}
+```

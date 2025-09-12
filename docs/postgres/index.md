@@ -24,3 +24,21 @@ index "users_email_key" {
 - `operator_classes` (array of strings, optional): per-item operator class.
 - `where` (string, optional): partial index predicate.
 - `unique` (bool, optional): create a unique index.
+
+## Examples
+
+```hcl
+index "users_email_key" { table = "users" columns = ["email"] unique = true }
+
+index "posts_title_trgm" {
+  table = "posts"
+  method = "gin"
+  expressions = ["title gin_trgm_ops"]
+}
+
+index "active_users_idx" {
+  table = "users"
+  columns = ["role"]
+  where = "role <> 'suspended'"
+}
+```

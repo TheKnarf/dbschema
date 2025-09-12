@@ -17,3 +17,22 @@ event_trigger "log_ddl" {
 - `function` (string): function to execute.
 - `function_schema` (string, optional): schema of the function.
 - `comment` (string, optional): documentation comment.
+
+## Examples
+
+```hcl
+function "audit_ddl" {
+  language = "plpgsql"
+  returns  = "event_trigger"
+  body = <<-SQL
+  BEGIN
+    RAISE NOTICE 'DDL: %', tg_tag;
+  END;
+  SQL
+}
+
+event_trigger "audit_ddl_start" {
+  event = "ddl_command_start"
+  function = "audit_ddl"
+}
+```

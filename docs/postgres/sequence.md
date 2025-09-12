@@ -24,3 +24,18 @@ sequence "user_id_seq" {
 - `cycle` (bool, optional): wrap around when reaching limits.
 - `owned_by` (string, optional): table column this sequence is owned by.
 - `comment` (string, optional): documentation comment.
+
+## Examples
+
+```hcl
+sequence "order_id_seq" {
+  as = "bigint"
+  start = 1000
+  increment = 1
+}
+
+table "orders" {
+  column "id" { type = "bigint", nullable = false, default = "nextval('order_id_seq')" }
+  primary_key { columns = ["id"] }
+}
+```

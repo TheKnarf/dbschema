@@ -18,3 +18,15 @@ materialized "user_counts" {
 - `with_data` (bool, optional): include `WITH DATA` (default) or `WITH NO DATA`.
 - `sql` (string): SELECT statement defining the view.
 - `comment` (string, optional): documentation comment.
+
+## Examples
+
+```hcl
+materialized "daily_signups" {
+  sql = <<-SQL
+    SELECT date_trunc('day', created_at) AS day, count(*) AS signups
+    FROM users
+    GROUP BY 1
+  SQL
+}
+```

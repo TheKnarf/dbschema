@@ -24,3 +24,22 @@ aggregate "sum_int" {
 - `initcond` (string, optional): initial state value.
 - `parallel` (string, optional): `safe`, `restricted`, or `unsafe`.
 - `comment` (string, optional): documentation comment.
+
+## Examples
+
+Define a simple aggregate that concatenates text values separated by commas.
+
+```hcl
+function "text_concat_sfunc" {
+  language = "sql"
+  returns  = "text"
+  parameters = ["state text", "val text"]
+  body = "SELECT CASE WHEN state IS NULL THEN val ELSE state || ',' || val END"
+}
+
+aggregate "text_concat" {
+  sfunc  = "text_concat_sfunc"
+  stype  = "text"
+  initcond = "''"
+}
+```

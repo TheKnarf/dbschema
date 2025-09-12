@@ -27,3 +27,21 @@ grant "app_user_seq" {
 - `database` (string, optional): database name.
 - `sequence` (string, optional): sequence name.
 - `privileges = ["ALL"]` grants all privileges.
+
+## Examples
+
+```hcl
+grant "app_user_table" {
+  role = "app_user"
+  schema = "public"
+  table = "docs"
+  privileges = ["SELECT", "INSERT", "UPDATE"]
+}
+
+grant "app_user_functions" {
+  role = "app_user"
+  schema = "public"
+  function = "set_updated_at"
+  privileges = ["EXECUTE"]
+}
+```

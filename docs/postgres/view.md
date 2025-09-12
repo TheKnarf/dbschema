@@ -18,3 +18,15 @@ view "active_users" {
 - `replace` (bool, optional): use `CREATE OR REPLACE VIEW`.
 - `sql` (string): SELECT statement defining the view.
 - `comment` (string, optional): documentation comment.
+
+## Examples
+
+```hcl
+view "active_users" {
+  sql = <<-SQL
+    SELECT id, email
+    FROM users
+    WHERE active = true
+  SQL
+}
+```
