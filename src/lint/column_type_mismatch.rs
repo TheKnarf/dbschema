@@ -40,7 +40,8 @@ impl LintCheck for ColumnTypeMismatch {
                     else {
                         continue;
                     };
-                    let Some(ref_col) = ref_table.columns.iter().find(|c| &c.name == ref_col_name) else {
+                    let Some(ref_col) = ref_table.columns.iter().find(|c| &c.name == ref_col_name)
+                    else {
                         continue;
                     };
                     let src_ty = src_col
@@ -151,4 +152,3 @@ mod tests {
         assert!(msgs.iter().any(|m| m.check == "column-type-mismatch"));
     }
 }
-

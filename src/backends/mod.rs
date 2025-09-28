@@ -24,7 +24,7 @@ pub fn generate_header_comment(backend_name: &str, comment_style: CommentStyle) 
          Generated: {}",
         backend_name, timestamp
     );
-    
+
     match comment_style {
         CommentStyle::Sql => {
             let lines: Vec<String> = warning.lines().map(|line| format!("-- {}", line)).collect();

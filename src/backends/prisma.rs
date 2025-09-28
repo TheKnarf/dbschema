@@ -1,4 +1,4 @@
-use super::{Backend, CommentStyle, generate_header_comment};
+use super::{generate_header_comment, Backend, CommentStyle};
 use crate::ir::{ColumnSpec, Config, EnumSpec, TableSpec};
 use crate::passes::validate::{find_enum_for_type, is_likely_enum};
 use crate::prisma as ps;
@@ -79,9 +79,7 @@ fn model_to_ast(t: &TableSpec, enums: &[EnumSpec], strict: bool) -> Result<ps::M
             .attributes
             .push(ps::BlockAttribute::Map(table_name.clone()));
     } else if let Some(map) = &t.map {
-        model
-            .attributes
-            .push(ps::BlockAttribute::Map(map.clone()));
+        model.attributes.push(ps::BlockAttribute::Map(map.clone()));
     }
 
     Ok(model)

@@ -9,97 +9,105 @@ use log::info;
 
 pub struct PostgresTestBackend;
 
+pub(crate) fn run_tests_with_client(
+    client: &mut Client,
+    cfg: &Config,
+    only: Option<&HashSet<String>>,
+) -> Result<TestSummary> {
+    let mut results = Vec::new();
+    let mut passed = 0usize;
+    for t in &cfg.tests {
+        if let Some(only) = only {
+            if !only.contains(&t.name) {
+                continue;
+            }
+        }
+        let name = t.name.clone();
+        let mut tx = client.transaction()?;
+        let mut failed_msg = String::new();
+        let mut ok = true;
+        for s in &t.setup {
+            if is_verbose() {
+                info!("-- setup: {}", s);
+            }
+            if let Err(e) = tx.batch_execute(s) {
+                failed_msg = format!("setup failed: {}", e);
+                ok = false;
+                break;
+            }
+        }
+        if ok {
+            // Positive asserts
+            for a in &t.asserts {
+                if is_verbose() {
+                    info!("-- assert: {}", a);
+                }
+                match tx.query(a, &[]) {
+                    Ok(rows) => match assert_rows_true(&rows) {
+                        Ok(true) => {}
+                        Ok(false) => {
+                            ok = false;
+                            failed_msg = "assert returned false".into();
+                            break;
+                        }
+                        Err(e) => {
+                            ok = false;
+                            failed_msg = format!("assert error: {}", e);
+                            break;
+                        }
+                    },
+                    Err(e) => {
+                        ok = false;
+                        failed_msg = format!("assert query error: {}", e);
+                        break;
+                    }
+                }
+            }
+        }
+        if ok {
+            // Negative asserts expected to fail
+            for a in &t.assert_fail {
+                if is_verbose() {
+                    info!("-- assert-fail: {}", a);
+                }
+                match tx.batch_execute(a) {
+                    Ok(_) => {
+                        ok = false;
+                        failed_msg = "assert-fail succeeded unexpectedly".into();
+                        break;
+                    }
+                    Err(_) => {
+                        // expected failure
+                    }
+                }
+            }
+        }
+        // Always rollback to keep DB clean
+        let _ = tx.rollback();
+        if ok {
+            passed += 1;
+        }
+        results.push(TestResult {
+            name,
+            passed: ok,
+            message: if ok { "ok".into() } else { failed_msg },
+        });
+    }
+    let total = results.len();
+    let failed = total - passed;
+    Ok(TestSummary {
+        total,
+        passed,
+        failed,
+        results,
+    })
+}
+
 impl TestBackend for PostgresTestBackend {
     fn run(&self, cfg: &Config, dsn: &str, only: Option<&HashSet<String>>) -> Result<TestSummary> {
         let mut client = Client::connect(dsn, NoTls)
             .with_context(|| format!("connecting to database: {}", redacted(dsn)))?;
-        let mut results = Vec::new();
-        let mut passed = 0usize;
-        for t in &cfg.tests {
-            if let Some(only) = only {
-                if !only.contains(&t.name) {
-                    continue;
-                }
-            }
-            let name = t.name.clone();
-            let mut tx = client.transaction()?;
-            let mut failed_msg = String::new();
-            let mut ok = true;
-            for s in &t.setup {
-                if is_verbose() {
-                    info!("-- setup: {}", s);
-                }
-                if let Err(e) = tx.batch_execute(s) {
-                    failed_msg = format!("setup failed: {}", e);
-                    ok = false;
-                    break;
-                }
-            }
-            if ok {
-                // Positive asserts
-                for a in &t.asserts {
-                    if is_verbose() {
-                        info!("-- assert: {}", a);
-                    }
-                    match tx.query(a, &[]) {
-                        Ok(rows) => match assert_rows_true(&rows) {
-                            Ok(true) => {}
-                            Ok(false) => {
-                                ok = false;
-                                failed_msg = "assert returned false".into();
-                                break;
-                            }
-                            Err(e) => {
-                                ok = false;
-                                failed_msg = format!("assert error: {}", e);
-                                break;
-                            }
-                        },
-                        Err(e) => {
-                            ok = false;
-                            failed_msg = format!("assert query error: {}", e);
-                            break;
-                        }
-                    }
-                }
-            }
-            if ok {
-                // Negative asserts expected to fail
-                for a in &t.assert_fail {
-                    if is_verbose() {
-                        info!("-- assert-fail: {}", a);
-                    }
-                    match tx.batch_execute(a) {
-                        Ok(_) => {
-                            ok = false;
-                            failed_msg = "assert-fail succeeded unexpectedly".into();
-                            break;
-                        }
-                        Err(_) => {
-                            // expected failure
-                        }
-                    }
-                }
-            }
-            // Always rollback to keep DB clean
-            let _ = tx.rollback();
-            if ok {
-                passed += 1;
-            }
-            results.push(TestResult {
-                name,
-                passed: ok,
-                message: if ok { "ok".into() } else { failed_msg },
-            });
-        }
-        let total = results.len();
-        let failed = total - passed;
-        Ok(TestSummary {
-            total,
-            passed,
-            failed,
-            results,
-        })
+        run_tests_with_client(&mut client, cfg, only)
     }
 }
 

@@ -152,4 +152,3 @@ mod tests {
         assert!(msgs.iter().any(|m| m.check == "missing-foreign-key-index"));
     }
 }
-

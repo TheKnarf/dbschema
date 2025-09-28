@@ -4,6 +4,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::ir::Config;
 
+pub mod pglite;
 pub mod postgres;
 
 pub struct TestResult {

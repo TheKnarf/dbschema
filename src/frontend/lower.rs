@@ -31,16 +31,8 @@ pub fn lower_config(ast: ast::Config) -> ir::Config {
             .into_iter()
             .map(Into::into)
             .collect(),
-        foreign_servers: ast
-            .foreign_servers
-            .into_iter()
-            .map(Into::into)
-            .collect(),
-        foreign_tables: ast
-            .foreign_tables
-            .into_iter()
-            .map(Into::into)
-            .collect(),
+        foreign_servers: ast.foreign_servers.into_iter().map(Into::into).collect(),
+        foreign_tables: ast.foreign_tables.into_iter().map(Into::into).collect(),
         text_search_dictionaries: ast
             .text_search_dictionaries
             .into_iter()
@@ -442,9 +434,7 @@ impl From<ast::AstTextSearchDictionary> for ir::TextSearchDictionarySpec {
     }
 }
 
-impl From<ast::AstTextSearchConfigurationMapping>
-    for ir::TextSearchConfigurationMappingSpec
-{
+impl From<ast::AstTextSearchConfigurationMapping> for ir::TextSearchConfigurationMappingSpec {
     fn from(m: ast::AstTextSearchConfigurationMapping) -> Self {
         Self {
             tokens: m.tokens,

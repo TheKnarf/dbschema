@@ -1,4 +1,4 @@
-use super::{Backend, CommentStyle, generate_header_comment};
+use super::{generate_header_comment, Backend, CommentStyle};
 use crate::{ir::*, postgres as pg};
 use anyhow::Result;
 

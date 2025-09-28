@@ -611,7 +611,8 @@ impl ForEachSupport for AstRule {
         let event = get_attr_string(body, "event", env)?.context("rule 'event' is required")?;
         let r#where = get_attr_string(body, "where", env)?;
         let instead = get_attr_bool(body, "instead", env)?.unwrap_or(false);
-        let command = get_attr_string(body, "command", env)?.context("rule 'command' is required")?;
+        let command =
+            get_attr_string(body, "command", env)?.context("rule 'command' is required")?;
         let comment = get_attr_string(body, "comment", env)?;
         Ok(AstRule {
             name: name.to_string(),
@@ -863,8 +864,8 @@ impl ForEachSupport for AstTablespace {
 
     fn parse_one(name: &str, body: &Body, env: &EnvVars) -> Result<Self::Item> {
         let alt_name = get_attr_string(body, "name", env)?;
-        let location = get_attr_string(body, "location", env)?
-            .context("tablespace 'location' is required")?;
+        let location =
+            get_attr_string(body, "location", env)?.context("tablespace 'location' is required")?;
         let owner = get_attr_string(body, "owner", env)?;
         let options = match find_attr(body, "options") {
             Some(attr) => expr_to_string_vec(attr.expr(), env)?,
@@ -978,8 +979,8 @@ impl ForEachSupport for AstStatistics {
     fn parse_one(name: &str, body: &Body, env: &EnvVars) -> Result<Self::Item> {
         let alt_name = get_attr_string(body, "name", env)?;
         let schema = get_attr_string(body, "schema", env)?;
-        let table = get_attr_string(body, "table", env)?
-            .context("statistics 'table' is required")?;
+        let table =
+            get_attr_string(body, "table", env)?.context("statistics 'table' is required")?;
         let columns = match find_attr(body, "columns") {
             Some(attr) => expr_to_string_vec(attr.expr(), env)?,
             None => bail!("statistics requires columns = [..]"),
@@ -1071,8 +1072,8 @@ impl ForEachSupport for AstForeignTable {
     fn parse_one(name: &str, body: &Body, env: &EnvVars) -> Result<Self::Item> {
         let alt_name = get_attr_string(body, "name", env)?;
         let schema = get_attr_string(body, "schema", env)?;
-        let server = get_attr_string(body, "server", env)?
-            .context("foreign_table 'server' is required")?;
+        let server =
+            get_attr_string(body, "server", env)?.context("foreign_table 'server' is required")?;
         let comment = get_attr_string(body, "comment", env)?;
 
         let mut columns = Vec::new();
@@ -1184,7 +1185,10 @@ impl ForEachSupport for AstTextSearchConfiguration {
                 Some(attr) => expr_to_string_vec(attr.expr(), env)?,
                 None => bail!("mapping missing 'with' attribute"),
             };
-            mappings.push(AstTextSearchConfigurationMapping { tokens, dictionaries });
+            mappings.push(AstTextSearchConfigurationMapping {
+                tokens,
+                dictionaries,
+            });
         }
 
         Ok(AstTextSearchConfiguration {
@@ -1239,8 +1243,8 @@ impl ForEachSupport for AstTextSearchParser {
             .context("text_search_parser 'start' is required")?;
         let gettoken = get_attr_string(body, "gettoken", env)?
             .context("text_search_parser 'gettoken' is required")?;
-        let end = get_attr_string(body, "end", env)?
-            .context("text_search_parser 'end' is required")?;
+        let end =
+            get_attr_string(body, "end", env)?.context("text_search_parser 'end' is required")?;
         let headline = get_attr_string(body, "headline", env)?;
         let lextypes = get_attr_string(body, "lextypes", env)?
             .context("text_search_parser 'lextypes' is required")?;
@@ -1286,9 +1290,9 @@ impl ForEachSupport for AstPublication {
                                     let schema = match obj.swap_remove("schema") {
                                         Some(Value::String(s)) => Some(s),
                                         None => None,
-                                        Some(other) => bail!(
-                                            "tables[].schema must be string, got {other:?}"
-                                        ),
+                                        Some(other) => {
+                                            bail!("tables[].schema must be string, got {other:?}")
+                                        }
                                     };
                                     out.push(AstPublicationTable { schema, table });
                                 }

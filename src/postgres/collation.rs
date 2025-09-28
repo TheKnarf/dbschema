@@ -57,7 +57,10 @@ impl fmt::Display for Collation {
                 parts.push(format!("PROVIDER = {}", provider.to_uppercase()));
             }
             if let Some(det) = self.deterministic {
-                parts.push(format!("DETERMINISTIC = {}", if det { "true" } else { "false" }));
+                parts.push(format!(
+                    "DETERMINISTIC = {}",
+                    if det { "true" } else { "false" }
+                ));
             }
             if let Some(version) = &self.version {
                 parts.push(format!("VERSION = {}", literal(version)));

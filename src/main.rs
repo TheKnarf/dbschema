@@ -61,6 +61,7 @@ struct Cli {
 #[derive(Copy, Clone, ValueEnum)]
 enum TestBackendKind {
     Postgres,
+    Pglite,
 }
 
 #[derive(Subcommand)]
@@ -99,7 +100,7 @@ enum Commands {
         /// Database connection string (falls back to env DATABASE_URL)
         #[arg(long)]
         dsn: Option<String>,
-        /// Test backend: postgres
+        /// Test backend: postgres|pglite
         #[arg(long, value_enum, default_value = "postgres")]
         backend: TestBackendKind,
         /// Names of tests to run (repeatable). If omitted, runs all.
@@ -118,7 +119,6 @@ enum Commands {
         #[arg(long)]
         verbose: bool,
     },
-
 }
 
 fn main() -> Result<()> {
@@ -340,13 +340,12 @@ fn main() -> Result<()> {
                         .or_else(|| dbschema_config.settings.test_dsn.clone())
                         .or_else(|| std::env::var("DATABASE_URL").ok());
                     let mut backend_choice = backend;
-                    if matches!(backend_choice, TestBackendKind::Postgres) {
-                        if let Some(be) = &dbschema_config.settings.test_backend {
-                            backend_choice = match be.as_str() {
-                                "postgres" => TestBackendKind::Postgres,
-                                other => return Err(anyhow!("unknown test backend '{other}'")),
-                            };
-                        }
+                    if let Some(be) = &dbschema_config.settings.test_backend {
+                        backend_choice = match be.as_str() {
+                            "postgres" => TestBackendKind::Postgres,
+                            "pglite" => TestBackendKind::Pglite,
+                            other => return Err(anyhow!("unknown test backend '{other}'")),
+                        };
                     }
                     (dsn, backend_choice, cfg)
                 } else {
@@ -371,14 +370,21 @@ fn main() -> Result<()> {
                         .with_context(|| format!("loading root HCL {}", cli.input.display()))?;
                     (dsn, backend, cfg)
                 };
-                let mut dsn = dsn
-                    .or_else(|| std::env::var("DATABASE_URL").ok())
-                    .ok_or_else(|| anyhow!("missing DSN: pass --dsn or set DATABASE_URL"))?;
+                let mut dsn = match backend {
+                    TestBackendKind::Postgres => Some(
+                        dsn.or_else(|| std::env::var("DATABASE_URL").ok())
+                            .ok_or_else(|| {
+                                anyhow!("missing DSN: pass --dsn or set DATABASE_URL")
+                            })?,
+                    ),
+                    TestBackendKind::Pglite => dsn.or_else(|| std::env::var("DATABASE_URL").ok()),
+                };
 
                 // Optionally create and later drop a temporary database for Postgres
                 if let (TestBackendKind::Postgres, Some(dbname)) = (backend, create_db.clone()) {
-                    let mut base = url::Url::parse(&dsn)
-                        .with_context(|| format!("parsing DSN as URL: {}", &dsn))?;
+                    let dsn_str = dsn.as_ref().expect("dsn present for postgres");
+                    let mut base = url::Url::parse(dsn_str)
+                        .with_context(|| format!("parsing DSN as URL: {}", dsn_str))?;
                     // Derive admin connection to the 'postgres' database
                     base.set_path("/postgres");
                     let admin_dsn = base.as_str().to_string();
@@ -399,7 +405,7 @@ fn main() -> Result<()> {
                         .with_context(|| format!("creating database '{}'", dbname))?;
                     // Update DSN to point at the created database
                     base.set_path(&format!("/{}", dbname));
-                    dsn = base.as_str().to_string();
+                    dsn = Some(base.as_str().to_string());
                 }
                 // Optionally generate and apply migrations for Postgres
                 if apply {
@@ -411,24 +417,36 @@ fn main() -> Result<()> {
                             if verbose {
                                 info!("-- applying migration --\n{}", artifact);
                             }
-                            let mut client = Client::connect(&dsn, NoTls)
-                                .with_context(|| format!("connecting to database: {}", &dsn))?;
+                            let dsn_str = dsn.as_ref().expect("dsn present for postgres apply");
+                            let mut client = Client::connect(dsn_str, NoTls)
+                                .with_context(|| format!("connecting to database: {}", dsn_str))?;
                             client
                                 .batch_execute(&artifact)
                                 .with_context(|| "applying generated migration to database")?;
                         }
-
+                        TestBackendKind::Pglite => {
+                            return Err(anyhow!(
+                                "--apply is only supported with the postgres test backend"
+                            ));
+                        }
                     }
                 }
 
                 dbschema::test_runner::set_verbose(verbose);
-                let runner: Box<dyn TestBackend> = Box::new(dbschema::test_runner::postgres::PostgresTestBackend);
+                let runner: Box<dyn TestBackend> = match backend {
+                    TestBackendKind::Postgres => {
+                        Box::new(dbschema::test_runner::postgres::PostgresTestBackend)
+                    }
+                    TestBackendKind::Pglite => {
+                        Box::new(dbschema::test_runner::pglite::PgliteTestBackend)
+                    }
+                };
                 let only: Option<std::collections::HashSet<String>> = if names.is_empty() {
                     None
                 } else {
                     Some(names.into_iter().collect())
                 };
-                let summary = runner.run(&config, &dsn, only.as_ref())?;
+                let summary = runner.run(&config, dsn.as_deref().unwrap_or(""), only.as_ref())?;
                 for r in summary.results {
                     if r.passed {
                         info!("ok - {}", r.name);
@@ -453,23 +471,24 @@ fn main() -> Result<()> {
                 // Optionally drop the created database after tests complete
                 if let (TestBackendKind::Postgres, Some(dbname)) = (backend, create_db) {
                     if !keep_db {
-                        if let Ok(mut base) = url::Url::parse(&dsn) {
-                            base.set_path("/postgres");
-                            let admin_dsn = base.as_str().to_string();
-                            if let Ok(mut admin) = Client::connect(&admin_dsn, NoTls) {
-                                if verbose {
-                                    info!("-- admin: DROP DATABASE IF EXISTS \"{}\";", dbname);
+                        if let Some(dsn_str) = dsn.as_ref() {
+                            if let Ok(mut base) = url::Url::parse(dsn_str) {
+                                base.set_path("/postgres");
+                                let admin_dsn = base.as_str().to_string();
+                                if let Ok(mut admin) = Client::connect(&admin_dsn, NoTls) {
+                                    if verbose {
+                                        info!("-- admin: DROP DATABASE IF EXISTS \"{}\";", dbname);
+                                    }
+                                    let _ = admin.simple_query(&format!(
+                                        "DROP DATABASE IF EXISTS \"{}\";",
+                                        dbname
+                                    ));
                                 }
-                                let _ = admin.simple_query(&format!(
-                                    "DROP DATABASE IF EXISTS \"{}\";",
-                                    dbname
-                                ));
                             }
                         }
                     }
                 }
             }
-
         }
     }
 

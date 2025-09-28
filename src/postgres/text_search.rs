@@ -23,8 +23,13 @@ impl From<&crate::ir::TextSearchDictionarySpec> for TextSearchDictionary {
 
 impl fmt::Display for TextSearchDictionary {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "CREATE TEXT SEARCH DICTIONARY {}.{} (TEMPLATE = {}",
-               ident(&self.schema), ident(&self.name), self.template)?;
+        write!(
+            f,
+            "CREATE TEXT SEARCH DICTIONARY {}.{} (TEMPLATE = {}",
+            ident(&self.schema),
+            ident(&self.name),
+            self.template
+        )?;
         for opt in &self.options {
             write!(f, ", {opt}")?;
         }
@@ -66,7 +71,8 @@ impl From<&crate::ir::TextSearchConfigurationSpec> for TextSearchConfiguration {
 
 impl fmt::Display for TextSearchConfiguration {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f,
+        write!(
+            f,
             "CREATE TEXT SEARCH CONFIGURATION {}.{} (PARSER = {});",
             ident(&self.schema),
             ident(&self.name),
@@ -107,7 +113,8 @@ impl From<&crate::ir::TextSearchTemplateSpec> for TextSearchTemplate {
 
 impl fmt::Display for TextSearchTemplate {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f,
+        write!(
+            f,
             "CREATE TEXT SEARCH TEMPLATE {}.{} (LEXIZE = {}",
             ident(&self.schema),
             ident(&self.name),

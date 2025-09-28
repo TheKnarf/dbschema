@@ -357,9 +357,9 @@ fn resolve_traversal_value(tr: &Traversal, env: &EnvVars) -> Result<Value> {
             let Some(TraversalOperator::GetAttr(name)) = it.next() else {
                 bail!("expected count.index");
             };
-            let idx = env
-                .count
-                .ok_or_else(|| anyhow::anyhow!("'count' is only available inside count iterations"))?;
+            let idx = env.count.ok_or_else(|| {
+                anyhow::anyhow!("'count' is only available inside count iterations")
+            })?;
             match name.as_str() {
                 "index" => {
                     if it.next().is_some() {
@@ -378,7 +378,11 @@ fn resolve_traversal_value(tr: &Traversal, env: &EnvVars) -> Result<Value> {
                         TraversalOperator::GetAttr(attr) => {
                             if let Value::Object(map) = current {
                                 current = map.get(attr.as_str()).cloned().ok_or_else(|| {
-                                    anyhow::anyhow!("unknown attribute '{}' on variable '{}'", attr, root)
+                                    anyhow::anyhow!(
+                                        "unknown attribute '{}' on variable '{}'",
+                                        attr,
+                                        root
+                                    )
                                 })?;
                             } else {
                                 bail!("cannot access attribute '{}' on non-object value for variable '{}'", attr, root);
@@ -1363,7 +1367,10 @@ fn load_file(
         )?;
     }
 
-    for blk in body.blocks().filter(|b| b.identifier() == "foreign_data_wrapper") {
+    for blk in body
+        .blocks()
+        .filter(|b| b.identifier() == "foreign_data_wrapper")
+    {
         let name = blk
             .labels()
             .get(0)
