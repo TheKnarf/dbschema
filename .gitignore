@@ -1,3 +1,4 @@
+dist/
 tmp_*
 vendor/pglite/
 node_modules/

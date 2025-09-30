@@ -22,10 +22,17 @@ struct JsLoader {
 
 impl Loader for JsLoader {
     fn load(&self, path: &Path) -> anyhow::Result<String> {
-        let path_str = path.to_str().ok_or_else(|| {
-            anyhow::anyhow!("Invalid UTF-8 path: {}", path.display())
-        })?;
-        let content = self.callback.call(path_str);
+        // Convert path to string using display() which always works
+        let path_str = path.display().to_string();
+
+        // Debug: log the path we're trying to load
+        eprintln!("[RUST DEBUG] load() called with path: {:?}, display: {}", path, path_str);
+
+        if path_str.is_empty() {
+            anyhow::bail!("Attempted to load file with empty path");
+        }
+
+        let content = self.callback.call(&path_str);
         Ok(content)
     }
 }
@@ -225,6 +232,8 @@ pub fn validate_hcl(
     loader: LoaderCallback,
     options: Option<ValidateOptions>,
 ) -> ValidateResult {
+    eprintln!("[RUST DEBUG] validate_hcl called with root_path: {:?}", root_path);
+
     let opts = options.unwrap_or_default();
     let js_loader = JsLoader { callback: loader };
 
@@ -236,6 +245,7 @@ pub fn validate_hcl(
         count: None,
     };
 
+    eprintln!("[RUST DEBUG] About to call load_config with Path::new({:?})", root_path);
     let config = match load_config(Path::new(root_path), &js_loader, env) {
         Ok(cfg) => cfg,
         Err(e) => {
