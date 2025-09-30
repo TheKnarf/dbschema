@@ -10,7 +10,12 @@ pub mod lint;
 pub mod passes;
 pub mod postgres;
 pub mod prisma;
+
+#[cfg(feature = "postgres-backend")]
 pub mod test_runner;
+
+#[cfg(feature = "wasm")]
+pub mod wasm;
 
 use anyhow::Result;
 // Keep types public via re-exports

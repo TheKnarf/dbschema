@@ -6,12 +6,11 @@ name = "dbschema"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-license-file = "LICENSE"
 
 [dependencies]
 anyhow = "1"
 thiserror = "2.0.16"
-clap = { version = "4", features = ["derive"] }
+clap = { version = "4", features = ["derive"], optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 hcl = { package = "hcl-rs", version = "0.19" }
@@ -21,24 +20,32 @@ chrono = { version = "0.4", default-features = false, features = ["clock"] }
 sha2 = "0.10"
 base64 = "0.22"
 md5 = "0.8"
-walkdir = "2"
-path-absolutize = "3"
-postgres = "0.19"
+walkdir = { version = "2", optional = true }
+path-absolutize = { version = "3", optional = true }
+postgres = { version = "0.19", optional = true }
 log = "0.4"
-env_logger = "0.11"
-url = "2"
+env_logger = { version = "0.11", optional = true }
+url = { version = "2", optional = true }
 postgres-protocol = { version = "0.6", optional = true }
 bytes = { version = "1", optional = true }
 fallible-iterator = { version = "0.2", optional = true }
 tokio = { version = "1", features = ["rt-multi-thread"], optional = true }
-pg_query = "6.1"
+pg_query = { version = "6.1", optional = true }
+
+# WASM dependencies
+wasm-bindgen = { version = "0.2", optional = true }
+serde-wasm-bindgen = { version = "0.6", optional = true }
+getrandom = { version = "0.2", features = ["js"], optional = true }
 
 [dev-dependencies]
 tempfile = "3"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
 [features]
-default = []
+default = ["cli"]
+cli = ["clap", "walkdir", "path-absolutize", "env_logger", "postgres-backend"]
+postgres-backend = ["postgres", "url", "pg_query"]
+wasm = ["wasm-bindgen", "serde-wasm-bindgen", "getrandom"]
 
 [profile.release]
 opt-level = 3

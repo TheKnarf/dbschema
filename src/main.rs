@@ -1,6 +1,7 @@
 use anyhow::{anyhow, Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
 use dbschema::frontend::env::EnvVars;
+#[cfg(feature = "postgres-backend")]
 use dbschema::test_runner::TestBackend;
 use dbschema::{
     apply_filters,
@@ -8,6 +9,7 @@ use dbschema::{
     load_config, validate, Loader, OutputSpec,
 };
 use log::{error, info};
+#[cfg(feature = "postgres-backend")]
 use postgres::{Client, NoTls};
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -58,6 +60,7 @@ struct Cli {
     command: Option<Commands>,
 }
 
+#[cfg(feature = "postgres-backend")]
 #[derive(Copy, Clone, ValueEnum)]
 enum TestBackendKind {
     Postgres,
@@ -95,6 +98,7 @@ enum Commands {
         name: Option<String>,
     },
     /// Run tests defined in HCL against a database
+    #[cfg(feature = "postgres-backend")]
     Test {
         /// Database connection string (falls back to env DATABASE_URL)
         #[arg(long)]
@@ -118,7 +122,6 @@ enum Commands {
         #[arg(long)]
         verbose: bool,
     },
-
 }
 
 fn main() -> Result<()> {
@@ -301,6 +304,7 @@ fn main() -> Result<()> {
                 }
                 print_outputs(&filtered.outputs);
             }
+            #[cfg(feature = "postgres-backend")]
             Commands::Test {
                 dsn,
                 names,

@@ -5,6 +5,7 @@ use std::collections::HashMap;
 mod destructive_change;
 mod long_identifier;
 mod column_type_mismatch;
+#[cfg(feature = "postgres-backend")]
 mod sql_syntax;
 mod unused_index;
 mod missing_foreign_key_index;
@@ -12,6 +13,7 @@ mod missing_foreign_key_index;
 use destructive_change::DestructiveChange;
 use long_identifier::LongIdentifier;
 use column_type_mismatch::ColumnTypeMismatch;
+#[cfg(feature = "postgres-backend")]
 use sql_syntax::SqlSyntax;
 use unused_index::UnusedIndex;
 use missing_foreign_key_index::MissingForeignKeyIndex;
@@ -43,7 +45,7 @@ pub trait LintCheck {
 }
 
 pub fn run(cfg: &Config, settings: &LintSettings) -> Vec<LintMessage> {
-    let checks: Vec<Box<dyn LintCheck>> = vec![
+    let mut checks: Vec<Box<dyn LintCheck>> = vec![
         Box::new(NamingConvention),
         Box::new(MissingIndex),
         Box::new(MissingForeignKeyIndex),
@@ -53,8 +55,9 @@ pub fn run(cfg: &Config, settings: &LintSettings) -> Vec<LintMessage> {
         Box::new(DestructiveChange),
         Box::new(UnusedIndex),
         Box::new(LongIdentifier),
-        Box::new(SqlSyntax),
     ];
+    #[cfg(feature = "postgres-backend")]
+    checks.push(Box::new(SqlSyntax));
     run_with_checks(cfg, checks, settings)
 }
 

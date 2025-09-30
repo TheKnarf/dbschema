@@ -10,6 +10,12 @@ Prisma supports custom migrations, so you can generate SQL with this tool and sh
 
 [Read full docs](./docs/Readme.md)
 
+## WebAssembly / NPM
+
+dbschema can be compiled to WebAssembly for use in JavaScript/TypeScript projects (Node.js and browsers).
+
+**[→ See WASM build guide](./docs/wasm.md)**
+
 ## Install
 
 - Ensure Rust toolchain is installed.
