@@ -45,7 +45,7 @@ pub trait LintCheck {
 }
 
 pub fn run(cfg: &Config, settings: &LintSettings) -> Vec<LintMessage> {
-    let mut checks: Vec<Box<dyn LintCheck>> = vec![
+    let checks: Vec<Box<dyn LintCheck>> = vec![
         Box::new(NamingConvention),
         Box::new(MissingIndex),
         Box::new(MissingForeignKeyIndex),
@@ -55,9 +55,9 @@ pub fn run(cfg: &Config, settings: &LintSettings) -> Vec<LintMessage> {
         Box::new(DestructiveChange),
         Box::new(UnusedIndex),
         Box::new(LongIdentifier),
+        #[cfg(feature = "postgres-backend")]
+        Box::new(SqlSyntax),
     ];
-    #[cfg(feature = "postgres-backend")]
-    checks.push(Box::new(SqlSyntax));
     run_with_checks(cfg, checks, settings)
 }
 

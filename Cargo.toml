@@ -7,6 +7,14 @@ version = "0.1.0"
 edition = "2021"
 license = "MIT"
 
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "dbschema"
+path = "src/main.rs"
+required-features = ["cli"]
+
 [dependencies]
 anyhow = "1"
 thiserror = "2.0.16"

@@ -148,14 +148,8 @@ fn parse_resource_kind(s: &str) -> Option<ResourceKind> {
         "tablespaces" => Some(ResourceKind::Tablespaces),
         "grants" => Some(ResourceKind::Grants),
         "tests" => Some(ResourceKind::Tests),
-        "indexes" => Some(ResourceKind::Indexes),
         "publications" => Some(ResourceKind::Publications),
         "subscriptions" => Some(ResourceKind::Subscriptions),
-        "foreigndatawrappers" | "foreign_data_wrappers" => Some(ResourceKind::ForeignDataWrappers),
-        "foreignservers" | "foreign_servers" => Some(ResourceKind::ForeignServers),
-        "foreigntables" | "foreign_tables" => Some(ResourceKind::ForeignTables),
-        "textsearchdictionaries" | "text_search_dictionaries" => Some(ResourceKind::TextSearchDictionaries),
-        "textsearchconfigurations" | "text_search_configurations" => Some(ResourceKind::TextSearchConfigurations),
         _ => None,
     }
 }
@@ -189,14 +183,8 @@ fn build_filter_sets(
             ResourceKind::Tablespaces,
             ResourceKind::Grants,
             ResourceKind::Tests,
-            ResourceKind::Indexes,
             ResourceKind::Publications,
             ResourceKind::Subscriptions,
-            ResourceKind::ForeignDataWrappers,
-            ResourceKind::ForeignServers,
-            ResourceKind::ForeignTables,
-            ResourceKind::TextSearchDictionaries,
-            ResourceKind::TextSearchConfigurations,
         ]
         .into_iter()
         .collect()

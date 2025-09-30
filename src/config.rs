@@ -1,5 +1,6 @@
 use crate::lint::LintSettings;
 use anyhow::Result;
+#[cfg(feature = "cli")]
 use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -75,7 +76,8 @@ pub struct Config {
 }
 
 /// Resource types that can be filtered
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, ValueEnum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "cli", derive(ValueEnum))]
 pub enum ResourceKind {
     Schemas,
     Enums,

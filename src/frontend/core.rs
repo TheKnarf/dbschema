@@ -5,6 +5,7 @@ use hcl::{
     expr::{BinaryOperator, TemplateExpr, UnaryOperator},
     Attribute, Block, Body, Number, Structure, Traversal, TraversalOperator, Value,
 };
+#[cfg(feature = "cli")]
 use path_absolutize::Absolutize;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -716,10 +717,14 @@ fn load_file(
     parent_env: &EnvVars,
     visited: &mut Vec<PathBuf>,
 ) -> Result<ast::Config> {
+    #[cfg(feature = "cli")]
     let abspath = path
         .absolutize()
         .map_err(|e| anyhow::anyhow!("absolutize error: {e}"))?
         .to_path_buf();
+
+    #[cfg(not(feature = "cli"))]
+    let abspath = path.to_path_buf();
     if visited.contains(&abspath) {
         bail!("module cycle detected at {}", abspath.display());
     }
