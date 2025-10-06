@@ -118,7 +118,6 @@ enum Commands {
         #[arg(long)]
         verbose: bool,
     },
-
 }
 
 fn main() -> Result<()> {
@@ -417,12 +416,12 @@ fn main() -> Result<()> {
                                 .batch_execute(&artifact)
                                 .with_context(|| "applying generated migration to database")?;
                         }
-
                     }
                 }
 
                 dbschema::test_runner::set_verbose(verbose);
-                let runner: Box<dyn TestBackend> = Box::new(dbschema::test_runner::postgres::PostgresTestBackend);
+                let runner: Box<dyn TestBackend> =
+                    Box::new(dbschema::test_runner::postgres::PostgresTestBackend);
                 let only: Option<std::collections::HashSet<String>> = if names.is_empty() {
                     None
                 } else {
@@ -469,7 +468,6 @@ fn main() -> Result<()> {
                     }
                 }
             }
-
         }
     }
 
@@ -538,8 +536,8 @@ fn run_target(dbschema_config: &DbschemaConfig, target: &TargetConfig, strict: b
     let config = load_config(&PathBuf::from(input_path), &fs_loader, env.clone())
         .with_context(|| format!("loading root HCL from {}", input_path))?;
 
-    let include_set = target.get_include_set();
-    let exclude_set = target.get_exclude_set();
+    let include_set = target.get_include_set()?;
+    let exclude_set = target.get_exclude_set()?;
 
     let filtered = apply_filters(&config, &include_set, &exclude_set);
 
@@ -685,24 +683,7 @@ fn cli_filter_sets(
     use ResourceKind as R;
 
     let mut include_set: HashSet<R> = if include.is_empty() {
-        [
-            R::Schemas,
-            R::Enums,
-            R::Domains,
-            R::Types,
-            R::Tables,
-            R::Views,
-            R::Materialized,
-            R::Functions,
-            R::Triggers,
-            R::Extensions,
-            R::Collations,
-            R::Sequences,
-            R::Policies,
-            R::Tests,
-        ]
-        .into_iter()
-        .collect()
+        ResourceKind::default_include_set()
     } else {
         include.iter().copied().collect()
     };

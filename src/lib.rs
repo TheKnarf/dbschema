@@ -19,9 +19,10 @@ use std::path::Path;
 // Public re-exports
 use crate::frontend::env::EnvVars;
 pub use ir::{
-    AggregateSpec, CollationSpec, CompositeTypeSpec, Config, DomainSpec, EnumSpec, EventTriggerSpec,
-    ExtensionSpec, FunctionSpec, ProcedureSpec, GrantSpec, MaterializedViewSpec, OutputSpec, PolicySpec,
-    RoleSpec, TablespaceSpec, SchemaSpec, SequenceSpec, TableSpec, TriggerSpec, ViewSpec,
+    AggregateSpec, CollationSpec, CompositeTypeSpec, Config, DomainSpec, EnumSpec,
+    EventTriggerSpec, ExtensionSpec, FunctionSpec, GrantSpec, MaterializedViewSpec, OutputSpec,
+    PolicySpec, ProcedureSpec, RoleSpec, SchemaSpec, SequenceSpec, TableSpec, TablespaceSpec,
+    TriggerSpec, ViewSpec,
 };
 
 // Loader abstraction: lets callers control how files are read.
@@ -69,12 +70,23 @@ where
         domains: maybe!(Domains, domains),
         types: maybe!(Types, types),
         tables: maybe!(Tables, tables),
+        indexes: maybe!(Indexes, indexes),
+        statistics: maybe!(Statistics, statistics),
         views: maybe!(Views, views),
         materialized: maybe!(Materialized, materialized),
         policies: maybe!(Policies, policies),
         roles: maybe!(Roles, roles),
         tablespaces: maybe!(Tablespaces, tablespaces),
         grants: maybe!(Grants, grants),
+        foreign_data_wrappers: maybe!(ForeignDataWrappers, foreign_data_wrappers),
+        foreign_servers: maybe!(ForeignServers, foreign_servers),
+        foreign_tables: maybe!(ForeignTables, foreign_tables),
+        text_search_dictionaries: maybe!(TextSearchDictionaries, text_search_dictionaries),
+        text_search_configurations: maybe!(TextSearchConfigurations, text_search_configurations),
+        text_search_templates: maybe!(TextSearchTemplates, text_search_templates),
+        text_search_parsers: maybe!(TextSearchParsers, text_search_parsers),
+        publications: maybe!(Publications, publications),
+        subscriptions: maybe!(Subscriptions, subscriptions),
         tests: maybe!(Tests, tests),
         outputs: cfg.outputs.clone(),
         ..Default::default()
@@ -711,6 +723,159 @@ mod tests {
         let filtered = apply_resource_filters(&cfg, &vec!["tables".into()], &[]);
         assert_eq!(filtered.functions.len(), 0);
         assert_eq!(filtered.tables.len(), 1);
+    }
+
+    #[test]
+    fn apply_filters_preserves_extended_resources() {
+        use crate::config::ResourceKind as R;
+        use crate::ir::{
+            ColumnSpec, ForeignDataWrapperSpec, ForeignServerSpec, ForeignTableSpec,
+            PublicationSpec, PublicationTableSpec, StandaloneIndexSpec, StatisticsSpec,
+            SubscriptionSpec, TextSearchConfigurationMappingSpec, TextSearchConfigurationSpec,
+            TextSearchDictionarySpec, TextSearchParserSpec, TextSearchTemplateSpec,
+        };
+        use std::collections::HashSet;
+
+        let cfg = Config {
+            indexes: vec![StandaloneIndexSpec {
+                name: "idx".into(),
+                table: "t".into(),
+                schema: Some("public".into()),
+                columns: vec!["col".into()],
+                expressions: vec![],
+                r#where: None,
+                orders: vec![],
+                operator_classes: vec![],
+                unique: false,
+            }],
+            statistics: vec![StatisticsSpec {
+                name: "stats".into(),
+                alt_name: None,
+                schema: Some("public".into()),
+                table: "t".into(),
+                columns: vec!["col".into()],
+                kinds: vec![],
+                comment: None,
+            }],
+            foreign_data_wrappers: vec![ForeignDataWrapperSpec {
+                name: "fdw".into(),
+                alt_name: None,
+                handler: None,
+                validator: None,
+                options: vec![],
+                comment: None,
+            }],
+            foreign_servers: vec![ForeignServerSpec {
+                name: "server".into(),
+                alt_name: None,
+                wrapper: "fdw".into(),
+                r#type: None,
+                version: None,
+                options: vec![],
+                comment: None,
+            }],
+            foreign_tables: vec![ForeignTableSpec {
+                name: "foreign_table".into(),
+                alt_name: None,
+                schema: Some("public".into()),
+                server: "server".into(),
+                columns: vec![ColumnSpec {
+                    name: "col".into(),
+                    r#type: "text".into(),
+                    nullable: true,
+                    default: None,
+                    db_type: None,
+                    lint_ignore: vec![],
+                    comment: None,
+                    count: 0,
+                }],
+                options: vec![],
+                comment: None,
+            }],
+            text_search_dictionaries: vec![TextSearchDictionarySpec {
+                name: "dict".into(),
+                alt_name: None,
+                schema: Some("public".into()),
+                template: "simple".into(),
+                options: vec![],
+                comment: None,
+            }],
+            text_search_configurations: vec![TextSearchConfigurationSpec {
+                name: "cfg".into(),
+                alt_name: None,
+                schema: Some("public".into()),
+                parser: "default".into(),
+                mappings: vec![TextSearchConfigurationMappingSpec {
+                    tokens: vec!["asciiword".into()],
+                    dictionaries: vec!["dict".into()],
+                }],
+                comment: None,
+            }],
+            text_search_templates: vec![TextSearchTemplateSpec {
+                name: "tmpl".into(),
+                alt_name: None,
+                schema: Some("public".into()),
+                init: None,
+                lexize: "lexize".into(),
+                comment: None,
+            }],
+            text_search_parsers: vec![TextSearchParserSpec {
+                name: "parser".into(),
+                alt_name: None,
+                schema: Some("public".into()),
+                start: "start".into(),
+                gettoken: "get".into(),
+                end: "end".into(),
+                headline: None,
+                lextypes: "lex".into(),
+                comment: None,
+            }],
+            publications: vec![PublicationSpec {
+                name: "pub".into(),
+                alt_name: None,
+                all_tables: false,
+                tables: vec![PublicationTableSpec {
+                    schema: Some("public".into()),
+                    table: "t".into(),
+                }],
+                publish: vec!["insert".into()],
+                comment: None,
+            }],
+            subscriptions: vec![SubscriptionSpec {
+                name: "sub".into(),
+                alt_name: None,
+                connection: "dbname=app".into(),
+                publications: vec!["pub".into()],
+                comment: None,
+            }],
+            ..Default::default()
+        };
+
+        let include_all = ResourceKind::default_include_set();
+        let filtered = apply_filters(&cfg, &include_all, &HashSet::new());
+        assert_eq!(filtered.indexes.len(), 1);
+        assert_eq!(filtered.statistics.len(), 1);
+        assert_eq!(filtered.foreign_data_wrappers.len(), 1);
+        assert_eq!(filtered.foreign_servers.len(), 1);
+        assert_eq!(filtered.foreign_tables.len(), 1);
+        assert_eq!(filtered.text_search_dictionaries.len(), 1);
+        assert_eq!(filtered.text_search_configurations.len(), 1);
+        assert_eq!(filtered.text_search_templates.len(), 1);
+        assert_eq!(filtered.text_search_parsers.len(), 1);
+        assert_eq!(filtered.publications.len(), 1);
+        assert_eq!(filtered.subscriptions.len(), 1);
+
+        let mut only_indexes = HashSet::new();
+        only_indexes.insert(R::Indexes);
+        let filtered_only_indexes = apply_filters(&cfg, &only_indexes, &HashSet::new());
+        assert_eq!(filtered_only_indexes.indexes.len(), 1);
+        assert_eq!(filtered_only_indexes.statistics.len(), 0);
+        assert_eq!(filtered_only_indexes.foreign_tables.len(), 0);
+
+        let exclude_indexes: HashSet<R> = vec![R::Indexes].into_iter().collect();
+        let filtered_without_indexes = apply_filters(&cfg, &include_all, &exclude_indexes);
+        assert_eq!(filtered_without_indexes.indexes.len(), 0);
+        assert_eq!(filtered_without_indexes.statistics.len(), 1);
     }
 
     #[test]
