@@ -92,3 +92,23 @@ table "users" {
   }
 }
 ```
+
+## Functions
+
+Expressions may call a number of built‑in helpers. These are grouped
+roughly by category:
+
+* **String**: `upper`, `lower`, `length`, `substr`, `contains`,
+  `startswith`, `endswith`, `trim`, `replace`
+* **Numeric**: `min`, `max`, `abs`
+* **Collections**: `concat`, `flatten`, `distinct`, `slice`, `sort`,
+  `reverse`, `index`
+* **Utility**: `coalesce`, `join`, `split`
+* **Conversion**: `tostring`, `tonumber`, `tobool`, `tolist`, `tomap`
+* **Crypto/Base64**: `md5`, `sha256`, `sha512`, `base64encode`,
+  `base64decode`
+* **Datetime**: `timestamp`, `formatdate`, `timeadd`, `timecmp`
+
+These functions mirror those available in Terraform's expression
+language and can be used anywhere an expression is accepted, including
+within variable defaults and locals.
