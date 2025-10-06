@@ -1,5 +1,5 @@
 use crate::lint::LintSettings;
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -94,13 +94,64 @@ pub enum ResourceKind {
     Extensions,
     Collations,
     Sequences,
+    Indexes,
+    Statistics,
     Policies,
     Roles,
     Tablespaces,
     Grants,
+    ForeignDataWrappers,
+    ForeignServers,
+    ForeignTables,
+    TextSearchDictionaries,
+    TextSearchConfigurations,
+    TextSearchTemplates,
+    TextSearchParsers,
     Publications,
     Subscriptions,
     Tests,
+}
+
+impl ResourceKind {
+    pub const ALL: [ResourceKind; 33] = [
+        ResourceKind::Schemas,
+        ResourceKind::Enums,
+        ResourceKind::Domains,
+        ResourceKind::Types,
+        ResourceKind::Tables,
+        ResourceKind::Views,
+        ResourceKind::Materialized,
+        ResourceKind::Aggregates,
+        ResourceKind::Operators,
+        ResourceKind::Functions,
+        ResourceKind::Procedures,
+        ResourceKind::Triggers,
+        ResourceKind::Rules,
+        ResourceKind::EventTriggers,
+        ResourceKind::Extensions,
+        ResourceKind::Collations,
+        ResourceKind::Sequences,
+        ResourceKind::Indexes,
+        ResourceKind::Statistics,
+        ResourceKind::Policies,
+        ResourceKind::Roles,
+        ResourceKind::Tablespaces,
+        ResourceKind::Grants,
+        ResourceKind::ForeignDataWrappers,
+        ResourceKind::ForeignServers,
+        ResourceKind::ForeignTables,
+        ResourceKind::TextSearchDictionaries,
+        ResourceKind::TextSearchConfigurations,
+        ResourceKind::TextSearchTemplates,
+        ResourceKind::TextSearchParsers,
+        ResourceKind::Publications,
+        ResourceKind::Subscriptions,
+        ResourceKind::Tests,
+    ];
+
+    pub fn default_include_set() -> HashSet<ResourceKind> {
+        Self::ALL.iter().copied().collect()
+    }
 }
 
 impl fmt::Display for ResourceKind {
@@ -123,10 +174,19 @@ impl fmt::Display for ResourceKind {
             ResourceKind::Extensions => "extensions",
             ResourceKind::Collations => "collations",
             ResourceKind::Sequences => "sequences",
+            ResourceKind::Indexes => "indexes",
+            ResourceKind::Statistics => "statistics",
             ResourceKind::Policies => "policies",
             ResourceKind::Roles => "roles",
             ResourceKind::Tablespaces => "tablespaces",
             ResourceKind::Grants => "grants",
+            ResourceKind::ForeignDataWrappers => "foreign_data_wrappers",
+            ResourceKind::ForeignServers => "foreign_servers",
+            ResourceKind::ForeignTables => "foreign_tables",
+            ResourceKind::TextSearchDictionaries => "text_search_dictionaries",
+            ResourceKind::TextSearchConfigurations => "text_search_configurations",
+            ResourceKind::TextSearchTemplates => "text_search_templates",
+            ResourceKind::TextSearchParsers => "text_search_parsers",
             ResourceKind::Publications => "publications",
             ResourceKind::Subscriptions => "subscriptions",
             ResourceKind::Tests => "tests",
@@ -157,10 +217,19 @@ impl std::str::FromStr for ResourceKind {
             "extensions" => Ok(ResourceKind::Extensions),
             "collations" => Ok(ResourceKind::Collations),
             "sequences" => Ok(ResourceKind::Sequences),
+            "indexes" => Ok(ResourceKind::Indexes),
+            "statistics" => Ok(ResourceKind::Statistics),
             "policies" => Ok(ResourceKind::Policies),
             "roles" => Ok(ResourceKind::Roles),
             "tablespaces" => Ok(ResourceKind::Tablespaces),
             "grants" => Ok(ResourceKind::Grants),
+            "foreign_data_wrappers" => Ok(ResourceKind::ForeignDataWrappers),
+            "foreign_servers" => Ok(ResourceKind::ForeignServers),
+            "foreign_tables" => Ok(ResourceKind::ForeignTables),
+            "text_search_dictionaries" => Ok(ResourceKind::TextSearchDictionaries),
+            "text_search_configurations" => Ok(ResourceKind::TextSearchConfigurations),
+            "text_search_templates" => Ok(ResourceKind::TextSearchTemplates),
+            "text_search_parsers" => Ok(ResourceKind::TextSearchParsers),
             "publications" => Ok(ResourceKind::Publications),
             "subscriptions" => Ok(ResourceKind::Subscriptions),
             "tests" => Ok(ResourceKind::Tests),
@@ -171,50 +240,26 @@ impl std::str::FromStr for ResourceKind {
 
 impl TargetConfig {
     /// Get the set of resource kinds to include
-    pub fn get_include_set(&self) -> HashSet<ResourceKind> {
+    pub fn get_include_set(&self) -> Result<HashSet<ResourceKind>> {
         if self.include.is_empty() {
             // Include all by default
-            vec![
-                ResourceKind::Schemas,
-                ResourceKind::Enums,
-                ResourceKind::Domains,
-                ResourceKind::Types,
-                ResourceKind::Tables,
-                ResourceKind::Views,
-                ResourceKind::Materialized,
-                ResourceKind::Aggregates,
-                ResourceKind::Functions,
-                ResourceKind::Procedures,
-                ResourceKind::Triggers,
-                ResourceKind::EventTriggers,
-                ResourceKind::Extensions,
-                ResourceKind::Collations,
-                ResourceKind::Sequences,
-                ResourceKind::Policies,
-                ResourceKind::Roles,
-                ResourceKind::Tablespaces,
-                ResourceKind::Grants,
-                ResourceKind::Publications,
-                ResourceKind::Subscriptions,
-                ResourceKind::Tests,
-            ]
-            .into_iter()
-            .collect()
+            Ok(ResourceKind::default_include_set())
         } else {
-            self.include
-                .iter()
-                .filter_map(|s| s.parse::<ResourceKind>().ok())
-                .collect()
+            parse_resource_kinds(&self.include)
         }
     }
 
     /// Get the set of resource kinds to exclude
-    pub fn get_exclude_set(&self) -> HashSet<ResourceKind> {
-        self.exclude
-            .iter()
-            .filter_map(|s| s.parse::<ResourceKind>().ok())
-            .collect()
+    pub fn get_exclude_set(&self) -> Result<HashSet<ResourceKind>> {
+        parse_resource_kinds(&self.exclude)
     }
+}
+
+fn parse_resource_kinds(values: &[String]) -> Result<HashSet<ResourceKind>> {
+    values
+        .iter()
+        .map(|s| s.parse::<ResourceKind>().map_err(|e| anyhow!(e)))
+        .collect()
 }
 
 /// Load configuration from dbschema.toml file
@@ -258,13 +303,15 @@ mod tests {
             options: Default::default(),
         };
 
-        let include_set = target.get_include_set();
+        let include_set = target.get_include_set().unwrap();
         assert!(include_set.contains(&ResourceKind::Tables));
         assert!(include_set.contains(&ResourceKind::Enums));
         assert!(include_set.contains(&ResourceKind::EventTriggers));
         assert!(include_set.contains(&ResourceKind::Aggregates));
         assert!(include_set.contains(&ResourceKind::Collations));
-        assert_eq!(include_set.len(), 22); // All resource types
+        assert!(include_set.contains(&ResourceKind::Indexes));
+        assert!(include_set.contains(&ResourceKind::ForeignDataWrappers));
+        assert_eq!(include_set.len(), ResourceKind::ALL.len());
     }
 
     #[test]
@@ -281,7 +328,7 @@ mod tests {
             options: Default::default(),
         };
 
-        let include_set = target.get_include_set();
+        let include_set = target.get_include_set().unwrap();
         assert!(include_set.contains(&ResourceKind::Tables));
         assert!(include_set.contains(&ResourceKind::Enums));
         assert!(!include_set.contains(&ResourceKind::Functions));
@@ -302,13 +349,31 @@ mod tests {
             options: Default::default(),
         };
 
-        let include_set = target.get_include_set();
-        let exclude_set = target.get_exclude_set();
+        let include_set = target.get_include_set().unwrap();
+        let exclude_set = target.get_exclude_set().unwrap();
 
         assert!(include_set.contains(&ResourceKind::Tables));
         assert!(!exclude_set.contains(&ResourceKind::Tables));
         assert!(exclude_set.contains(&ResourceKind::Functions));
         assert!(exclude_set.contains(&ResourceKind::Triggers));
         assert!(!exclude_set.contains(&ResourceKind::EventTriggers));
+    }
+
+    #[test]
+    fn test_target_config_invalid_resource() {
+        let target = TargetConfig {
+            name: "test".to_string(),
+            backend: "postgres".to_string(),
+            input: None,
+            output: None,
+            include: vec!["not_a_resource".to_string()],
+            exclude: vec![],
+            vars: Default::default(),
+            var_files: vec![],
+            options: Default::default(),
+        };
+
+        let err = target.get_include_set().unwrap_err();
+        assert!(err.to_string().contains("invalid resource kind"));
     }
 }
