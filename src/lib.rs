@@ -851,6 +851,8 @@ mod tests {
             ..Default::default()
         };
 
+        use crate::config::ResourceKind;
+
         let include_all = ResourceKind::default_include_set();
         let filtered = apply_filters(&cfg, &include_all, &HashSet::new());
         assert_eq!(filtered.indexes.len(), 1);
