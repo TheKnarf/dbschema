@@ -822,6 +822,26 @@ fn load_file(
 
     // 3) Load modules first so their outputs are available
     let mut cfg = ast::Config::default();
+    for blk in body.blocks().filter(|b| b.identifier() == "provider") {
+        let provider_type = blk
+            .labels()
+            .get(0)
+            .ok_or_else(|| anyhow::anyhow!("provider block missing type label"))?
+            .as_str()
+            .to_string();
+        if provider_type != "postgres" {
+            bail!(
+                "unsupported provider '{}': only 'postgres' is currently supported",
+                provider_type
+            );
+        }
+        let version = get_attr_string(blk.body(), "version", &env)?;
+        cfg.providers.push(ast::AstProvider {
+            provider_type,
+            version,
+        });
+    }
+
     for blk in body.blocks().filter(|b| b.identifier() == "module") {
         let label = blk
             .labels()
@@ -886,6 +906,7 @@ fn load_file(
                 cfg.views.extend(sub.views);
                 cfg.materialized.extend(sub.materialized);
                 cfg.policies.extend(sub.policies);
+                cfg.providers.extend(sub.providers);
                 // Outputs from for_each modules aren't accessible via module.*
                 Ok(())
             })?;
@@ -942,6 +963,7 @@ fn load_file(
                 cfg.views.extend(sub.views);
                 cfg.materialized.extend(sub.materialized);
                 cfg.policies.extend(sub.policies);
+                cfg.providers.extend(sub.providers);
             }
         } else {
             // Prepare vars for module: start empty, collect its own defaults while loading; pass overrides from attrs (excluding 'source'/'for_each'/'count')
@@ -997,6 +1019,7 @@ fn load_file(
             cfg.policies.extend(sub.policies);
             cfg.roles.extend(sub.roles);
             cfg.grants.extend(sub.grants);
+            cfg.providers.extend(sub.providers);
         }
     }
 

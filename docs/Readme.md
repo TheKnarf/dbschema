@@ -5,6 +5,7 @@ dbschema lets you define database schemas in HCL and generate SQL/Prisma artifac
 ## Features
 
 - [Configuration](configuration.md) — Configure `dbschema.toml` targets and global settings.
+- [Providers](provider.md) — Declare which database backend to target.
 - [Linting](linting.md) — Run built-in checks and tune severities per rule.
 - [Variables, Locals, and Repetition](variables.md) — Parameterize HCL, loop with `for_each`/`count`, and use dynamic blocks.
 - [Modules and Output](modules.md) — Reuse HCL modules and return values via `output` blocks.
