@@ -21,9 +21,13 @@ cargo install --path .
 
 ## Usage
 
-Example: a small HCL file that defines an enum, a table, a trigger function, and a trigger.
+Example: a small HCL file that defines a provider, an enum, a table, a trigger function, and a trigger.
 
 ```hcl
+provider "postgres" {
+  version = "16"
+}
+
 extension "pgcrypto" {}
 
 enum "Status" {
@@ -60,6 +64,8 @@ trigger "users_set_updated_at" {
   function = "set_updated_at"
 }
 ```
+
+If you omit the provider block dbschema will assume a default Postgres provider.
 
 Create a migration (writes SQL to the given directory):
 

@@ -3,6 +3,7 @@ use serde::Serialize;
 
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct Config {
+    pub providers: Vec<ProviderSpec>,
     pub functions: Vec<FunctionSpec>,
     pub procedures: Vec<ProcedureSpec>,
     pub aggregates: Vec<AggregateSpec>,
@@ -37,6 +38,12 @@ pub struct Config {
     pub subscriptions: Vec<SubscriptionSpec>,
     pub tests: Vec<TestSpec>,
     pub outputs: Vec<OutputSpec>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ProviderSpec {
+    pub provider_type: String,
+    pub version: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

@@ -2,6 +2,7 @@ use hcl::{Expression, Value};
 
 #[derive(Debug, Clone, Default)]
 pub struct Config {
+    pub providers: Vec<AstProvider>,
     pub functions: Vec<AstFunction>,
     pub procedures: Vec<AstProcedure>,
     pub aggregates: Vec<AstAggregate>,
@@ -36,6 +37,12 @@ pub struct Config {
     pub subscriptions: Vec<AstSubscription>,
     pub tests: Vec<AstTest>,
     pub outputs: Vec<AstOutput>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AstProvider {
+    pub provider_type: String,
+    pub version: Option<String>,
 }
 
 #[derive(Debug, Clone)]

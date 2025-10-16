@@ -2,7 +2,17 @@ use crate::frontend::ast;
 use crate::ir;
 
 pub fn lower_config(ast: ast::Config) -> ir::Config {
+    let mut providers: Vec<ir::ProviderSpec> =
+        ast.providers.into_iter().map(Into::into).collect();
+    if providers.is_empty() {
+        providers.push(ir::ProviderSpec {
+            provider_type: "postgres".to_string(),
+            version: None,
+        });
+    }
+
     ir::Config {
+        providers,
         functions: ast.functions.into_iter().map(Into::into).collect(),
         procedures: ast.procedures.into_iter().map(Into::into).collect(),
         aggregates: ast.aggregates.into_iter().map(Into::into).collect(),
@@ -65,6 +75,15 @@ pub fn lower_config(ast: ast::Config) -> ir::Config {
         subscriptions: ast.subscriptions.into_iter().map(Into::into).collect(),
         tests: ast.tests.into_iter().map(Into::into).collect(),
         outputs: ast.outputs.into_iter().map(Into::into).collect(),
+    }
+}
+
+impl From<ast::AstProvider> for ir::ProviderSpec {
+    fn from(provider: ast::AstProvider) -> Self {
+        Self {
+            provider_type: provider.provider_type,
+            version: provider.version,
+        }
     }
 }
 
