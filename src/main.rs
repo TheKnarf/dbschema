@@ -167,10 +167,7 @@ fn main() -> Result<()> {
                 let fs_loader = FsLoader;
                 let env = EnvVars {
                     vars,
-                    locals: HashMap::new(),
-                    modules: HashMap::new(),
-                    each: None,
-                    count: None,
+                    ..EnvVars::default()
                 };
                 let config = load_config(&cli.input, &fs_loader, env.clone())
                     .with_context(|| format!("loading root HCL {}", cli.input.display()))?;
@@ -207,10 +204,7 @@ fn main() -> Result<()> {
                 let fs_loader = FsLoader;
                 let env = EnvVars {
                     vars,
-                    locals: HashMap::new(),
-                    modules: HashMap::new(),
-                    each: None,
-                    count: None,
+                    ..EnvVars::default()
                 };
                 let config = load_config(&cli.input, &fs_loader, env.clone())
                     .with_context(|| format!("loading root HCL {}", cli.input.display()))?;
@@ -272,10 +266,7 @@ fn main() -> Result<()> {
                 let fs_loader = FsLoader;
                 let env = EnvVars {
                     vars,
-                    locals: HashMap::new(),
-                    modules: HashMap::new(),
-                    each: None,
-                    count: None,
+                    ..EnvVars::default()
                 };
                 let config = load_config(&cli.input, &fs_loader, env.clone())
                     .with_context(|| format!("loading root HCL {}", cli.input.display()))?;
@@ -328,10 +319,7 @@ fn main() -> Result<()> {
                     let fs_loader = FsLoader;
                     let env = EnvVars {
                         vars,
-                        locals: HashMap::new(),
-                        modules: HashMap::new(),
-                        each: None,
-                        count: None,
+                        ..EnvVars::default()
                     };
                     let cfg = load_config(&PathBuf::from(input_path), &fs_loader, env.clone())
                         .with_context(|| format!("loading root HCL from {}", input_path))?;
@@ -361,10 +349,7 @@ fn main() -> Result<()> {
                     let fs_loader = FsLoader;
                     let env = EnvVars {
                         vars,
-                        locals: HashMap::new(),
-                        modules: HashMap::new(),
-                        each: None,
-                        count: None,
+                        ..EnvVars::default()
                     };
                     let cfg = load_config(&cli.input, &fs_loader, env.clone())
                         .with_context(|| format!("loading root HCL {}", cli.input.display()))?;

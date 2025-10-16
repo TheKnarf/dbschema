@@ -295,6 +295,66 @@ mod tests {
     }
 
     #[test]
+    fn module_for_each_can_use_data_sources() {
+        let mut files = HashMap::new();
+        files.insert(
+            p("/root/main.hcl"),
+            r#"
+            data "prisma_schema" "app" {
+              file = "/root/schema.prisma"
+            }
+
+            module "mirror" {
+              source  = "/root/mod"
+              for_each = data.prisma_schema.app.models
+              name    = each.key
+            }
+            "#
+            .to_string(),
+        );
+        files.insert(
+            p("/root/mod/main.hcl"),
+            r#"
+            variable "name" {}
+
+            table "mirror" {
+              comment = var.name
+
+              column "id" {
+                type = "text"
+              }
+            }
+            "#
+            .to_string(),
+        );
+        files.insert(
+            p("/root/schema.prisma"),
+            r#"
+            model User {
+              id    Int @id
+            }
+
+            model Post {
+              id    Int @id
+            }
+            "#
+            .to_string(),
+        );
+
+        let loader = MapLoader { files };
+        let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
+
+        assert_eq!(cfg.tables.len(), 2);
+        let mut comments: Vec<Option<String>> =
+            cfg.tables.iter().map(|t| t.comment.clone()).collect();
+        comments.sort();
+        assert_eq!(
+            comments,
+            vec![Some("Post".to_string()), Some("User".to_string())]
+        );
+    }
+
+    #[test]
     fn variable_type_and_validation() {
         use hcl::Value;
         let mut files = HashMap::new();
@@ -436,6 +496,75 @@ mod tests {
         assert!(!cols[0].nullable);
         assert_eq!(cols[1].name, "name");
         assert!(cols[1].nullable);
+    }
+
+    #[test]
+    fn data_prisma_schema_exposes_models_and_enums() {
+        let mut files = HashMap::new();
+        files.insert(
+            p("/root/main.hcl"),
+            r#"
+            data "prisma_schema" "app" {
+              file = "/root/schema.prisma"
+            }
+
+            table "audit_log" {
+              schema = "public"
+
+              column "user_id" {
+                type     = "bigint"
+                nullable = data.prisma_schema.app.models.User.fields.id.type.optional
+                comment  = data.prisma_schema.app.models.User.fields.id.type.name
+              }
+
+              column "middle_name" {
+                type     = "text"
+                nullable = data.prisma_schema.app.models.User.fields.middleName.type.optional
+                comment  = data.prisma_schema.app.models.User.fields.middleName.type.name
+              }
+
+              column "status" {
+                type    = "text"
+                comment = data.prisma_schema.app.enums.Status.values.ACTIVE.name
+              }
+
+              column "inactive_label" {
+                type    = "text"
+                comment = data.prisma_schema.app.enums.Status.values.INACTIVE.mapped_name
+              }
+            }
+            "#
+            .to_string(),
+        );
+        files.insert(
+            p("/root/schema.prisma"),
+            r#"
+            model User {
+              id          Int      @id @default(autoincrement())
+              email       String   @unique
+              middleName  String?
+              status      Status   @default(ACTIVE)
+            }
+
+            enum Status {
+              ACTIVE
+              INACTIVE @map("inactive")
+            }
+            "#
+            .to_string(),
+        );
+
+        let loader = MapLoader { files };
+        let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
+        assert_eq!(cfg.tables.len(), 1);
+        let table = &cfg.tables[0];
+        assert_eq!(table.columns.len(), 4);
+        assert_eq!(table.columns[0].nullable, false);
+        assert_eq!(table.columns[0].comment.as_deref(), Some("Int"));
+        assert_eq!(table.columns[1].nullable, true);
+        assert_eq!(table.columns[1].comment.as_deref(), Some("String"));
+        assert_eq!(table.columns[2].comment.as_deref(), Some("ACTIVE"));
+        assert_eq!(table.columns[3].comment.as_deref(), Some("inactive"));
     }
 
     #[test]

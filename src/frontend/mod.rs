@@ -1,6 +1,7 @@
 pub mod ast;
 pub mod builtins;
 pub mod core;
+pub mod data_sources;
 pub mod env;
 pub mod for_each;
 pub mod lower;
