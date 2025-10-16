@@ -10,6 +10,7 @@ use super::ast::VarValidation;
 /// - `var.<name>` for values in [`Self::vars`]
 /// - `local.<name>` or `locals.<name>` for values in [`Self::locals`]
 /// - `module.<name>.<output>` for outputs produced by modules
+/// - `data.<type>.<name>` for values loaded from data sources
 /// - `each.key`/`each.value` inside `for_each` blocks
 /// - `count.index` inside blocks using the `count` attribute
 ///
@@ -23,6 +24,7 @@ use super::ast::VarValidation;
 ///     vars: HashMap::from([( "name".into(), Value::from("world"))]),
 ///     locals: HashMap::from([( "name".into(), Value::from("bob"))]),
 ///     modules: HashMap::new(),
+///     data: HashMap::new(),
 ///     each: None,
 ///     count: None,
 /// };
@@ -36,6 +38,8 @@ pub struct EnvVars {
     pub locals: HashMap<String, Value>,
     /// Outputs from loaded modules, referenced as `module.<name>.<output>`.
     pub modules: HashMap<String, HashMap<String, Value>>,
+    /// Values loaded via `data` blocks, referenced as `data.<type>.<name>`.
+    pub data: HashMap<String, HashMap<String, Value>>,
     /// Key/value for the current iteration of a `for_each` block, enabling `each.key` and `each.value`.
     pub each: Option<(Value, Value)>, // (key, value)
     /// Index for `count`-based iterations, enabling `count.index`.

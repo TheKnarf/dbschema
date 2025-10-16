@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 use crate::frontend::ast;
 use crate::frontend::ast::VarValidation;
 use crate::frontend::builtins;
+use crate::frontend::data_sources;
 use crate::frontend::env::{EnvVars, VarSpec, VarType};
 use crate::frontend::for_each::execute_for_each;
 use crate::frontend::lower;
@@ -302,25 +303,11 @@ fn resolve_traversal_value(tr: &Traversal, env: &EnvVars) -> Result<Value> {
             let Some(TraversalOperator::GetAttr(out_name)) = it.next() else {
                 bail!("expected module.<name>.<output>");
             };
-            let mut current = module_outputs
+            let current = module_outputs
                 .get(out_name.as_str())
                 .cloned()
                 .with_context(|| format!("undefined module output '{}.{}'", mod_name, out_name))?;
-            for op in it {
-                match op {
-                    TraversalOperator::GetAttr(attr) => {
-                        if let Value::Object(map) = current {
-                            current = map.get(attr.as_str()).cloned().ok_or_else(|| {
-                                anyhow::anyhow!("unknown attribute '{}' on module output", attr)
-                            })?;
-                        } else {
-                            bail!("cannot access attribute on non-object value");
-                        }
-                    }
-                    _ => bail!("unsupported traversal operator in module.* expression"),
-                }
-            }
-            Ok(current)
+            apply_traversal(current, &mut it, env)
         }
         "each" => {
             let Some(TraversalOperator::GetAttr(name)) = it.next() else {
@@ -329,7 +316,7 @@ fn resolve_traversal_value(tr: &Traversal, env: &EnvVars) -> Result<Value> {
             let (key, value) = env.each.as_ref().ok_or_else(|| {
                 anyhow::anyhow!("'each' is only available inside for_each blocks")
             })?;
-            let mut current = match name.as_str() {
+            let current = match name.as_str() {
                 "key" => key.clone().into(),
                 "value" => value.clone(),
                 other => bail!(
@@ -337,29 +324,15 @@ fn resolve_traversal_value(tr: &Traversal, env: &EnvVars) -> Result<Value> {
                     other
                 ),
             };
-            for op in it {
-                match op {
-                    TraversalOperator::GetAttr(attr) => {
-                        if let Value::Object(map) = current {
-                            current = map.get(attr.as_str()).cloned().ok_or_else(|| {
-                                anyhow::anyhow!("unknown attribute '{}' on each.* value", attr)
-                            })?;
-                        } else {
-                            bail!("cannot access attribute on non-object value");
-                        }
-                    }
-                    _ => bail!("unsupported traversal operator in each.* expression"),
-                }
-            }
-            Ok(current)
+            apply_traversal(current, &mut it, env)
         }
         "count" => {
             let Some(TraversalOperator::GetAttr(name)) = it.next() else {
                 bail!("expected count.index");
             };
-            let idx = env
-                .count
-                .ok_or_else(|| anyhow::anyhow!("'count' is only available inside count iterations"))?;
+            let idx = env.count.ok_or_else(|| {
+                anyhow::anyhow!("'count' is only available inside count iterations")
+            })?;
             match name.as_str() {
                 "index" => {
                     if it.next().is_some() {
@@ -370,24 +343,26 @@ fn resolve_traversal_value(tr: &Traversal, env: &EnvVars) -> Result<Value> {
                 other => bail!("unsupported count attribute '{}': expected index", other),
             }
         }
+        "data" => {
+            let Some(TraversalOperator::GetAttr(data_type)) = it.next() else {
+                bail!("expected data.<type>.<name>");
+            };
+            let sources = env
+                .data
+                .get(data_type.as_str())
+                .with_context(|| format!("undefined data source type '{}'", data_type))?;
+            let Some(TraversalOperator::GetAttr(data_name)) = it.next() else {
+                bail!("expected data.<type>.<name>");
+            };
+            let current = sources.get(data_name.as_str()).cloned().with_context(|| {
+                format!("undefined data resource '{}.{}'", data_type, data_name)
+            })?;
+            apply_traversal(current, &mut it, env)
+        }
         _ => {
             // Check if the root is a variable in the environment
-            if let Some(mut current) = env.vars.get(root).cloned() {
-                for op in it {
-                    match op {
-                        TraversalOperator::GetAttr(attr) => {
-                            if let Value::Object(map) = current {
-                                current = map.get(attr.as_str()).cloned().ok_or_else(|| {
-                                    anyhow::anyhow!("unknown attribute '{}' on variable '{}'", attr, root)
-                                })?;
-                            } else {
-                                bail!("cannot access attribute '{}' on non-object value for variable '{}'", attr, root);
-                            }
-                        }
-                        _ => bail!("unsupported traversal operator on variable '{}'", root),
-                    }
-                }
-                Ok(current)
+            if let Some(current) = env.vars.get(root).cloned() {
+                apply_traversal(current, &mut it, env)
             } else {
                 bail!(
                     "unsupported traversal root '{}': expected var.*, local.*, module.*, each.*, count.*, or a variable name",
@@ -396,6 +371,64 @@ fn resolve_traversal_value(tr: &Traversal, env: &EnvVars) -> Result<Value> {
             }
         }
     }
+}
+
+fn apply_traversal(
+    mut current: Value,
+    it: &mut std::slice::Iter<'_, TraversalOperator>,
+    env: &EnvVars,
+) -> Result<Value> {
+    use TraversalOperator::*;
+    while let Some(op) = it.next() {
+        match op {
+            GetAttr(attr) => {
+                current = match current {
+                    Value::Object(map) => map.get(attr.as_str()).cloned().ok_or_else(|| {
+                        anyhow::anyhow!("unknown attribute '{}' on value during traversal", attr)
+                    })?,
+                    _ => bail!("cannot access attribute on non-object value"),
+                };
+            }
+            Index(expr) => {
+                let idx_value = expr_to_value(expr, env)?;
+                current = match (current, idx_value) {
+                    (Value::Array(arr), Value::Number(n)) => {
+                        let idx = n
+                            .as_i64()
+                            .ok_or_else(|| anyhow::anyhow!("index must be an integer"))?;
+                        if idx < 0 {
+                            bail!("index must be non-negative")
+                        }
+                        arr.into_iter()
+                            .nth(idx as usize)
+                            .ok_or_else(|| anyhow::anyhow!("index out of range"))?
+                    }
+                    (Value::Object(map), Value::String(key)) => {
+                        map.get(&key).cloned().ok_or_else(|| {
+                            anyhow::anyhow!("unknown attribute '{}' during indexed traversal", key)
+                        })?
+                    }
+                    (Value::Object(_), other) => {
+                        bail!("object traversal index must be a string, got {other:?}")
+                    }
+                    _ => bail!("unsupported traversal index on value"),
+                };
+            }
+            LegacyIndex(idx) => {
+                current = match current {
+                    Value::Array(arr) => arr
+                        .into_iter()
+                        .nth(*idx as usize)
+                        .ok_or_else(|| anyhow::anyhow!("index out of range"))?,
+                    _ => bail!("legacy index traversal requires an array value"),
+                };
+            }
+            AttrSplat | FullSplat => {
+                bail!("splat traversals are not supported")
+            }
+        }
+    }
+    Ok(current)
 }
 
 // Expand Terraform-style dynamic blocks into concrete blocks.
@@ -775,6 +808,7 @@ fn load_file(
         }
     }
     env.vars.extend(parent_env.vars.clone());
+    env.data = parent_env.data.clone();
 
     // 2) Compute locals (can reference vars)
     for blk in body.blocks().filter(|b| b.identifier() == "locals") {
@@ -785,6 +819,9 @@ fn load_file(
             env.locals.insert(key.to_string(), v);
         }
     }
+
+    // 2.5) Load data sources before modules so their values are available for module arguments
+    data_sources::load_data_sources(loader, base, &body, &mut env)?;
 
     // Enforce variable types and run validations
     for (name, spec) in &var_specs {
@@ -875,13 +912,10 @@ fn load_file(
                     })?;
                     mod_vars.insert(k.to_string(), v);
                 }
-                let mod_env = EnvVars {
-                    vars: mod_vars,
-                    locals: HashMap::new(),
-                    modules: HashMap::new(),
-                    each: None,
-                    count: None,
-                };
+                let mut mod_env = EnvVars::default();
+                mod_env.vars = mod_vars;
+                mod_env.data = env.data.clone();
+                mod_env.modules = env.modules.clone();
                 let sub = load_file(
                     loader,
                     &module_path.join("main.hcl"),
@@ -933,13 +967,10 @@ fn load_file(
                     })?;
                     mod_vars.insert(k.to_string(), v);
                 }
-                let mod_env = EnvVars {
-                    vars: mod_vars,
-                    locals: HashMap::new(),
-                    modules: HashMap::new(),
-                    each: None,
-                    count: None,
-                };
+                let mut mod_env = EnvVars::default();
+                mod_env.vars = mod_vars;
+                mod_env.data = env.data.clone();
+                mod_env.modules = env.modules.clone();
                 let sub = load_file(
                     loader,
                     &module_path.join("main.hcl"),
@@ -977,13 +1008,10 @@ fn load_file(
                     .with_context(|| format!("evaluating module var '{}.{}'", label.as_str(), k))?;
                 mod_vars.insert(k.to_string(), v);
             }
-            let mod_env = EnvVars {
-                vars: mod_vars,
-                locals: HashMap::new(),
-                modules: HashMap::new(),
-                each: None,
-                count: None,
-            };
+            let mut mod_env = EnvVars::default();
+            mod_env.vars = mod_vars;
+            mod_env.data = env.data.clone();
+            mod_env.modules = env.modules.clone();
             let sub = load_file(
                 loader,
                 &module_path.join("main.hcl"),
@@ -1386,7 +1414,10 @@ fn load_file(
         )?;
     }
 
-    for blk in body.blocks().filter(|b| b.identifier() == "foreign_data_wrapper") {
+    for blk in body
+        .blocks()
+        .filter(|b| b.identifier() == "foreign_data_wrapper")
+    {
         let name = blk
             .labels()
             .get(0)
