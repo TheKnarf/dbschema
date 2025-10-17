@@ -12,7 +12,7 @@ readme = "Readme.md"
 
 [dependencies]
 anyhow = "1"
-thiserror = "2.0.16"
+thiserror = "2.0.17"
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -31,12 +31,12 @@ env_logger = "0.11"
 url = "2"
 postgres-protocol = { version = "0.6", optional = true }
 bytes = { version = "1", optional = true }
-fallible-iterator = { version = "0.2", optional = true }
+fallible-iterator = { version = "0.3", optional = true }
 tokio = { version = "1", features = ["rt-multi-thread"], optional = true }
-pg_query = "6.1"
-ariadne = "0.4"
-chumsky = { version = "0.9", default-features = false, features = ["std"] }
-internment = "0.7"
+pg_query = "6.1.1"
+ariadne = "0.5"
+chumsky = { version = "0.11", default-features = false, features = ["std"] }
+internment = "0.8"
 
 [dev-dependencies]
 tempfile = "3"
