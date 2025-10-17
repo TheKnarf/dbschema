@@ -1,4 +1,5 @@
 pub mod backend;
+pub mod test_backend;
 
 use crate::provider::Provider;
 
@@ -40,5 +41,13 @@ impl Provider for PostgresProvider {
 
         // Register "pg" as an alias
         registry.register_alias("pg", Box::new(backend::PostgresBackend));
+    }
+
+    fn register_test_backends(&self, registry: &mut crate::test_runner::TestBackendRegistry) {
+        // Register the postgres test backend
+        registry.register("postgres", Box::new(test_backend::PostgresTestBackend));
+
+        // Register "pg" as an alias
+        registry.register("pg", Box::new(test_backend::PostgresTestBackend));
     }
 }

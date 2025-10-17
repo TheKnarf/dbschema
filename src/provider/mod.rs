@@ -16,6 +16,10 @@ pub trait Provider: Send + Sync {
     /// Register all backends provided by this provider (0, 1, or many).
     /// Providers can register multiple backends with different names.
     fn register_backends(&self, registry: &mut crate::backends::BackendRegistry);
+
+    /// Register all test backends provided by this provider (0, 1, or many).
+    /// Providers can register multiple test backends with different names.
+    fn register_test_backends(&self, registry: &mut crate::test_runner::TestBackendRegistry);
 }
 
 /// Registry for managing database providers.
