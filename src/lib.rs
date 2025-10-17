@@ -568,6 +568,98 @@ mod tests {
     }
 
     #[test]
+    fn clone_prisma_table_with_dynamic_columns() {
+        let mut files = HashMap::new();
+        files.insert(
+            p("/root/main.hcl"),
+            r#"
+            data "prisma_schema" "source" {
+              file = "/root/schema.prisma"
+            }
+
+            table "user_clone" {
+              schema = "public"
+
+              dynamic "column" {
+                for_each = data.prisma_schema.source.models.User.fields
+                labels   = [each.key]
+
+                content {
+                  type     = each.value.type.name == "Int" ? "integer" : each.value.type.name == "String" ? "text" : each.value.type.name == "DateTime" ? "timestamptz" : "text"
+                  nullable = each.value.type.optional
+                }
+              }
+
+              primary_key {
+                columns = ["id"]
+              }
+            }
+            "#
+            .to_string(),
+        );
+        files.insert(
+            p("/root/schema.prisma"),
+            r#"
+            model User {
+              id        Int      @id @default(autoincrement())
+              email     String   @unique
+              name      String?
+              createdAt DateTime @default(now())
+              updatedAt DateTime @updatedAt
+            }
+            "#
+            .to_string(),
+        );
+
+        let loader = MapLoader { files };
+        let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
+
+        assert_eq!(cfg.tables.len(), 1);
+        let table = &cfg.tables[0];
+        assert_eq!(table.name, "user_clone");
+
+        // Verify all 5 columns were created from Prisma model
+        assert_eq!(table.columns.len(), 5);
+
+        // Verify column names match Prisma fields
+        let col_names: Vec<&str> = table.columns.iter().map(|c| c.name.as_str()).collect();
+        assert!(col_names.contains(&"id"));
+        assert!(col_names.contains(&"email"));
+        assert!(col_names.contains(&"name"));
+        assert!(col_names.contains(&"createdAt"));
+        assert!(col_names.contains(&"updatedAt"));
+
+        // Verify types were mapped correctly
+        let id_col = table.columns.iter().find(|c| c.name == "id").unwrap();
+        assert_eq!(id_col.r#type, "integer");
+        assert!(!id_col.nullable); // Int is not optional in Prisma
+
+        let email_col = table.columns.iter().find(|c| c.name == "email").unwrap();
+        assert_eq!(email_col.r#type, "text");
+        assert!(!email_col.nullable); // String is not optional
+
+        let name_col = table.columns.iter().find(|c| c.name == "name").unwrap();
+        assert_eq!(name_col.r#type, "text");
+        assert!(name_col.nullable); // String? is optional in Prisma
+
+        let created_at_col = table.columns.iter().find(|c| c.name == "createdAt").unwrap();
+        assert_eq!(created_at_col.r#type, "timestamptz");
+        assert!(!created_at_col.nullable);
+
+        let updated_at_col = table.columns.iter().find(|c| c.name == "updatedAt").unwrap();
+        assert_eq!(updated_at_col.r#type, "timestamptz");
+        assert!(!updated_at_col.nullable);
+
+        // Verify primary key was created from Prisma @id attribute
+        assert!(table.primary_key.is_some());
+        let pk = table.primary_key.as_ref().unwrap();
+        assert_eq!(pk.columns.len(), 1);
+        assert_eq!(pk.columns[0], "id");
+
+        validate(&cfg, false).unwrap();
+    }
+
+    #[test]
     fn parse_extension_and_generate_sql() {
         let mut files = HashMap::new();
         files.insert(
