@@ -1,16 +1,38 @@
 use std::fmt;
 
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use ariadne::{Color, Fmt, Label, Report, ReportKind, Source};
-use chumsky::Parser;
-use chumsky::Stream;
-use chumsky::error::{Simple, SimpleReason};
-use chumsky::prelude::{BoxedParser, *};
+use chumsky::error::{Rich, RichPattern, RichReason};
+use chumsky::extra;
+use chumsky::input::{MapExtra, Stream};
+use chumsky::prelude::*;
+use chumsky::util::MaybeRef;
 
 use super::ast::*;
 
 type Span = std::ops::Range<usize>;
 type Spanned<T> = (T, Span);
+
+type LexError<'src> = Rich<'src, char, SimpleSpan<usize>>;
+type ParseError<'src> = Rich<'src, Token, Span>;
+type LexExtra<'src> = extra::Err<LexError<'src>>;
+type ParseExtra<'src> = extra::Err<ParseError<'src>>;
+
+trait ToRange {
+    fn to_range(&self) -> std::ops::Range<usize>;
+}
+
+impl ToRange for std::ops::Range<usize> {
+    fn to_range(&self) -> std::ops::Range<usize> {
+        self.clone()
+    }
+}
+
+impl ToRange for SimpleSpan<usize> {
+    fn to_range(&self) -> std::ops::Range<usize> {
+        self.clone().into_range()
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 enum Token {
@@ -152,19 +174,19 @@ fn quote_string(input: &str) -> String {
 }
 
 pub fn parse_schema_str(input: &str) -> Result<Schema> {
-    let (tokens, lex_errors) = lexer().parse_recovery(input);
+    let (tokens, lex_errors) = lexer().parse(input).into_output_errors();
     if !lex_errors.is_empty() {
         return Err(render_errors(lex_errors, input));
     }
     let tokens = tokens.ok_or_else(|| anyhow!("failed to tokenize Prisma schema"))?;
 
     let len = input.len();
-    let stream = Stream::from_iter(
-        len..len + 1,
-        tokens.into_iter().map(|(token, span)| (token, span)),
-    );
+    let stream = Stream::from_iter(tokens.into_iter())
+        .map(Span::new((), len..len), |(token, span)| (token, span));
 
-    let (schema, parse_errors) = schema_parser().parse_recovery(stream);
+    let (schema, parse_errors) = schema_parser::<_>()
+        .parse(stream)
+        .into_output_errors();
     if !parse_errors.is_empty() {
         return Err(render_errors(parse_errors, input));
     }
@@ -172,17 +194,31 @@ pub fn parse_schema_str(input: &str) -> Result<Schema> {
     schema.ok_or_else(|| anyhow!("failed to parse Prisma schema"))
 }
 
-fn lexer() -> impl Parser<char, Vec<Spanned<Token>>, Error = Simple<char>> {
-    let whitespace = filter(|c: &char| c.is_whitespace()).ignored();
+fn lexer<'src>() -> impl Parser<'src, &'src str, Vec<Spanned<Token>>, extra::Err<LexError<'src>>> {
+    let whitespace = any::<_, LexExtra<'src>>()
+        .filter(|c: &char| c.is_whitespace())
+        .ignored();
+
     let block_comment = just("/*")
-        .ignore_then(take_until(just("*/")))
+        .ignore_then(
+            just("*/")
+                .not()
+                .ignore_then(any::<_, LexExtra<'src>>().ignored())
+                .repeated(),
+        )
         .then_ignore(just("*/"))
         .ignored();
+
     let line_comment = just("//")
         .then(just('/').not())
-        .ignore_then(filter(|c: &char| *c != '\n').repeated())
+        .ignore_then(
+            any::<_, LexExtra<'src>>()
+                .filter(|c: &char| *c != '\n')
+                .repeated(),
+        )
         .then_ignore(just('\n').or_not())
         .ignored();
+
     let skip = choice((whitespace, block_comment, line_comment))
         .repeated()
         .ignored();
@@ -197,36 +233,57 @@ fn lexer() -> impl Parser<char, Vec<Spanned<Token>>, Error = Simple<char>> {
     )));
 
     let string = just('"')
-        .ignore_then(choice((escape, filter(|c: &char| *c != '"' && *c != '\\'))).repeated())
+        .ignore_then(
+            choice((
+                escape.clone(),
+                any::<_, LexExtra<'src>>()
+                    .filter(|c: &char| *c != '"' && *c != '\\'),
+            ))
+            .repeated()
+            .collect::<String>(),
+        )
         .then_ignore(just('"'))
-        .map(|chars: Vec<char>| chars.into_iter().collect::<String>())
         .map(Token::String);
 
     let doc_comment = just("///")
-        .ignore_then(filter(|c: &char| *c != '\n').repeated())
-        .map(|chars: Vec<char>| chars.into_iter().collect::<String>())
+        .ignore_then(
+            any::<_, LexExtra<'src>>()
+                .filter(|c: &char| *c != '\n')
+                .repeated()
+                .collect::<String>(),
+        )
         .map(|line| line.trim().to_string())
         .then_ignore(just('\n').or_not())
         .map(Token::DocComment);
 
+    let ident_body = any::<_, LexExtra<'src>>()
+        .filter(|c: &char| c.is_alphanumeric() || *c == '_');
+
     let bool_token = choice((
         just("true")
-            .then_ignore(filter(|c: &char| c.is_alphanumeric() || *c == '_').not())
+            .then_ignore(ident_body.clone().not())
             .to(Token::Boolean(true)),
         just("false")
-            .then_ignore(filter(|c: &char| c.is_alphanumeric() || *c == '_').not())
+            .then_ignore(ident_body.clone().not())
             .to(Token::Boolean(false)),
     ));
 
-    let ident = text::ident().map(Token::Ident);
-    let number = text::int(10)
-        .then(just('.').then(text::digits(10)).or_not())
-        .map(|(mut int_part, fractional)| {
+    let ident = text::ident::<_, LexExtra<'src>>()
+        .map(|ident: &str| Token::Ident(ident.to_string()));
+
+    let number = text::int::<_, LexExtra<'src>>(10)
+        .then(
+            just('.')
+                .then(text::digits::<_, LexExtra<'src>>(10).collect::<String>())
+                .or_not(),
+        )
+        .map(|(int_part, fractional): (&str, Option<(char, String)>)| {
+            let mut number = int_part.to_string();
             if let Some((_, frac)) = fractional {
-                int_part.push('.');
-                int_part.push_str(&frac);
+                number.push('.');
+                number.push_str(&frac);
             }
-            int_part
+            number
         })
         .map(Token::Number);
 
@@ -250,23 +307,33 @@ fn lexer() -> impl Parser<char, Vec<Spanned<Token>>, Error = Simple<char>> {
         just('?').to(Token::Question),
         ident,
     ))
-    .map_with_span(|token, span| (token, span))
+    .map_with(|token, extra: &mut MapExtra<'_, '_, &'src str, LexExtra<'src>>| {
+        (token, extra.span().to_range())
+    })
     .padded_by(skip.clone());
 
-    skip.ignore_then(token.repeated())
+    skip.ignore_then(token.repeated().collect::<Vec<_>>())
         .then_ignore(skip)
         .then_ignore(end())
 }
 
-fn schema_parser() -> impl Parser<Token, Schema, Error = Simple<Token>> {
+fn schema_parser<'src, I>() -> impl Parser<'src, I, Schema, ParseExtra<'src>>
+where
+    I: Input<'src, Token = Token, Span = Span>,
+{
     recursive(|_schema| {
-        let doc = doc_parser();
-        let ident = identifier();
+        let doc = doc_parser::<I>();
+        let ident = identifier::<I>();
 
         let value = recursive(|value| {
             let path = ident
                 .clone()
-                .then(just(Token::Dot).ignore_then(ident.clone()).repeated())
+                .then(
+                    just(Token::Dot)
+                        .ignore_then(ident.clone())
+                        .repeated()
+                        .collect::<Vec<_>>(),
+                )
                 .map(|(head, tail)| {
                     let mut parts = vec![head];
                     parts.extend(tail);
@@ -289,6 +356,7 @@ fn schema_parser() -> impl Parser<Token, Schema, Error = Simple<Token>> {
                 .clone()
                 .separated_by(just(Token::Comma))
                 .allow_trailing()
+                .collect::<Vec<_>>()
                 .delimited_by(just(Token::LParen), just(Token::RParen))
                 .boxed();
 
@@ -305,6 +373,7 @@ fn schema_parser() -> impl Parser<Token, Schema, Error = Simple<Token>> {
                 .clone()
                 .separated_by(just(Token::Comma))
                 .allow_trailing()
+                .collect::<Vec<_>>()
                 .delimited_by(just(Token::LBracket), just(Token::RBracket))
                 .map(Value::Array)
                 .boxed();
@@ -334,12 +403,18 @@ fn schema_parser() -> impl Parser<Token, Schema, Error = Simple<Token>> {
             .clone()
             .separated_by(just(Token::Comma))
             .allow_trailing()
+            .collect::<Vec<_>>()
             .delimited_by(just(Token::LParen), just(Token::RParen))
             .boxed();
 
         let dotted_ident = ident
             .clone()
-            .then(just(Token::Dot).ignore_then(ident.clone()).repeated())
+            .then(
+                just(Token::Dot)
+                    .ignore_then(ident.clone())
+                    .repeated()
+                    .collect::<Vec<_>>(),
+            )
             .map(|(head, tail)| {
                 if tail.is_empty() {
                     head
@@ -381,7 +456,12 @@ fn schema_parser() -> impl Parser<Token, Schema, Error = Simple<Token>> {
 
         let named_type = ident
             .clone()
-            .then(just(Token::Dot).ignore_then(ident.clone()).repeated())
+            .then(
+                just(Token::Dot)
+                    .ignore_then(ident.clone())
+                    .repeated()
+                    .collect::<Vec<_>>(),
+            )
             .map(|(head, tail)| {
                 let mut name = head.to_string();
                 for segment in tail {
@@ -411,7 +491,7 @@ fn schema_parser() -> impl Parser<Token, Schema, Error = Simple<Token>> {
             .clone()
             .then(ident.clone())
             .then(type_parser)
-            .then(field_attribute.clone().repeated())
+            .then(field_attribute.clone().repeated().collect::<Vec<_>>())
             .map(|(((doc, name), r#type), attributes)| Field {
                 name,
                 r#type,
@@ -429,12 +509,13 @@ fn schema_parser() -> impl Parser<Token, Schema, Error = Simple<Token>> {
         let fields_and_attrs = field_or_attr
             .clone()
             .repeated()
+            .collect::<Vec<_>>()
             .delimited_by(just(Token::LBrace), just(Token::RBrace))
             .boxed();
 
         let model = doc
             .clone()
-            .then_ignore(keyword("model"))
+            .then_ignore(keyword::<I>("model"))
             .then(ident.clone())
             .then(fields_and_attrs.clone())
             .map(|((doc, name), items)| {
@@ -450,7 +531,7 @@ fn schema_parser() -> impl Parser<Token, Schema, Error = Simple<Token>> {
 
         let view = doc
             .clone()
-            .then_ignore(keyword("view"))
+            .then_ignore(keyword::<I>("view"))
             .then(ident.clone())
             .then(fields_and_attrs.clone())
             .map(|((doc, name), items)| {
@@ -466,12 +547,13 @@ fn schema_parser() -> impl Parser<Token, Schema, Error = Simple<Token>> {
 
         let composite_type = doc
             .clone()
-            .then_ignore(keyword("type"))
+            .then_ignore(keyword::<I>("type"))
             .then(ident.clone())
             .then(
                 field
                     .clone()
                     .repeated()
+                    .collect::<Vec<_>>()
                     .delimited_by(just(Token::LBrace), just(Token::RBrace)),
             )
             .map(|((doc, name), fields)| CompositeType {
@@ -484,7 +566,7 @@ fn schema_parser() -> impl Parser<Token, Schema, Error = Simple<Token>> {
         let enum_value = doc
             .clone()
             .then(ident.clone())
-            .then(field_attribute.clone().repeated())
+            .then(field_attribute.clone().repeated().collect::<Vec<_>>())
             .map(|((doc, name), attrs)| {
                 let mapped_name = attrs.iter().find_map(|attr| match attr {
                     FieldAttribute::Map(value) => Some(value.clone()),
@@ -503,12 +585,13 @@ fn schema_parser() -> impl Parser<Token, Schema, Error = Simple<Token>> {
             .map(Either::Left)
             .or(block_attribute.clone().map(Either::Right))
             .repeated()
+            .collect::<Vec<_>>()
             .delimited_by(just(Token::LBrace), just(Token::RBrace))
             .boxed();
 
         let enum_block = doc
             .clone()
-            .then_ignore(keyword("enum"))
+            .then_ignore(keyword::<I>("enum"))
             .then(ident.clone())
             .then(enum_items)
             .map(|((doc, name), items)| {
@@ -539,12 +622,13 @@ fn schema_parser() -> impl Parser<Token, Schema, Error = Simple<Token>> {
 
         let config_block = move |kind: ConfigBlockKind, keyword_name: &'static str| {
             doc.clone()
-                .then_ignore(keyword(keyword_name))
+                .then_ignore(keyword::<I>(keyword_name))
                 .then(ident.clone())
                 .then(
                     config_property
                         .clone()
                         .repeated()
+                        .collect::<Vec<_>>()
                         .delimited_by(just(Token::LBrace), just(Token::RBrace)),
                 )
                 .map(move |((doc_lines, name), properties)| ConfigBlock {
@@ -565,7 +649,10 @@ fn schema_parser() -> impl Parser<Token, Schema, Error = Simple<Token>> {
             config_block(ConfigBlockKind::Generator, "generator").map(Top::Generator),
         ));
 
-        top.repeated().then_ignore(end()).map(|items| {
+        top.repeated()
+            .collect::<Vec<_>>()
+            .then_ignore(end())
+            .map(|items| {
             let mut schema = Schema::default();
             for item in items {
                 match item {
@@ -598,15 +685,26 @@ enum Top {
     Generator(ConfigBlock),
 }
 
-fn doc_parser() -> BoxedParser<'static, Token, Vec<String>, Simple<Token>> {
-    select! { Token::DocComment(doc) => doc }.repeated().boxed()
+fn doc_parser<'src, I>() -> impl Parser<'src, I, Vec<String>, ParseExtra<'src>> + Clone
+where
+    I: Input<'src, Token = Token, Span = Span>,
+{
+    select! { Token::DocComment(doc) => doc }
+        .repeated()
+        .collect::<Vec<_>>()
 }
 
-fn identifier() -> BoxedParser<'static, Token, Identifier, Simple<Token>> {
-    select! { Token::Ident(ident) => Identifier::from(ident) }.boxed()
+fn identifier<'src, I>() -> impl Parser<'src, I, Identifier, ParseExtra<'src>> + Clone
+where
+    I: Input<'src, Token = Token, Span = Span>,
+{
+    select! { Token::Ident(ident) => Identifier::from(ident) }
 }
 
-fn keyword(expected: &'static str) -> impl Parser<Token, (), Error = Simple<Token>> + Clone {
+fn keyword<'src, I>(expected: &'static str) -> impl Parser<'src, I, (), ParseExtra<'src>> + Clone
+where
+    I: Input<'src, Token = Token, Span = Span>,
+{
     select! { Token::Ident(ident) if ident == expected => () }
 }
 
@@ -812,35 +910,46 @@ fn format_attribute(prefix: &str, attr: &Attribute) -> String {
     format!("{}{}{}", prefix, attr.name, args)
 }
 
-fn render_errors<T>(errors: Vec<Simple<T>>, source: &str) -> anyhow::Error
+fn render_errors<'a, T, S>(errors: Vec<Rich<'a, T, S>>, source: &str) -> anyhow::Error
 where
-    T: fmt::Display + std::cmp::Eq + std::hash::Hash,
+    T: fmt::Display + fmt::Debug + std::cmp::Eq + std::hash::Hash + Clone,
+    S: ToRange + Clone + fmt::Debug,
 {
     let mut rendered = String::new();
     for error in errors {
-        let report = Report::build(ReportKind::Error, (), error.span().start)
-            .with_message(error.to_string())
+        let span_range = error.span().to_range();
+        let label_message = match error.reason() {
+            RichReason::ExpectedFound { expected, .. } => {
+                let expected = expected
+                    .iter()
+                    .map(pattern_to_string)
+                    .collect::<Vec<_>>();
+                if expected.is_empty() {
+                    "unexpected token".to_string()
+                } else {
+                    let expected_text = expected.join(", ");
+                    format!("expected {}", expected_text.fg(Color::Green))
+                }
+            }
+            RichReason::Custom(message) => message.clone(),
+        };
+
+        let report_message = match error.reason() {
+            RichReason::ExpectedFound { found, .. } => {
+                let found = found
+                    .as_ref()
+                    .map(format_found)
+                    .unwrap_or_else(|| "end of input".to_string());
+                format!("unexpected {}", found)
+            }
+            RichReason::Custom(message) => message.clone(),
+        };
+
+        let report = Report::build(ReportKind::Error, span_range.clone())
+            .with_message(report_message)
             .with_label(
-                Label::new(error.span())
-                    .with_message(match error.reason() {
-                        SimpleReason::Unexpected => {
-                            let expected = error
-                                .expected()
-                                .filter_map(|expected| {
-                                    expected.as_ref().map(|value| value.to_string())
-                                })
-                                .collect::<Vec<_>>();
-                            if expected.is_empty() {
-                                "unexpected token".to_string()
-                            } else {
-                                format!("expected {}", expected.join(", ").fg(Color::Green))
-                            }
-                        }
-                        SimpleReason::Unclosed { delimiter, .. } => {
-                            format!("unclosed delimiter {}", delimiter.fg(Color::Yellow))
-                        }
-                        SimpleReason::Custom(message) => message.clone(),
-                    })
+                Label::new(span_range)
+                    .with_message(label_message)
                     .with_color(Color::Red),
             )
             .finish();
@@ -853,6 +962,21 @@ where
         rendered.push('\n');
     }
     anyhow!(rendered)
+}
+
+fn pattern_to_string<T: fmt::Display + Clone>(pattern: &RichPattern<'_, T>) -> String {
+    match pattern {
+        RichPattern::Token(token) => format!("{}", token.clone().into_inner()),
+        RichPattern::Label(label) => label.to_string(),
+        RichPattern::Identifier(identifier) => identifier.clone(),
+        RichPattern::Any => "any token".to_string(),
+        RichPattern::SomethingElse => "something else".to_string(),
+        RichPattern::EndOfInput => "end of input".to_string(),
+    }
+}
+
+fn format_found<T: fmt::Display + Clone>(found: &MaybeRef<'_, T>) -> String {
+    format!("{}", found.clone().into_inner())
 }
 
 #[cfg(test)]
@@ -898,7 +1022,7 @@ model Post {
 }
 "#;
 
-        let (tokens, lex_errors) = lexer().parse_recovery(schema_src);
+        let (tokens, lex_errors) = lexer().parse(schema_src).into_output_errors();
         eprintln!("lex errors: {:?}", lex_errors);
         eprintln!("tokens: {:?}", tokens.as_ref().map(|items| items.len()));
         let schema = parse_schema_str(schema_src).expect("schema parses");
