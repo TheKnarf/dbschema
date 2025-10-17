@@ -12,6 +12,10 @@ pub trait Provider: Send + Sync {
     fn register_resources(&self) {
         // Placeholder - will be implemented with resource schema system
     }
+
+    /// Register all backends provided by this provider (0, 1, or many).
+    /// Providers can register multiple backends with different names.
+    fn register_backends(&self, registry: &mut crate::backends::BackendRegistry);
 }
 
 /// Registry for managing database providers.

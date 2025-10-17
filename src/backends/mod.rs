@@ -1,5 +1,6 @@
 use anyhow::Result;
 use chrono::Local;
+use std::collections::HashMap;
 
 use crate::ir::Config;
 
@@ -11,6 +12,49 @@ pub trait Backend {
     fn name(&self) -> &'static str;
     fn file_extension(&self) -> &'static str;
     fn generate(&self, cfg: &Config, strict: bool) -> Result<String>;
+}
+
+/// Registry for managing backends provided by providers.
+pub struct BackendRegistry {
+    backends: HashMap<String, Box<dyn Backend>>,
+}
+
+impl BackendRegistry {
+    /// Create a new empty backend registry.
+    pub fn new() -> Self {
+        Self {
+            backends: HashMap::new(),
+        }
+    }
+
+    /// Register a backend with the registry.
+    /// The backend's name() method is used as the key.
+    pub fn register(&mut self, backend: Box<dyn Backend>) {
+        let name = backend.name().to_string().to_lowercase();
+        self.backends.insert(name, backend);
+    }
+
+    /// Register a backend with an alias.
+    /// This allows the same backend to be accessible by multiple names.
+    pub fn register_alias(&mut self, alias: &str, backend: Box<dyn Backend>) {
+        self.backends.insert(alias.to_lowercase(), backend);
+    }
+
+    /// Get a backend by name (case-insensitive).
+    pub fn get(&self, name: &str) -> Option<&dyn Backend> {
+        self.backends.get(&name.to_lowercase()).map(|b| &**b)
+    }
+
+    /// List all registered backend names.
+    pub fn list_backends(&self) -> Vec<&str> {
+        self.backends.keys().map(|s| s.as_str()).collect()
+    }
+}
+
+impl Default for BackendRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 pub fn generate_header_comment(backend_name: &str, comment_style: CommentStyle) -> String {
@@ -42,7 +86,32 @@ pub enum CommentStyle {
     Prisma,
 }
 
+/// Create a backend registry with all built-in backends registered.
+/// This includes backends from providers as well as standalone backends.
+pub fn get_default_backend_registry() -> BackendRegistry {
+    let mut registry = BackendRegistry::new();
+
+    // Register provider backends
+    let provider_registry = crate::provider::get_default_provider_registry();
+    for provider_name in provider_registry.list_providers() {
+        if let Some(provider) = provider_registry.get(provider_name) {
+            provider.register_backends(&mut registry);
+        }
+    }
+
+    // Register standalone backends (json, prisma)
+    registry.register(Box::new(json::JsonBackend));
+    registry.register(Box::new(prisma::PrismaBackend));
+
+    registry
+}
+
+/// Get a backend by name. This is a convenience function that creates backends on-demand.
+/// For better performance when calling multiple times, consider using get_default_backend_registry()
+/// and reuse it, although that requires dealing with lifetimes.
 pub fn get_backend(name: &str) -> Option<Box<dyn Backend>> {
+    // We need to return a Box<dyn Backend>, so we create backends on-demand
+    // This matches the original behavior and avoids lifetime issues
     match name.to_lowercase().as_str() {
         "postgres" | "pg" => Some(Box::new(postgres::PostgresBackend)),
         "json" => Some(Box::new(json::JsonBackend)),

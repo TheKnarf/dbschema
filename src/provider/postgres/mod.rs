@@ -1,3 +1,5 @@
+pub mod backend;
+
 use crate::provider::Provider;
 
 /// PostgreSQL database provider.
@@ -30,5 +32,13 @@ impl Provider for PostgresProvider {
         // - index
         // - constraint
         // - etc.
+    }
+
+    fn register_backends(&self, registry: &mut crate::backends::BackendRegistry) {
+        // Register the main postgres backend
+        registry.register(Box::new(backend::PostgresBackend));
+
+        // Register "pg" as an alias
+        registry.register_alias("pg", Box::new(backend::PostgresBackend));
     }
 }
