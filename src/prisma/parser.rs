@@ -223,6 +223,21 @@ fn lexer<'src>() -> impl Parser<'src, &'src str, Vec<Spanned<Token>>, extra::Err
         .repeated()
         .ignored();
 
+    let unicode_escape = just('u')
+        .ignore_then(
+            any::<_, LexExtra<'src>>()
+                .filter(|c: &char| c.is_ascii_hexdigit())
+                .repeated()
+                .exactly(4)
+                .collect::<String>(),
+        )
+        .map(|hex| {
+            u32::from_str_radix(&hex, 16)
+                .ok()
+                .and_then(char::from_u32)
+                .unwrap_or('\u{FFFD}')
+        });
+
     let escape = just('\\').ignore_then(choice((
         just('"').to('"'),
         just('\\').to('\\'),
@@ -230,6 +245,7 @@ fn lexer<'src>() -> impl Parser<'src, &'src str, Vec<Spanned<Token>>, extra::Err
         just('n').to('\n'),
         just('r').to('\r'),
         just('t').to('\t'),
+        unicode_escape,
     )));
 
     let string = just('"')
@@ -256,36 +272,51 @@ fn lexer<'src>() -> impl Parser<'src, &'src str, Vec<Spanned<Token>>, extra::Err
         .then_ignore(just('\n').or_not())
         .map(Token::DocComment);
 
-    let ident_body = any::<_, LexExtra<'src>>()
-        .filter(|c: &char| c.is_alphanumeric() || *c == '_');
+    let ident_char = any::<_, LexExtra<'src>>()
+        .filter(|c: &char| c.is_alphanumeric() || *c == '_' || *c == '-');
 
     let bool_token = choice((
         just("true")
-            .then_ignore(ident_body.clone().not())
+            .then_ignore(ident_char.clone().not())
             .to(Token::Boolean(true)),
         just("false")
-            .then_ignore(ident_body.clone().not())
+            .then_ignore(ident_char.clone().not())
             .to(Token::Boolean(false)),
     ));
 
-    let ident = text::ident::<_, LexExtra<'src>>()
-        .map(|ident: &str| Token::Ident(ident.to_string()));
+    let ident = ident_char
+        .clone()
+        .repeated()
+        .at_least(1)
+        .collect::<String>()
+        .map(Token::Ident);
 
-    let number = text::int::<_, LexExtra<'src>>(10)
+    let digits = any::<_, LexExtra<'src>>()
+        .filter(|c: &char| c.is_ascii_digit())
+        .repeated()
+        .at_least(1)
+        .collect::<String>();
+
+    let number = just('-')
+        .or_not()
+        .then(digits.clone())
         .then(
             just('.')
-                .then(text::digits::<_, LexExtra<'src>>(10).collect::<String>())
+                .ignore_then(digits.clone())
                 .or_not(),
         )
-        .map(|(int_part, fractional): (&str, Option<(char, String)>)| {
-            let mut number = int_part.to_string();
-            if let Some((_, frac)) = fractional {
+        .map(|((sign, int_part), fractional)| {
+            let mut number = String::new();
+            if sign.is_some() {
+                number.push('-');
+            }
+            number.push_str(&int_part);
+            if let Some(frac) = fractional {
                 number.push('.');
                 number.push_str(&frac);
             }
-            number
-        })
-        .map(Token::Number);
+            Token::Number(number)
+        });
 
     let token = choice((
         doc_comment,
@@ -490,13 +521,21 @@ where
         let field = doc
             .clone()
             .then(ident.clone())
-            .then(type_parser)
+            .then(just(Token::Colon).or_not())
+            .then(type_parser.or_not())
             .then(field_attribute.clone().repeated().collect::<Vec<_>>())
-            .map(|(((doc, name), r#type), attributes)| Field {
-                name,
-                r#type,
-                attributes,
-                documentation: join_doc(doc),
+            .map(|((((doc, name), _colon), maybe_type), attributes)| {
+                let r#type = maybe_type.unwrap_or_else(|| Type {
+                    name: "Unsupported".to_string(),
+                    optional: false,
+                    list: false,
+                });
+                Field {
+                    name,
+                    r#type,
+                    attributes,
+                    documentation: join_doc(doc),
+                }
             })
             .boxed();
 
@@ -757,9 +796,7 @@ fn convert_field_attribute(attr: Attribute) -> FieldAttribute {
             .first()
             .and_then(|arg| match &arg.value {
                 Value::String(value) => Some(FieldAttribute::Map(value.clone())),
-                Value::Path(path) if path.len() == 1 => {
-                    Some(FieldAttribute::Map(path[0].to_string()))
-                }
+                Value::Path(path) => Some(FieldAttribute::Map(path_to_identifier(path).to_string())),
                 _ => None,
             })
             .unwrap_or_else(|| FieldAttribute::Raw(format_attribute("@", &attr))),
@@ -774,17 +811,21 @@ fn convert_field_attribute(attr: Attribute) -> FieldAttribute {
 fn convert_block_attribute(attr: Attribute) -> BlockAttribute {
     let name = attr.name.as_str();
     match name {
-        "id" => BlockAttribute::Id(extract_ident_list(&attr)),
-        "unique" => BlockAttribute::Unique(extract_ident_list(&attr)),
-        "index" => BlockAttribute::Index(extract_ident_list(&attr)),
+        "id" => extract_identifier_list(&attr)
+            .map(BlockAttribute::Id)
+            .unwrap_or_else(|| BlockAttribute::Raw(format_attribute("@@", &attr))),
+        "unique" => extract_identifier_list(&attr)
+            .map(BlockAttribute::Unique)
+            .unwrap_or_else(|| BlockAttribute::Raw(format_attribute("@@", &attr))),
+        "index" => extract_identifier_list(&attr)
+            .map(BlockAttribute::Index)
+            .unwrap_or_else(|| BlockAttribute::Raw(format_attribute("@@", &attr))),
         "map" => attr
             .arguments
             .first()
             .and_then(|arg| match &arg.value {
                 Value::String(value) => Some(BlockAttribute::Map(value.clone())),
-                Value::Path(path) if path.len() == 1 => {
-                    Some(BlockAttribute::Map(path[0].to_string()))
-                }
+                Value::Path(path) => Some(BlockAttribute::Map(path_to_identifier(path).to_string())),
                 _ => None,
             })
             .unwrap_or_else(|| BlockAttribute::Raw(format_attribute("@@", &attr))),
@@ -799,6 +840,8 @@ fn convert_default_value(value: &Value) -> DefaultValue {
             match name {
                 "now" => DefaultValue::Now,
                 "uuid" => DefaultValue::Uuid,
+                "cuid" => DefaultValue::Expression(value.to_string()),
+                "nanoid" => DefaultValue::Expression(value.to_string()),
                 "autoincrement" => DefaultValue::AutoIncrement,
                 "dbgenerated" => arguments
                     .first()
@@ -831,12 +874,17 @@ fn convert_relation_attribute(attr: &Attribute) -> Option<RelationAttribute> {
             Some("onDelete") => on_delete = Some(argument.value.to_string()),
             Some("onUpdate") => on_update = Some(argument.value.to_string()),
             _ => {
-                if fields.is_empty() {
+                if name.is_none()
+                    && matches!(
+                        &argument.value,
+                        Value::String(_) | Value::Path(_)
+                    )
+                {
+                    name = Some(extract_string_like(&argument.value));
+                } else if fields.is_empty() {
                     fields = extract_identifier_array(&argument.value);
                 } else if references.is_empty() {
                     references = extract_identifier_array(&argument.value);
-                } else if name.is_none() {
-                    name = Some(extract_string_like(&argument.value));
                 } else if map.is_none() {
                     map = Some(extract_string_like(&argument.value));
                 }
@@ -850,37 +898,50 @@ fn convert_relation_attribute(attr: &Attribute) -> Option<RelationAttribute> {
         references,
         map,
         on_delete,
-        on_update,
+            on_update,
     })
 }
 
-fn extract_ident_list(attr: &Attribute) -> Vec<Identifier> {
-    attr.arguments
-        .iter()
-        .find_map(|arg| match &arg.value {
-            Value::Array(values) => Some(
-                values
-                    .iter()
-                    .filter_map(|value| match value {
-                        Value::Path(path) if path.len() == 1 => Some(path[0]),
-                        Value::String(value) => Some(Identifier::from(value.clone())),
-                        _ => None,
-                    })
-                    .collect(),
-            ),
-            _ => None,
-        })
-        .unwrap_or_default()
+fn path_to_identifier(path: &[Identifier]) -> Identifier {
+    if path.len() == 1 {
+        path[0]
+    } else {
+        let mut name = String::new();
+        for (idx, segment) in path.iter().enumerate() {
+            if idx > 0 {
+                name.push('.');
+            }
+            name.push_str(segment.as_str());
+        }
+        Identifier::from(name)
+    }
+}
+
+fn extract_identifier_list(attr: &Attribute) -> Option<Vec<Identifier>> {
+    attr.arguments.iter().find_map(|arg| match &arg.value {
+        Value::Array(values) => {
+            let mut items = Vec::new();
+            for value in values {
+                match value {
+                    Value::Path(path) => items.push(path_to_identifier(path)),
+                    Value::String(value) => items.push(Identifier::from(value.clone())),
+                    _ => return None,
+                }
+            }
+            Some(items)
+        }
+        _ => None,
+    })
 }
 
 fn extract_identifier_array(value: &Value) -> Vec<Identifier> {
     match value {
         Value::Array(values) => values
             .iter()
-            .filter_map(|value| match value {
-                Value::Path(path) if path.len() == 1 => Some(path[0]),
-                Value::String(value) => Some(Identifier::from(value.clone())),
-                _ => None,
+            .map(|value| match value {
+                Value::Path(path) => path_to_identifier(path),
+                Value::String(value) => Identifier::from(value.clone()),
+                _ => Identifier::from(value.to_string()),
             })
             .collect(),
         _ => Vec::new(),
@@ -1262,6 +1323,104 @@ model RelationModel {
                 .attributes
                 .iter()
                 .any(|attr| matches!(attr, BlockAttribute::Raw(value) if value == "@@ignore"))
+        );
+    }
+
+    #[test]
+    fn parses_model_with_advanced_features() {
+        let schema_src = r#"
+model Post {
+  id          Int           @id @default(autoincrement())
+  title       String        @db.VarChar(255)
+  slug        String?       @unique(map: "slug_idx")
+  rating      Decimal?      @db.Decimal(5, 2)
+  metadata    Json?         @default("{}")
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  authorId    Int
+  author      User          @relation("AuthorPosts", fields: [authorId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  categories  Category[]    @relation(references: [id])
+  legacy:     String
+  legacyField String?
+
+  @@index([title, createdAt(sort: Desc)], map: "title_created_idx", type: Brin)
+  @@unique([authorId, title], map: "author_title_unique")
+  @@map("posts")
+}
+
+model User {
+  id Int @id
+}
+
+model Category {
+  id Int @id
+}
+"#;
+
+        let schema = parse_schema_str(schema_src).expect("schema parses");
+        let post = schema
+            .models
+            .iter()
+            .find(|model| model.name.as_str() == "Post")
+            .expect("post model");
+
+        let title_field = post
+            .fields
+            .iter()
+            .find(|field| field.name.as_str() == "title")
+            .expect("title field");
+        assert_eq!(title_field.r#type.name, "String");
+        assert!(!title_field.r#type.optional);
+
+        let rating_field = post
+            .fields
+            .iter()
+            .find(|field| field.name.as_str() == "rating")
+            .expect("rating field");
+        assert_eq!(rating_field.r#type.name, "Decimal");
+        assert!(rating_field.r#type.optional);
+
+        let relation_field = post
+            .fields
+            .iter()
+            .find(|field| field.name.as_str() == "author")
+            .expect("author relation field");
+        let relation = relation_field
+            .attributes
+            .iter()
+            .find_map(|attr| match attr {
+                FieldAttribute::Relation(rel) => Some(rel),
+                _ => None,
+            })
+            .expect("relation attribute");
+        assert_eq!(relation.name.as_deref(), Some("AuthorPosts"));
+        assert_eq!(
+            relation.fields.iter().map(|id| id.as_str()).collect::<Vec<_>>(),
+            vec!["authorId"]
+        );
+        assert_eq!(
+            relation
+                .references
+                .iter()
+                .map(|id| id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["id"]
+        );
+        assert_eq!(relation.on_delete.as_deref(), Some("Cascade"));
+        assert_eq!(relation.on_update.as_deref(), Some("NoAction"));
+
+        let block_attrs = &post.attributes;
+        assert!(
+            block_attrs
+                .iter()
+                .any(|attr| matches!(attr, BlockAttribute::Raw(raw) if raw.contains("@@index"))),
+            "complex @@index should be preserved as raw attribute"
+        );
+        assert!(
+            block_attrs
+                .iter()
+                .any(|attr| matches!(attr, BlockAttribute::Map(name) if name == "posts")),
+            "@@map should parse to BlockAttribute::Map"
         );
     }
 
