@@ -8,15 +8,12 @@ Prisma supports custom migrations, so you can generate SQL with this tool and sh
 
 ## Docs
 
-[Read full docs](./docs/Readme.md)
+[Read full docs](https://github.com/TheKnarf/dbschema/blob/main/docs/Readme.md)
 
 ## Install
 
-- Ensure Rust toolchain is installed.
-- Build & install:
-
 ```bash
-cargo install --path .
+cargo install dbschema
 ```
 
 ## Usage
