@@ -8,7 +8,6 @@ pub mod frontend;
 pub mod ir;
 pub mod lint;
 pub mod passes;
-pub mod postgres;
 pub mod prisma;
 pub mod provider;
 pub mod test_runner;

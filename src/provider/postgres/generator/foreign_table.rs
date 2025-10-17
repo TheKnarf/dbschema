@@ -1,6 +1,6 @@
 use std::fmt;
 
-use crate::postgres::{Column, ident};
+use super::{ident, Column};
 
 #[derive(Debug, Clone)]
 pub struct ForeignTable {

@@ -1,4 +1,5 @@
 pub mod backend;
+pub mod generator;
 pub mod test_backend;
 
 use crate::provider::Provider;

@@ -1,6 +1,6 @@
 use std::fmt;
 
-use crate::postgres::{ident, literal};
+use super::{ident, literal};
 
 #[derive(Debug, Clone)]
 pub struct Collation {

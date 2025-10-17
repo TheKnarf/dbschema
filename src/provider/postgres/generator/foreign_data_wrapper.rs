@@ -1,6 +1,6 @@
 use std::fmt;
 
-use crate::postgres::ident;
+use super::ident;
 
 #[derive(Debug, Clone)]
 pub struct ForeignDataWrapper {

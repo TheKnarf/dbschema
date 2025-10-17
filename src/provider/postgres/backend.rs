@@ -1,5 +1,5 @@
-use crate::backends::{Backend, CommentStyle, generate_header_comment};
-use crate::{ir::*, postgres as pg};
+use crate::backends::{generate_header_comment, Backend, CommentStyle};
+use crate::{ir::*, provider::postgres::generator as pg};
 use anyhow::Result;
 
 pub struct PostgresBackend;
