@@ -55,6 +55,15 @@ impl fmt::Display for Schema {
             needs_gap = true;
         }
 
+        for alias in &self.type_aliases {
+            if needs_gap {
+                writeln!(f)?;
+                writeln!(f)?;
+            }
+            write!(f, "{}", alias)?;
+            needs_gap = true;
+        }
+
         for block in &self.datasources {
             if needs_gap {
                 writeln!(f)?;
@@ -138,6 +147,17 @@ impl fmt::Display for CompositeType {
             writeln!(f, "  {}", field)?;
         }
         write!(f, "}}")
+    }
+}
+
+impl fmt::Display for TypeAlias {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write_documentation(f, &self.documentation)?;
+        write!(f, "type {} = {}", self.name, self.target)?;
+        for attr in &self.attributes {
+            write!(f, " {}", attr)?;
+        }
+        Ok(())
     }
 }
 

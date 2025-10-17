@@ -51,6 +51,7 @@ pub struct Schema {
     pub models: Vec<Model>,
     pub views: Vec<View>,
     pub composite_types: Vec<CompositeType>,
+    pub type_aliases: Vec<TypeAlias>,
     pub datasources: Vec<ConfigBlock>,
     pub generators: Vec<ConfigBlock>,
 }
@@ -75,6 +76,14 @@ pub struct View {
 pub struct CompositeType {
     pub name: Identifier,
     pub fields: Vec<Field>,
+    pub documentation: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct TypeAlias {
+    pub name: Identifier,
+    pub target: Type,
+    pub attributes: Vec<FieldAttribute>,
     pub documentation: Option<String>,
 }
 

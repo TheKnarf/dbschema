@@ -79,6 +79,10 @@ fn schema_to_value(schema: Schema) -> hcl::Value {
         "composite_types".into(),
         composite_types_to_value(&schema.composite_types),
     );
+    root.insert(
+        "type_aliases".into(),
+        type_aliases_to_value(&schema.type_aliases),
+    );
     root.insert("enums".into(), enums_to_value(&schema.enums));
     root.insert(
         "datasources".into(),
@@ -132,6 +136,24 @@ fn composite_types_to_value(types: &[prisma::CompositeType]) -> hcl::Value {
         ct_map.insert("name".into(), hcl::Value::String(ct.name.to_string()));
         ct_map.insert("fields".into(), fields_to_value(&ct.fields));
         map.insert(ct.name.to_string(), hcl::Value::Object(ct_map));
+    }
+    hcl::Value::Object(map)
+}
+
+fn type_aliases_to_value(aliases: &[prisma::TypeAlias]) -> hcl::Value {
+    let mut map = Map::<String, hcl::Value>::new();
+    for alias in aliases {
+        let mut alias_map = Map::new();
+        alias_map.insert("name".into(), hcl::Value::String(alias.name.to_string()));
+        alias_map.insert("target".into(), type_to_value(&alias.target));
+        alias_map.insert(
+            "attributes".into(),
+            field_attributes_to_value(&alias.attributes),
+        );
+        if let Some(doc) = &alias.documentation {
+            alias_map.insert("documentation".into(), hcl::Value::String(doc.clone()));
+        }
+        map.insert(alias.name.to_string(), hcl::Value::Object(alias_map));
     }
     hcl::Value::Object(map)
 }
@@ -225,10 +247,16 @@ fn field_attributes_to_value(attrs: &[FieldAttribute]) -> hcl::Value {
         .collect();
     map.insert("raw".into(), hcl::Value::Array(raw));
 
-    if attrs.iter().any(|a| matches!(a, FieldAttribute::Id)) {
+    if attrs.iter().any(|a| {
+        matches!(a, FieldAttribute::Id)
+            || matches!(a, FieldAttribute::Raw(raw) if raw_field_attribute_name(raw) == Some("id"))
+    }) {
         map.insert("id".into(), hcl::Value::Bool(true));
     }
-    if attrs.iter().any(|a| matches!(a, FieldAttribute::Unique)) {
+    if attrs.iter().any(|a| {
+        matches!(a, FieldAttribute::Unique)
+            || matches!(a, FieldAttribute::Raw(raw) if raw_field_attribute_name(raw) == Some("unique"))
+    }) {
         map.insert("unique".into(), hcl::Value::Bool(true));
     }
     if let Some(default) = attrs.iter().find_map(|a| match a {
@@ -311,4 +339,13 @@ fn identifiers_to_array(values: &[prisma::Identifier]) -> hcl::Value {
             .map(|value| hcl::Value::String(value.to_string()))
             .collect(),
     )
+}
+
+fn raw_field_attribute_name(raw: &str) -> Option<&str> {
+    let trimmed = raw.trim_start();
+    let stripped = trimmed.strip_prefix('@')?;
+    let end = stripped
+        .find(|c: char| c == '(' || c.is_whitespace())
+        .unwrap_or(stripped.len());
+    Some(&stripped[..end])
 }

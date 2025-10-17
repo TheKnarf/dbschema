@@ -4,7 +4,7 @@ use anyhow::{anyhow, Result};
 use ariadne::{Color, Fmt, Label, Report, ReportKind, Source};
 use chumsky::error::{Rich, RichPattern, RichReason};
 use chumsky::extra;
-use chumsky::input::{MapExtra, Stream};
+use chumsky::input::{MapExtra, Stream, ValueInput};
 use chumsky::prelude::*;
 use chumsky::util::MaybeRef;
 
@@ -350,7 +350,7 @@ fn lexer<'src>() -> impl Parser<'src, &'src str, Vec<Spanned<Token>>, extra::Err
 
 fn schema_parser<'src, I>() -> impl Parser<'src, I, Schema, ParseExtra<'src>>
 where
-    I: Input<'src, Token = Token, Span = Span>,
+    I: Input<'src, Token = Token, Span = Span> + ValueInput<'src, Token = Token, Span = Span>,
 {
     recursive(|_schema| {
         let doc = doc_parser::<I>();
@@ -522,7 +522,7 @@ where
             .clone()
             .then(ident.clone())
             .then(just(Token::Colon).or_not())
-            .then(type_parser.or_not())
+            .then(type_parser.clone().or_not())
             .then(field_attribute.clone().repeated().collect::<Vec<_>>())
             .map(|((((doc, name), _colon), maybe_type), attributes)| {
                 let r#type = maybe_type.unwrap_or_else(|| Type {
@@ -600,6 +600,49 @@ where
                 fields,
                 documentation: join_doc(doc),
             })
+            .boxed();
+
+        let type_alias = doc
+            .clone()
+            .then_ignore(keyword::<I>("type"))
+            .then(ident.clone())
+            .then_ignore(just(Token::Equals))
+            .then(type_parser.clone().or_not())
+            .then(field_attribute.clone().repeated().collect::<Vec<_>>())
+            .map(|(((doc, name), target), attributes)| {
+                let target = target.unwrap_or_else(|| Type {
+                    name: "Unsupported".to_string(),
+                    optional: false,
+                    list: false,
+                });
+                TypeAlias {
+                    name,
+                    target,
+                    attributes,
+                    documentation: join_doc(doc),
+                }
+            })
+            .boxed();
+
+        let ignored_block_body = recursive(|body| {
+            choice((
+                just(Token::LBrace)
+                    .ignore_then(body.clone())
+                    .then_ignore(just(Token::RBrace))
+                    .ignored(),
+                just(Token::RBrace).not().ignore_then(any::<_, ParseExtra<'src>>()).ignored(),
+            ))
+            .repeated()
+            .ignored()
+        });
+
+        let arbitrary_block = doc
+            .clone()
+            .then_ignore(ident.clone())
+            .then_ignore(just(Token::LBrace))
+            .ignore_then(ignored_block_body)
+            .then_ignore(just(Token::RBrace))
+            .to(())
             .boxed();
 
         let enum_value = doc
@@ -686,6 +729,8 @@ where
             enum_block.map(Top::Enum),
             config_block(ConfigBlockKind::Datasource, "datasource").map(Top::Datasource),
             config_block(ConfigBlockKind::Generator, "generator").map(Top::Generator),
+            type_alias.map(Top::TypeAlias),
+            arbitrary_block.map(|_| Top::Ignored),
         ));
 
         top.repeated()
@@ -701,6 +746,8 @@ where
                     Top::Enum(enm) => schema.enums.push(enm),
                     Top::Datasource(ds) => schema.datasources.push(ds),
                     Top::Generator(generator) => schema.generators.push(generator),
+                    Top::TypeAlias(alias) => schema.type_aliases.push(alias),
+                    Top::Ignored => {}
                 }
             }
             schema
@@ -722,6 +769,8 @@ enum Top {
     Enum(Enum),
     Datasource(ConfigBlock),
     Generator(ConfigBlock),
+    TypeAlias(TypeAlias),
+    Ignored,
 }
 
 fn doc_parser<'src, I>() -> impl Parser<'src, I, Vec<String>, ParseExtra<'src>> + Clone
@@ -784,14 +833,16 @@ fn join_doc(doc: Vec<String>) -> Option<String> {
 fn convert_field_attribute(attr: Attribute) -> FieldAttribute {
     let name = attr.name.as_str();
     match name {
-        "id" => FieldAttribute::Id,
-        "unique" => FieldAttribute::Unique,
+        "id" if attr.arguments.is_empty() => FieldAttribute::Id,
+        "id" => FieldAttribute::Raw(format_attribute("@", &attr)),
+        "unique" if attr.arguments.is_empty() => FieldAttribute::Unique,
+        "unique" => FieldAttribute::Raw(format_attribute("@", &attr)),
         "default" => attr
             .arguments
             .first()
             .map(|arg| FieldAttribute::Default(convert_default_value(&arg.value)))
             .unwrap_or_else(|| FieldAttribute::Raw(format_attribute("@", &attr))),
-        "map" => attr
+        "map" if attr.arguments.len() == 1 => attr
             .arguments
             .first()
             .and_then(|arg| match &arg.value {
@@ -800,6 +851,7 @@ fn convert_field_attribute(attr: Attribute) -> FieldAttribute {
                 _ => None,
             })
             .unwrap_or_else(|| FieldAttribute::Raw(format_attribute("@", &attr))),
+        "map" => FieldAttribute::Raw(format_attribute("@", &attr)),
         "relation" => convert_relation_attribute(&attr)
             .map(FieldAttribute::Relation)
             .unwrap_or_else(|| FieldAttribute::Raw(format_attribute("@", &attr))),
@@ -811,16 +863,25 @@ fn convert_field_attribute(attr: Attribute) -> FieldAttribute {
 fn convert_block_attribute(attr: Attribute) -> BlockAttribute {
     let name = attr.name.as_str();
     match name {
-        "id" => extract_identifier_list(&attr)
-            .map(BlockAttribute::Id)
-            .unwrap_or_else(|| BlockAttribute::Raw(format_attribute("@@", &attr))),
-        "unique" => extract_identifier_list(&attr)
-            .map(BlockAttribute::Unique)
-            .unwrap_or_else(|| BlockAttribute::Raw(format_attribute("@@", &attr))),
-        "index" => extract_identifier_list(&attr)
-            .map(BlockAttribute::Index)
-            .unwrap_or_else(|| BlockAttribute::Raw(format_attribute("@@", &attr))),
-        "map" => attr
+        "id" if attr.arguments.len() == 1 && attr.arguments[0].name.is_none() => {
+            extract_identifier_list(&attr)
+                .map(BlockAttribute::Id)
+                .unwrap_or_else(|| BlockAttribute::Raw(format_attribute("@@", &attr)))
+        }
+        "id" => BlockAttribute::Raw(format_attribute("@@", &attr)),
+        "unique" if attr.arguments.len() == 1 && attr.arguments[0].name.is_none() => {
+            extract_identifier_list(&attr)
+                .map(BlockAttribute::Unique)
+                .unwrap_or_else(|| BlockAttribute::Raw(format_attribute("@@", &attr)))
+        }
+        "unique" => BlockAttribute::Raw(format_attribute("@@", &attr)),
+        "index" if attr.arguments.len() == 1 && attr.arguments[0].name.is_none() => {
+            extract_identifier_list(&attr)
+                .map(BlockAttribute::Index)
+                .unwrap_or_else(|| BlockAttribute::Raw(format_attribute("@@", &attr)))
+        }
+        "index" => BlockAttribute::Raw(format_attribute("@@", &attr)),
+        "map" if attr.arguments.len() == 1 => attr
             .arguments
             .first()
             .and_then(|arg| match &arg.value {
@@ -829,6 +890,7 @@ fn convert_block_attribute(attr: Attribute) -> BlockAttribute {
                 _ => None,
             })
             .unwrap_or_else(|| BlockAttribute::Raw(format_attribute("@@", &attr))),
+        "map" => BlockAttribute::Raw(format_attribute("@@", &attr)),
         _ => BlockAttribute::Raw(format_attribute("@@", &attr)),
     }
 }
@@ -918,7 +980,10 @@ fn path_to_identifier(path: &[Identifier]) -> Identifier {
 }
 
 fn extract_identifier_list(attr: &Attribute) -> Option<Vec<Identifier>> {
-    attr.arguments.iter().find_map(|arg| match &arg.value {
+    if attr.arguments.len() != 1 || attr.arguments[0].name.is_some() {
+        return None;
+    }
+    match &attr.arguments[0].value {
         Value::Array(values) => {
             let mut items = Vec::new();
             for value in values {
@@ -931,7 +996,7 @@ fn extract_identifier_list(attr: &Attribute) -> Option<Vec<Identifier>> {
             Some(items)
         }
         _ => None,
-    })
+    }
 }
 
 fn extract_identifier_array(value: &Value) -> Vec<Identifier> {
@@ -1517,5 +1582,45 @@ view AuditLog {
                 })),
             Some(())
         ));
+    }
+
+    #[test]
+    fn parses_type_aliases_and_arbitrary_blocks() {
+        let schema_src = r#"
+/// Custom ID type
+type UserId = Int @map("user_id")
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+customBlock {
+  some random tokens here
+  nested {
+    still inside
+  }
+  trailing stuff
+}
+
+model Example {
+  id UserId @id
+}
+"#;
+
+        let schema = parse_schema_str(schema_src).expect("schema parses");
+        assert_eq!(schema.models.len(), 1);
+        assert_eq!(schema.generators.len(), 1);
+        assert!(schema.enums.is_empty());
+        assert_eq!(schema.type_aliases.len(), 1);
+        let alias = &schema.type_aliases[0];
+        assert_eq!(alias.name.as_str(), "UserId");
+        assert_eq!(alias.target.name, "Int");
+        assert!(matches!(
+            alias.attributes.first(),
+            Some(FieldAttribute::Map(value)) if value == "user_id"
+        ));
+
+        let rendered = schema.to_string();
+        assert!(rendered.contains("type UserId = Int @map(\"user_id\")"));
     }
 }
