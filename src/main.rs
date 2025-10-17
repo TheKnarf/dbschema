@@ -305,7 +305,9 @@ fn main() -> Result<()> {
                         .with_context(|| "failed to load dbschema.toml")?
                         .ok_or_else(|| anyhow!("dbschema.toml not found"))?;
                     for (key, value) in &dbschema_config.settings.env {
-                        std::env::set_var(key, value);
+                        unsafe {
+                            std::env::set_var(key, value);
+                        }
                     }
                     let mut vars: HashMap<String, hcl::Value> = HashMap::new();
                     for vf in &dbschema_config.settings.var_files {
@@ -493,7 +495,9 @@ fn run_target(dbschema_config: &DbschemaConfig, target: &TargetConfig, strict: b
     info!("Running target: {}", target.name);
 
     for (key, value) in &dbschema_config.settings.env {
-        std::env::set_var(key, value);
+        unsafe {
+            std::env::set_var(key, value);
+        }
     }
 
     let input_path = target
