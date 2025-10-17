@@ -1,11 +1,10 @@
-use anyhow::{Context, Result, anyhow};
-use clap::{Parser, Subcommand, ValueEnum};
+use anyhow::{anyhow, Context, Result};
+use clap::{Parser, Subcommand};
 use dbschema::frontend::env::EnvVars;
-use dbschema::test_runner::TestBackend;
 use dbschema::{
-    Loader, OutputSpec, apply_filters,
+    apply_filters,
     config::{self, Config as DbschemaConfig, ResourceKind, TargetConfig},
-    load_config, validate,
+    load_config, validate, Loader, OutputSpec,
 };
 use log::{error, info};
 use postgres::{Client, NoTls};
@@ -58,11 +57,6 @@ struct Cli {
     command: Option<Commands>,
 }
 
-#[derive(Copy, Clone, ValueEnum)]
-enum TestBackendKind {
-    Postgres,
-}
-
 #[derive(Subcommand)]
 enum Commands {
     /// Validate HCL and print a summary
@@ -100,8 +94,8 @@ enum Commands {
         #[arg(long)]
         dsn: Option<String>,
         /// Test backend: postgres
-        #[arg(long, value_enum, default_value = "postgres")]
-        backend: TestBackendKind,
+        #[arg(long, default_value = "postgres")]
+        backend: String,
         /// Names of tests to run (repeatable). If omitted, runs all.
         #[arg(long = "name")]
         names: Vec<String>,
@@ -300,7 +294,8 @@ fn main() -> Result<()> {
                 keep_db,
                 verbose,
             } => {
-                let (dsn, backend, config) = if cli.config {
+                let mut backend = backend;
+                let (dsn, config) = if cli.config {
                     let dbschema_config = config::load_config()
                         .with_context(|| "failed to load dbschema.toml")?
                         .ok_or_else(|| anyhow!("dbschema.toml not found"))?;
@@ -328,16 +323,12 @@ fn main() -> Result<()> {
                     let dsn = dsn
                         .or_else(|| dbschema_config.settings.test_dsn.clone())
                         .or_else(|| std::env::var("DATABASE_URL").ok());
-                    let mut backend_choice = backend;
-                    if matches!(backend_choice, TestBackendKind::Postgres) {
+                    if backend.eq_ignore_ascii_case("postgres") {
                         if let Some(be) = &dbschema_config.settings.test_backend {
-                            backend_choice = match be.as_str() {
-                                "postgres" => TestBackendKind::Postgres,
-                                other => return Err(anyhow!("unknown test backend '{other}'")),
-                            };
+                            backend = be.clone();
                         }
                     }
-                    (dsn, backend_choice, cfg)
+                    (dsn, cfg)
                 } else {
                     let mut vars: HashMap<String, hcl::Value> = HashMap::new();
                     for vf in &cli.var_file {
@@ -355,60 +346,69 @@ fn main() -> Result<()> {
                     };
                     let cfg = load_config(&cli.input, &fs_loader, env.clone())
                         .with_context(|| format!("loading root HCL {}", cli.input.display()))?;
-                    (dsn, backend, cfg)
+                    (dsn, cfg)
+                };
+                let backend_name = backend;
+                let backend_key = backend_name.to_lowercase();
+                let backend_is_postgres = backend_key == "postgres";
+                let registry = dbschema::test_runner::get_default_test_backend_registry();
+                let runner = match registry.get(&backend_key) {
+                    Some(runner) => runner,
+                    None => {
+                        let mut available = registry.list_backends();
+                        available.sort_unstable();
+                        let available = if available.is_empty() {
+                            "none registered".to_string()
+                        } else {
+                            available.join(", ")
+                        };
+                        return Err(anyhow!(
+                            "unknown test backend '{}'; available backends: {}",
+                            backend_name,
+                            available
+                        ));
+                    }
                 };
                 let mut dsn = dsn
                     .or_else(|| std::env::var("DATABASE_URL").ok())
                     .ok_or_else(|| anyhow!("missing DSN: pass --dsn or set DATABASE_URL"))?;
+                let mut temp_database: Option<(String, String)> = None;
 
                 // Optionally create and later drop a temporary database for Postgres
-                if let (TestBackendKind::Postgres, Some(dbname)) = (backend, create_db.clone()) {
-                    let mut base = url::Url::parse(&dsn)
-                        .with_context(|| format!("parsing DSN as URL: {}", &dsn))?;
-                    // Derive admin connection to the 'postgres' database
-                    base.set_path("/postgres");
-                    let admin_dsn = base.as_str().to_string();
-                    let mut admin = Client::connect(&admin_dsn, NoTls)
-                        .with_context(|| format!("connecting to admin database: {}", admin_dsn))?;
-                    // Drop and recreate the test database
-                    if verbose {
-                        info!("-- admin: DROP DATABASE IF EXISTS \"{}\";", dbname);
+                if let Some(dbname) = create_db.clone() {
+                    if !runner.supports_temporary_database() {
+                        return Err(anyhow!(
+                            "--create-db is not supported by the '{}' test backend",
+                            backend_name
+                        ));
                     }
-                    admin
-                        .simple_query(&format!("DROP DATABASE IF EXISTS \"{}\";", dbname))
-                        .with_context(|| format!("dropping database '{}'", dbname))?;
-                    if verbose {
-                        info!("-- admin: CREATE DATABASE \"{}\";", dbname);
-                    }
-                    admin
-                        .simple_query(&format!("CREATE DATABASE \"{}\";", dbname))
-                        .with_context(|| format!("creating database '{}'", dbname))?;
-                    // Update DSN to point at the created database
-                    base.set_path(&format!("/{}", dbname));
-                    dsn = base.as_str().to_string();
+                    let new_dsn = runner.setup_temporary_database(&dsn, &dbname, verbose)?;
+                    temp_database = Some((new_dsn.clone(), dbname));
+                    dsn = new_dsn;
                 }
                 // Optionally generate and apply migrations for Postgres
                 if apply {
-                    match backend {
-                        TestBackendKind::Postgres => {
-                            dbschema::validate(&config, cli.strict)?;
-                            let artifact =
-                                dbschema::generate_with_backend("postgres", &config, cli.strict)?;
-                            if verbose {
-                                info!("-- applying migration --\n{}", artifact);
-                            }
-                            let mut client = Client::connect(&dsn, NoTls)
-                                .with_context(|| format!("connecting to database: {}", &dsn))?;
-                            client
-                                .batch_execute(&artifact)
-                                .with_context(|| "applying generated migration to database")?;
+                    if backend_is_postgres {
+                        dbschema::validate(&config, cli.strict)?;
+                        let artifact =
+                            dbschema::generate_with_backend("postgres", &config, cli.strict)?;
+                        if verbose {
+                            info!("-- applying migration --\n{}", artifact);
                         }
+                        let mut client = Client::connect(&dsn, NoTls)
+                            .with_context(|| format!("connecting to database: {}", &dsn))?;
+                        client
+                            .batch_execute(&artifact)
+                            .with_context(|| "applying generated migration to database")?;
+                    } else {
+                        return Err(anyhow!(
+                            "--apply is only supported for the 'postgres' test backend (requested '{}')",
+                            backend_name
+                        ));
                     }
                 }
 
                 dbschema::test_runner::set_verbose(verbose);
-                let runner: Box<dyn TestBackend> =
-                    Box::new(dbschema::test_runner::postgres::PostgresTestBackend);
                 let only: Option<std::collections::HashSet<String>> = if names.is_empty() {
                     None
                 } else {
@@ -437,21 +437,9 @@ fn main() -> Result<()> {
                 print_outputs(&config.outputs);
 
                 // Optionally drop the created database after tests complete
-                if let (TestBackendKind::Postgres, Some(dbname)) = (backend, create_db) {
-                    if !keep_db {
-                        if let Ok(mut base) = url::Url::parse(&dsn) {
-                            base.set_path("/postgres");
-                            let admin_dsn = base.as_str().to_string();
-                            if let Ok(mut admin) = Client::connect(&admin_dsn, NoTls) {
-                                if verbose {
-                                    info!("-- admin: DROP DATABASE IF EXISTS \"{}\";", dbname);
-                                }
-                                let _ = admin.simple_query(&format!(
-                                    "DROP DATABASE IF EXISTS \"{}\";",
-                                    dbname
-                                ));
-                            }
-                        }
+                if !keep_db {
+                    if let Some((temp_dsn, dbname)) = temp_database {
+                        runner.cleanup_temporary_database(&temp_dsn, &dbname, verbose)?;
                     }
                 }
             }

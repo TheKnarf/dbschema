@@ -1,10 +1,8 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::ir::Config;
-
-pub mod postgres;
 
 pub struct TestResult {
     pub name: String,
@@ -21,6 +19,27 @@ pub struct TestSummary {
 
 pub trait TestBackend {
     fn run(&self, cfg: &Config, dsn: &str, only: Option<&HashSet<String>>) -> Result<TestSummary>;
+
+    /// Returns `true` if this backend knows how to provision temporary databases.
+    fn supports_temporary_database(&self) -> bool {
+        false
+    }
+
+    /// Create (or recreate) a temporary database and return the DSN pointing to it.
+    ///
+    /// The default implementation returns an error indicating that temporary databases are not supported.
+    fn setup_temporary_database(&self, _dsn: &str, _database_name: &str, _verbose: bool) -> Result<String> {
+        Err(anyhow!(
+            "temporary databases are not supported by this test backend"
+        ))
+    }
+
+    /// Drop the temporary database that was previously created via [`setup_temporary_database`].
+    ///
+    /// Implementations should tolerate best-effort cleanup.
+    fn cleanup_temporary_database(&self, _dsn: &str, _database_name: &str, _verbose: bool) -> Result<()> {
+        Ok(())
+    }
 }
 
 /// Registry for managing test backends provided by providers.

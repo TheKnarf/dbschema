@@ -101,6 +101,48 @@ impl TestBackend for PostgresTestBackend {
             results,
         })
     }
+
+    fn supports_temporary_database(&self) -> bool {
+        true
+    }
+
+    fn setup_temporary_database(&self, dsn: &str, database_name: &str, verbose: bool) -> Result<String> {
+        let mut base =
+            Url::parse(dsn).with_context(|| format!("parsing DSN as URL: {}", redacted(dsn)))?;
+        let mut admin_base = base.clone();
+        admin_base.set_path("/postgres");
+        let admin_dsn = admin_base.as_str().to_string();
+        let mut admin = Client::connect(&admin_dsn, NoTls)
+            .with_context(|| format!("connecting to admin database: {}", redacted(&admin_dsn)))?;
+        if verbose {
+            info!("-- admin: DROP DATABASE IF EXISTS \"{}\";", database_name);
+        }
+        admin
+            .simple_query(&format!("DROP DATABASE IF EXISTS \"{}\";", database_name))
+            .with_context(|| format!("dropping database '{}'", database_name))?;
+        if verbose {
+            info!("-- admin: CREATE DATABASE \"{}\";", database_name);
+        }
+        admin
+            .simple_query(&format!("CREATE DATABASE \"{}\";", database_name))
+            .with_context(|| format!("creating database '{}'", database_name))?;
+        base.set_path(&format!("/{}", database_name));
+        Ok(base.as_str().to_string())
+    }
+
+    fn cleanup_temporary_database(&self, dsn: &str, database_name: &str, verbose: bool) -> Result<()> {
+        if let Ok(mut base) = Url::parse(dsn) {
+            base.set_path("/postgres");
+            let admin_dsn = base.as_str().to_string();
+            if let Ok(mut admin) = Client::connect(&admin_dsn, NoTls) {
+                if verbose {
+                    info!("-- admin: DROP DATABASE IF EXISTS \"{}\";", database_name);
+                }
+                let _ = admin.simple_query(&format!("DROP DATABASE IF EXISTS \"{}\";", database_name));
+            }
+        }
+        Ok(())
+    }
 }
 
 type Converter = fn(&Row) -> Result<bool>;
