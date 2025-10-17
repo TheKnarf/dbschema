@@ -1,11 +1,14 @@
-[workspace]
-members = []
-
 [package]
 name = "dbschema"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
+description = "Define database schema's as HCL files, and generate idempotent SQL migrations"
+homepage = "https://github.com/TheKnarf/dbschema"
+repository = "https://github.com/TheKnarf/dbschema"
+keywords = ["HCL", "Postgres", "DB", "SQL"]
+categories = ["command-line-utilities", "database", "development-tools"]
+readme = "Readme.md"
 
 [dependencies]
 anyhow = "1"
