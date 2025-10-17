@@ -170,8 +170,10 @@ fn column_to_fields(
         .find(|fk| fk.columns.len() == 1 && fk.columns[0] == c.name)
     {
         let rel_attr = ps::RelationAttribute {
+            name: fk.back_reference_name.clone(),
             fields: vec![c.name.clone()],
             references: fk.ref_columns.clone(),
+            map: fk.name.clone(),
             on_delete: fk.on_delete.as_ref().map(|s| map_fk_action(s).to_string()),
             on_update: fk.on_update.as_ref().map(|s| map_fk_action(s).to_string()),
         };

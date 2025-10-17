@@ -7,7 +7,9 @@ use hcl::Body;
 
 use crate::frontend::core::get_attr_string;
 use crate::frontend::env::EnvVars;
-use crate::prisma::{self, BlockAttribute, DefaultValue, FieldAttribute, Schema};
+use crate::prisma::{
+    self, BlockAttribute, ConfigBlock, DefaultValue, FieldAttribute, Model, Schema, View,
+};
 use crate::Loader;
 
 /// Load all `data` blocks in the current body and populate the evaluation environment.
@@ -72,21 +74,64 @@ fn resolve_relative(base: &Path, value: &str) -> PathBuf {
 fn schema_to_value(schema: Schema) -> hcl::Value {
     let mut root = Map::<String, hcl::Value>::new();
     root.insert("models".into(), models_to_value(&schema.models));
+    root.insert("views".into(), views_to_value(&schema.views));
+    root.insert(
+        "composite_types".into(),
+        composite_types_to_value(&schema.composite_types),
+    );
     root.insert("enums".into(), enums_to_value(&schema.enums));
+    root.insert(
+        "datasources".into(),
+        config_blocks_to_value(&schema.datasources),
+    );
+    root.insert(
+        "generators".into(),
+        config_blocks_to_value(&schema.generators),
+    );
     hcl::Value::Object(root)
 }
 
-fn models_to_value(models: &[prisma::Model]) -> hcl::Value {
+fn models_to_value(models: &[Model]) -> hcl::Value {
     let mut map = Map::<String, hcl::Value>::new();
     for model in models {
-        let mut model_map = Map::new();
-        model_map.insert("name".into(), hcl::Value::String(model.name.clone()));
-        model_map.insert("fields".into(), fields_to_value(&model.fields));
-        model_map.insert(
-            "attributes".into(),
-            block_attributes_to_value(&model.attributes),
+        map.insert(
+            model.name.clone(),
+            model_like_to_value(&model.name, &model.fields, &model.attributes),
         );
-        map.insert(model.name.clone(), hcl::Value::Object(model_map));
+    }
+    hcl::Value::Object(map)
+}
+
+fn views_to_value(views: &[View]) -> hcl::Value {
+    let mut map = Map::<String, hcl::Value>::new();
+    for view in views {
+        map.insert(
+            view.name.clone(),
+            model_like_to_value(&view.name, &view.fields, &view.attributes),
+        );
+    }
+    hcl::Value::Object(map)
+}
+
+fn model_like_to_value(
+    name: &str,
+    fields: &[prisma::Field],
+    attributes: &[BlockAttribute],
+) -> hcl::Value {
+    let mut model_map = Map::new();
+    model_map.insert("name".into(), hcl::Value::String(name.to_string()));
+    model_map.insert("fields".into(), fields_to_value(fields));
+    model_map.insert("attributes".into(), block_attributes_to_value(attributes));
+    hcl::Value::Object(model_map)
+}
+
+fn composite_types_to_value(types: &[prisma::CompositeType]) -> hcl::Value {
+    let mut map = Map::<String, hcl::Value>::new();
+    for ct in types {
+        let mut ct_map = Map::new();
+        ct_map.insert("name".into(), hcl::Value::String(ct.name.clone()));
+        ct_map.insert("fields".into(), fields_to_value(&ct.fields));
+        map.insert(ct.name.clone(), hcl::Value::Object(ct_map));
     }
     hcl::Value::Object(map)
 }
@@ -134,6 +179,36 @@ fn enum_values_to_value(values: &[prisma::EnumValue]) -> hcl::Value {
     hcl::Value::Object(map)
 }
 
+fn config_blocks_to_value(blocks: &[ConfigBlock]) -> hcl::Value {
+    let mut map = Map::<String, hcl::Value>::new();
+    for block in blocks {
+        let mut block_map = Map::new();
+        block_map.insert("name".into(), hcl::Value::String(block.name.clone()));
+        if let Some(doc) = &block.documentation {
+            block_map.insert("documentation".into(), hcl::Value::String(doc.clone()));
+        }
+        block_map.insert(
+            "properties".into(),
+            config_properties_to_value(&block.properties),
+        );
+        map.insert(block.name.clone(), hcl::Value::Object(block_map));
+    }
+    hcl::Value::Object(map)
+}
+
+fn config_properties_to_value(properties: &[prisma::ConfigProperty]) -> hcl::Value {
+    let mut map = Map::<String, hcl::Value>::new();
+    for prop in properties {
+        let mut prop_map = Map::new();
+        prop_map.insert("name".into(), hcl::Value::String(prop.name.clone()));
+        if let Some(value) = &prop.value {
+            prop_map.insert("value".into(), hcl::Value::String(value.clone()));
+        }
+        map.insert(prop.name.clone(), hcl::Value::Object(prop_map));
+    }
+    hcl::Value::Object(map)
+}
+
 fn type_to_value(ty: &prisma::Type) -> hcl::Value {
     let mut map = Map::new();
     map.insert("name".into(), hcl::Value::String(ty.name.clone()));
@@ -175,10 +250,10 @@ fn field_attributes_to_value(attrs: &[FieldAttribute]) -> hcl::Value {
         map.insert("db_native".into(), hcl::Value::String(db));
     }
     if let Some(relation) = attrs.iter().find_map(|a| match a {
-        FieldAttribute::Relation(rel) => Some(format!("{}", FieldAttribute::Relation(rel.clone()))),
+        FieldAttribute::Relation(rel) => Some(rel),
         _ => None,
     }) {
-        map.insert("relation".into(), hcl::Value::String(relation));
+        map.insert("relation".into(), relation_to_value(relation));
     }
 
     hcl::Value::Object(map)
@@ -202,6 +277,30 @@ fn block_attributes_to_value(attrs: &[BlockAttribute]) -> hcl::Value {
     hcl::Value::Object(map)
 }
 
+fn relation_to_value(relation: &prisma::RelationAttribute) -> hcl::Value {
+    let mut map = Map::<String, hcl::Value>::new();
+    if let Some(name) = &relation.name {
+        map.insert("name".into(), hcl::Value::String(name.clone()));
+    }
+    map.insert("fields".into(), strings_to_array(&relation.fields));
+    map.insert("references".into(), strings_to_array(&relation.references));
+    if let Some(map_name) = &relation.map {
+        map.insert("map".into(), hcl::Value::String(map_name.clone()));
+    }
+    if let Some(on_delete) = &relation.on_delete {
+        map.insert("on_delete".into(), hcl::Value::String(on_delete.clone()));
+    }
+    if let Some(on_update) = &relation.on_update {
+        map.insert("on_update".into(), hcl::Value::String(on_update.clone()));
+    }
+
+    hcl::Value::Object(map)
+}
+
 fn default_to_value(value: &DefaultValue) -> hcl::Value {
     hcl::Value::String(format!("{}", value))
+}
+
+fn strings_to_array(values: &[String]) -> hcl::Value {
+    hcl::Value::Array(values.iter().cloned().map(hcl::Value::String).collect())
 }
