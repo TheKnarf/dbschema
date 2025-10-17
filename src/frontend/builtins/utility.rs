@@ -1,5 +1,5 @@
-use hcl::eval::{FuncArgs, FuncDef, ParamType};
 use hcl::Value;
+use hcl::eval::{FuncArgs, FuncDef, ParamType};
 
 /// Utility functions
 pub fn create_coalesce_func() -> FuncDef {

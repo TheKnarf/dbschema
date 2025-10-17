@@ -1,6 +1,6 @@
 use chrono::{DateTime, Duration, Utc};
-use hcl::eval::{FuncArgs, FuncDef, ParamType};
 use hcl::Value;
+use hcl::eval::{FuncArgs, FuncDef, ParamType};
 
 /// Return the current timestamp in RFC3339 format
 pub fn create_timestamp_func() -> FuncDef {

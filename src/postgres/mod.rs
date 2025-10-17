@@ -11,8 +11,7 @@ pub use foreign_data_wrapper::ForeignDataWrapper;
 pub use foreign_server::ForeignServer;
 pub use foreign_table::ForeignTable;
 pub use text_search::{
-    TextSearchConfiguration, TextSearchDictionary, TextSearchParser,
-    TextSearchTemplate,
+    TextSearchConfiguration, TextSearchDictionary, TextSearchParser, TextSearchTemplate,
 };
 
 pub fn ident(s: &str) -> String {
@@ -972,10 +971,7 @@ impl Index {
     pub fn from_specs(table: &crate::ir::TableSpec, idx: &crate::ir::IndexSpec) -> Self {
         Self {
             table_schema: table.schema.clone().unwrap_or_else(|| "public".to_string()),
-            table_name: table
-                .alt_name
-                .clone()
-                .unwrap_or_else(|| table.name.clone()),
+            table_name: table.alt_name.clone().unwrap_or_else(|| table.name.clone()),
             name: idx.name.clone(),
             columns: idx.columns.clone(),
             expressions: idx.expressions.clone(),

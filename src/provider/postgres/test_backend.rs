@@ -1,10 +1,10 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use postgres::{Client, NoTls, Row};
 use std::collections::HashSet;
 use url::Url;
 
-use crate::test_runner::{is_verbose, TestBackend, TestResult, TestSummary};
 use crate::ir::Config;
+use crate::test_runner::{TestBackend, TestResult, TestSummary, is_verbose};
 use log::info;
 
 pub struct PostgresTestBackend;

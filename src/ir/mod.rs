@@ -1,14 +1,13 @@
 pub mod config;
 
 pub use config::{
-    AggregateSpec, BackReferenceSpec, CheckSpec, ColumnSpec, CompositeTypeFieldSpec,
+    AggregateSpec, BackReferenceSpec, CheckSpec, CollationSpec, ColumnSpec, CompositeTypeFieldSpec,
     CompositeTypeSpec, Config, DomainSpec, EnumSpec, EventTriggerSpec, ExtensionSpec,
-    CollationSpec, OperatorSpec, ProviderSpec, RuleSpec,
-    ForeignDataWrapperSpec, ForeignKeySpec, ForeignServerSpec, ForeignTableSpec,
-    FunctionSpec, ProcedureSpec, GrantSpec, IndexSpec, MaterializedViewSpec, OutputSpec,
-    PartitionBySpec, PartitionSpec, PolicySpec, PrimaryKeySpec, PublicationSpec,
-    PublicationTableSpec, RoleSpec, TablespaceSpec, SchemaSpec, SequenceSpec, StandaloneIndexSpec,
-    StatisticsSpec, SubscriptionSpec, TableSpec, TestSpec, TextSearchConfigurationMappingSpec,
-    TextSearchConfigurationSpec, TextSearchDictionarySpec, TextSearchParserSpec,
-    TextSearchTemplateSpec, TriggerSpec, ViewSpec,
+    ForeignDataWrapperSpec, ForeignKeySpec, ForeignServerSpec, ForeignTableSpec, FunctionSpec,
+    GrantSpec, IndexSpec, MaterializedViewSpec, OperatorSpec, OutputSpec, PartitionBySpec,
+    PartitionSpec, PolicySpec, PrimaryKeySpec, ProcedureSpec, ProviderSpec, PublicationSpec,
+    PublicationTableSpec, RoleSpec, RuleSpec, SchemaSpec, SequenceSpec, StandaloneIndexSpec,
+    StatisticsSpec, SubscriptionSpec, TableSpec, TablespaceSpec, TestSpec,
+    TextSearchConfigurationMappingSpec, TextSearchConfigurationSpec, TextSearchDictionarySpec,
+    TextSearchParserSpec, TextSearchTemplateSpec, TriggerSpec, ViewSpec,
 };

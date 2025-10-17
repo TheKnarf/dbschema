@@ -2,19 +2,19 @@ use crate::ir::Config;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+mod column_type_mismatch;
 mod destructive_change;
 mod long_identifier;
-mod column_type_mismatch;
+mod missing_foreign_key_index;
 mod sql_syntax;
 mod unused_index;
-mod missing_foreign_key_index;
 
+use column_type_mismatch::ColumnTypeMismatch;
 use destructive_change::DestructiveChange;
 use long_identifier::LongIdentifier;
-use column_type_mismatch::ColumnTypeMismatch;
+use missing_foreign_key_index::MissingForeignKeyIndex;
 use sql_syntax::SqlSyntax;
 use unused_index::UnusedIndex;
-use missing_foreign_key_index::MissingForeignKeyIndex;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]

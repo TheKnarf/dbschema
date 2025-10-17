@@ -40,7 +40,8 @@ impl LintCheck for ColumnTypeMismatch {
                     else {
                         continue;
                     };
-                    let Some(ref_col) = ref_table.columns.iter().find(|c| &c.name == ref_col_name) else {
+                    let Some(ref_col) = ref_table.columns.iter().find(|c| &c.name == ref_col_name)
+                    else {
                         continue;
                     };
                     let src_ty = src_col
@@ -74,7 +75,7 @@ impl LintCheck for ColumnTypeMismatch {
 mod tests {
     use super::*;
     use crate::ir::{ColumnSpec, Config, ForeignKeySpec, TableSpec};
-    use crate::lint::{run_with_checks, LintSettings};
+    use crate::lint::{LintSettings, run_with_checks};
 
     #[test]
     fn detects_type_mismatch() {
@@ -151,4 +152,3 @@ mod tests {
         assert!(msgs.iter().any(|m| m.check == "column-type-mismatch"));
     }
 }
-

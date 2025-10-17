@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 
 use crate::ir::{Config, EnumSpec};
 
@@ -17,7 +17,8 @@ pub fn validate(cfg: &Config, strict: bool) -> Result<()> {
         if !found {
             bail!(
                 "trigger '{}' references missing function '{}': ensure function exists or set function_schema",
-                t.name, fqn
+                t.name,
+                fqn
             );
         }
     }
@@ -36,7 +37,8 @@ pub fn validate(cfg: &Config, strict: bool) -> Result<()> {
         if !found {
             bail!(
                 "event trigger '{}' references missing function '{}': ensure function exists or set function_schema",
-                t.name, fqn
+                t.name,
+                fqn
             );
         }
     }
@@ -49,7 +51,12 @@ pub fn validate(cfg: &Config, strict: bool) -> Result<()> {
                     let found_enum =
                         find_enum_for_type(&cfg.enums, &column.r#type, table.schema.as_deref());
                     if found_enum.is_none() {
-                        bail!("Strict mode: Enum type '{}' referenced in table '{}' column '{}' is not defined in HCL", column.r#type, table.name, column.name);
+                        bail!(
+                            "Strict mode: Enum type '{}' referenced in table '{}' column '{}' is not defined in HCL",
+                            column.r#type,
+                            table.name,
+                            column.name
+                        );
                     }
                 }
             }

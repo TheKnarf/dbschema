@@ -75,7 +75,7 @@ impl LintCheck for MissingForeignKeyIndex {
 mod tests {
     use super::*;
     use crate::ir::{ColumnSpec, Config, ForeignKeySpec, TableSpec};
-    use crate::lint::{run_with_checks, LintSettings};
+    use crate::lint::{LintSettings, run_with_checks};
 
     #[test]
     fn detects_missing_fk_index() {
@@ -152,4 +152,3 @@ mod tests {
         assert!(msgs.iter().any(|m| m.check == "missing-foreign-key-index"));
     }
 }
-

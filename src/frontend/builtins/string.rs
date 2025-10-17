@@ -1,5 +1,5 @@
-use hcl::eval::{FuncArgs, FuncDef, ParamType};
 use hcl::Value;
+use hcl::eval::{FuncArgs, FuncDef, ParamType};
 
 /// String manipulation functions
 pub fn create_upper_func() -> FuncDef {
