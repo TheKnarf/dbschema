@@ -47,7 +47,7 @@ impl LintCheck for DestructiveChange {
 mod tests {
     use super::*;
     use crate::ir::{ColumnSpec, Config, ForeignKeySpec, PrimaryKeySpec, TableSpec};
-    use crate::lint::{run_with_checks, LintSettings};
+    use crate::lint::{LintSettings, run_with_checks};
 
     #[test]
     fn detects_cascade_fk() {

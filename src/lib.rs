@@ -643,11 +643,19 @@ mod tests {
         assert_eq!(name_col.r#type, "text");
         assert!(name_col.nullable); // String? is optional in Prisma
 
-        let created_at_col = table.columns.iter().find(|c| c.name == "createdAt").unwrap();
+        let created_at_col = table
+            .columns
+            .iter()
+            .find(|c| c.name == "createdAt")
+            .unwrap();
         assert_eq!(created_at_col.r#type, "timestamptz");
         assert!(!created_at_col.nullable);
 
-        let updated_at_col = table.columns.iter().find(|c| c.name == "updatedAt").unwrap();
+        let updated_at_col = table
+            .columns
+            .iter()
+            .find(|c| c.name == "updatedAt")
+            .unwrap();
         assert_eq!(updated_at_col.r#type, "timestamptz");
         assert!(!updated_at_col.nullable);
 

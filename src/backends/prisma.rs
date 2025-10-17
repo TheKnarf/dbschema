@@ -1,9 +1,9 @@
-use super::{generate_header_comment, Backend, CommentStyle};
+use super::{Backend, CommentStyle, generate_header_comment};
 use crate::ir::{ColumnSpec, Config, EnumSpec, TableSpec};
 use crate::passes::validate::{find_enum_for_type, is_likely_enum};
 use crate::prisma as ps;
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 
 pub struct PrismaBackend;
 
@@ -30,9 +30,10 @@ impl Backend for PrismaBackend {
 fn model_to_ast(t: &TableSpec, enums: &[EnumSpec], strict: bool) -> Result<ps::Model> {
     let model_name = to_model_name(t.alt_name.as_ref().unwrap_or(&t.name));
     let mut model = ps::Model {
-        name: model_name,
+        name: ps::Identifier::from(model_name),
         fields: Vec::new(),
         attributes: Vec::new(),
+        documentation: None,
     };
 
     for c in &t.columns {
@@ -42,13 +43,14 @@ fn model_to_ast(t: &TableSpec, enums: &[EnumSpec], strict: bool) -> Result<ps::M
 
     for br in &t.back_references {
         model.fields.push(ps::Field {
-            name: br.name.clone(),
+            name: ps::Identifier::from(br.name.clone()),
             r#type: ps::Type {
                 name: br.table.clone(),
                 optional: false,
                 list: true,
             },
             attributes: Vec::new(),
+            documentation: None,
         });
     }
 
@@ -56,7 +58,7 @@ fn model_to_ast(t: &TableSpec, enums: &[EnumSpec], strict: bool) -> Result<ps::M
         if pk.columns.len() > 1 {
             model
                 .attributes
-                .push(ps::BlockAttribute::Id(pk.columns.clone()));
+                .push(ps::BlockAttribute::Id(to_ident_list(&pk.columns)));
         }
     }
 
@@ -65,12 +67,12 @@ fn model_to_ast(t: &TableSpec, enums: &[EnumSpec], strict: bool) -> Result<ps::M
             if ix.columns.len() > 1 {
                 model
                     .attributes
-                    .push(ps::BlockAttribute::Unique(ix.columns.clone()));
+                    .push(ps::BlockAttribute::Unique(to_ident_list(&ix.columns)));
             }
         } else {
             model
                 .attributes
-                .push(ps::BlockAttribute::Index(ix.columns.clone()));
+                .push(ps::BlockAttribute::Index(to_ident_list(&ix.columns)));
         }
     }
 
@@ -155,13 +157,14 @@ fn column_to_fields(
 
     let mut fields = Vec::new();
     fields.push(ps::Field {
-        name: c.name.clone(),
+        name: ps::Identifier::from(c.name.clone()),
         r#type: ps::Type {
             name: ptype,
             optional: c.nullable,
             list: false,
         },
         attributes: attrs,
+        documentation: None,
     });
 
     if let Some(fk) = t
@@ -171,20 +174,26 @@ fn column_to_fields(
     {
         let rel_attr = ps::RelationAttribute {
             name: fk.back_reference_name.clone(),
-            fields: vec![c.name.clone()],
-            references: fk.ref_columns.clone(),
+            fields: vec![ps::Identifier::from(c.name.clone())],
+            references: fk
+                .ref_columns
+                .iter()
+                .cloned()
+                .map(ps::Identifier::from)
+                .collect(),
             map: fk.name.clone(),
             on_delete: fk.on_delete.as_ref().map(|s| map_fk_action(s).to_string()),
             on_update: fk.on_update.as_ref().map(|s| map_fk_action(s).to_string()),
         };
         fields.push(ps::Field {
-            name: fk.name.clone().unwrap_or(fk.ref_table.clone()),
+            name: ps::Identifier::from(fk.name.clone().unwrap_or(fk.ref_table.clone())),
             r#type: ps::Type {
                 name: to_model_name(&fk.ref_table),
                 optional: c.nullable,
                 list: false,
             },
             attributes: vec![ps::FieldAttribute::Relation(rel_attr)],
+            documentation: None,
         });
     }
 
@@ -199,16 +208,22 @@ fn enum_to_ast(e: &EnumSpec) -> ps::Enum {
         .map(|v| {
             let (ident, map) = prisma_enum_variant(v);
             ps::EnumValue {
-                name: ident,
+                name: ps::Identifier::from(ident),
                 mapped_name: map,
+                documentation: None,
             }
         })
         .collect();
     ps::Enum {
-        name,
+        name: ps::Identifier::from(name),
         values,
         attributes: Vec::new(),
+        documentation: None,
     }
+}
+
+fn to_ident_list(values: &[String]) -> Vec<ps::Identifier> {
+    values.iter().cloned().map(ps::Identifier::from).collect()
 }
 
 fn prisma_enum_variant(db_value: &str) -> (String, Option<String>) {
@@ -325,11 +340,7 @@ fn to_model_name(table: &str) -> String {
             upper = true;
         }
     }
-    if out.is_empty() {
-        "Model".into()
-    } else {
-        out
-    }
+    if out.is_empty() { "Model".into() } else { out }
 }
 
 fn map_fk_action(s: &str) -> &str {

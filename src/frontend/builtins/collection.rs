@@ -1,5 +1,5 @@
-use hcl::eval::{FuncArgs, FuncDef, ParamType};
 use hcl::Value;
+use hcl::eval::{FuncArgs, FuncDef, ParamType};
 
 /// Concatenate multiple arrays into a single array
 pub fn create_concat_func() -> FuncDef {

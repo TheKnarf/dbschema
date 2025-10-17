@@ -72,7 +72,7 @@ impl LintCheck for UnusedIndex {
 mod tests {
     use super::*;
     use crate::ir::{ColumnSpec, Config, IndexSpec, PrimaryKeySpec, TableSpec};
-    use crate::lint::{run_with_checks, LintSettings};
+    use crate::lint::{LintSettings, run_with_checks};
 
     #[test]
     fn detects_duplicate_index() {

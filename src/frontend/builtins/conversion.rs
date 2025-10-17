@@ -1,5 +1,5 @@
-use hcl::eval::{FuncArgs, FuncDef, ParamType};
 use hcl::Value;
+use hcl::eval::{FuncArgs, FuncDef, ParamType};
 
 /// Convert a value to a string
 pub fn create_tostring_func() -> FuncDef {

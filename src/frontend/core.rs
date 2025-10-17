@@ -1,14 +1,15 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use hcl::eval::{Context as HclContext, Evaluate};
 use hcl::template::{Element as TplElement, Template};
 use hcl::{
-    expr::{BinaryOperator, TemplateExpr, UnaryOperator},
     Attribute, Block, Body, Number, Structure, Traversal, TraversalOperator, Value,
+    expr::{BinaryOperator, TemplateExpr, UnaryOperator},
 };
 use path_absolutize::Absolutize;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use crate::Loader;
 use crate::frontend::ast;
 use crate::frontend::ast::VarValidation;
 use crate::frontend::builtins;
@@ -17,7 +18,6 @@ use crate::frontend::env::{EnvVars, VarSpec, VarType};
 use crate::frontend::for_each::execute_for_each;
 use crate::frontend::lower;
 use crate::ir;
-use crate::Loader;
 
 pub fn expr_to_string(expr: &hcl::Expression, env: &EnvVars) -> Result<String> {
     match expr {

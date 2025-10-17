@@ -1,11 +1,11 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use clap::{Parser, Subcommand, ValueEnum};
 use dbschema::frontend::env::EnvVars;
 use dbschema::test_runner::TestBackend;
 use dbschema::{
-    apply_filters,
+    Loader, OutputSpec, apply_filters,
     config::{self, Config as DbschemaConfig, ResourceKind, TargetConfig},
-    load_config, validate, Loader, OutputSpec,
+    load_config, validate,
 };
 use log::{error, info};
 use postgres::{Client, NoTls};

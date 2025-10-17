@@ -1,5 +1,5 @@
-use hcl::eval::{FuncArgs, FuncDef, ParamType};
 use hcl::Value;
+use hcl::eval::{FuncArgs, FuncDef, ParamType};
 use sha2::{Digest, Sha256, Sha512};
 
 /// Cryptographic functions
@@ -95,7 +95,12 @@ mod tests {
             .expr();
         let result = expr.evaluate(&ctx).unwrap();
         // SHA512 of "hello world" is "309ecc489c12d6eb4cc40f50c902f2b4d0ed77ee511a7c7a9bcd3ca86d4cd86f989dd35bc5ff499670da34255b45b0cfd830e81f605dcf7dc5542e93ae9cd76f"
-        assert_eq!(result, Value::from("309ecc489c12d6eb4cc40f50c902f2b4d0ed77ee511a7c7a9bcd3ca86d4cd86f989dd35bc5ff499670da34255b45b0cfd830e81f605dcf7dc5542e93ae9cd76f"));
+        assert_eq!(
+            result,
+            Value::from(
+                "309ecc489c12d6eb4cc40f50c902f2b4d0ed77ee511a7c7a9bcd3ca86d4cd86f989dd35bc5ff499670da34255b45b0cfd830e81f605dcf7dc5542e93ae9cd76f"
+            )
+        );
     }
 
     #[test]

@@ -1,6 +1,6 @@
-use base64::{engine::general_purpose, Engine as _};
-use hcl::eval::{FuncArgs, FuncDef, ParamType};
+use base64::{Engine as _, engine::general_purpose};
 use hcl::Value;
+use hcl::eval::{FuncArgs, FuncDef, ParamType};
 
 /// Base64 encoding/decoding functions
 pub fn create_base64encode_func() -> FuncDef {

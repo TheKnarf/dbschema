@@ -1,7 +1,7 @@
 use crate::frontend::ast;
 use crate::frontend::core;
 use crate::frontend::env::EnvVars;
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 
 /// Trait for types that support for_each iteration
 pub trait ForEachSupport {
@@ -168,9 +168,11 @@ mod tests {
 
         let result = for_each_iter(&collection, &mut |_, _| Ok(()));
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("for_each expects array or object"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("for_each expects array or object")
+        );
     }
 }
