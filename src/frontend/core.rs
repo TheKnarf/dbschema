@@ -859,6 +859,10 @@ fn load_file(
 
     // 3) Load modules first so their outputs are available
     let mut cfg = ast::Config::default();
+
+    // Load provider registry to validate provider blocks
+    let provider_registry = crate::provider::get_default_provider_registry();
+
     for blk in body.blocks().filter(|b| b.identifier() == "provider") {
         let provider_type = blk
             .labels()
@@ -866,12 +870,17 @@ fn load_file(
             .ok_or_else(|| anyhow::anyhow!("provider block missing type label"))?
             .as_str()
             .to_string();
-        if provider_type != "postgres" {
+
+        // Verify provider exists in registry
+        if provider_registry.get(&provider_type).is_none() {
+            let available = provider_registry.list_providers();
             bail!(
-                "unsupported provider '{}': only 'postgres' is currently supported",
-                provider_type
+                "unsupported provider '{}'. Available providers: {}",
+                provider_type,
+                available.join(", ")
             );
         }
+
         let version = get_attr_string(blk.body(), "version", &env)?;
         cfg.providers.push(ast::AstProvider {
             provider_type,

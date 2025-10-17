@@ -10,6 +10,7 @@ pub mod lint;
 pub mod passes;
 pub mod postgres;
 pub mod prisma;
+pub mod provider;
 pub mod test_runner;
 
 use anyhow::Result;
