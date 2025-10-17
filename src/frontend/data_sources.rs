@@ -83,6 +83,10 @@ fn schema_to_value(schema: Schema) -> hcl::Value {
         "type_aliases".into(),
         type_aliases_to_value(&schema.type_aliases),
     );
+    root.insert(
+        "custom_blocks".into(),
+        custom_blocks_to_value(&schema.custom_blocks),
+    );
     root.insert("enums".into(), enums_to_value(&schema.enums));
     root.insert(
         "datasources".into(),
@@ -154,6 +158,23 @@ fn type_aliases_to_value(aliases: &[prisma::TypeAlias]) -> hcl::Value {
             alias_map.insert("documentation".into(), hcl::Value::String(doc.clone()));
         }
         map.insert(alias.name.to_string(), hcl::Value::Object(alias_map));
+    }
+    hcl::Value::Object(map)
+}
+
+fn custom_blocks_to_value(blocks: &[prisma::CustomBlock]) -> hcl::Value {
+    let mut map = Map::<String, hcl::Value>::new();
+    for block in blocks {
+        let mut block_map = Map::new();
+        block_map.insert("name".into(), hcl::Value::String(block.name.to_string()));
+        block_map.insert(
+            "contents".into(),
+            hcl::Value::String(block.contents.clone()),
+        );
+        if let Some(doc) = &block.documentation {
+            block_map.insert("documentation".into(), hcl::Value::String(doc.clone()));
+        }
+        map.insert(block.name.to_string(), hcl::Value::Object(block_map));
     }
     hcl::Value::Object(map)
 }

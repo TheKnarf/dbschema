@@ -184,7 +184,7 @@ pub fn parse_schema_str(input: &str) -> Result<Schema> {
     let stream = Stream::from_iter(tokens.into_iter())
         .map(Span::new((), len..len), |(token, span)| (token, span));
 
-    let (schema, parse_errors) = schema_parser::<_>()
+    let (schema, parse_errors) = schema_parser::<_>(input)
         .parse(stream)
         .into_output_errors();
     if !parse_errors.is_empty() {
@@ -348,7 +348,7 @@ fn lexer<'src>() -> impl Parser<'src, &'src str, Vec<Spanned<Token>>, extra::Err
         .then_ignore(end())
 }
 
-fn schema_parser<'src, I>() -> impl Parser<'src, I, Schema, ParseExtra<'src>>
+fn schema_parser<'src, I>(source: &'src str) -> impl Parser<'src, I, Schema, ParseExtra<'src>>
 where
     I: Input<'src, Token = Token, Span = Span> + ValueInput<'src, Token = Token, Span = Span>,
 {
@@ -636,13 +636,30 @@ where
             .ignored()
         });
 
+        let block_span = just(Token::LBrace)
+            .map_with(|_, extra: &mut MapExtra<'_, '_, I, ParseExtra<'src>>| extra.span().start)
+            .then(ignored_block_body.clone())
+            .then(
+                just(Token::RBrace)
+                    .map_with(|_, extra: &mut MapExtra<'_, '_, I, ParseExtra<'src>>| extra.span().end),
+            )
+            .map(|((start, ()), end)| start..end)
+            .boxed();
+
+        let source_ref = source;
+
         let arbitrary_block = doc
             .clone()
-            .then_ignore(ident.clone())
-            .then_ignore(just(Token::LBrace))
-            .ignore_then(ignored_block_body)
-            .then_ignore(just(Token::RBrace))
-            .to(())
+            .then(ident.clone())
+            .then(block_span.clone())
+            .map(move |((doc_lines, name), span)| {
+                let contents = source_ref[span.start..span.end].to_string();
+                CustomBlock {
+                    name,
+                    contents,
+                    documentation: join_doc(doc_lines),
+                }
+            })
             .boxed();
 
         let enum_value = doc
@@ -730,7 +747,7 @@ where
             config_block(ConfigBlockKind::Datasource, "datasource").map(Top::Datasource),
             config_block(ConfigBlockKind::Generator, "generator").map(Top::Generator),
             type_alias.map(Top::TypeAlias),
-            arbitrary_block.map(|_| Top::Ignored),
+            arbitrary_block.map(Top::Custom),
         ));
 
         top.repeated()
@@ -747,7 +764,7 @@ where
                     Top::Datasource(ds) => schema.datasources.push(ds),
                     Top::Generator(generator) => schema.generators.push(generator),
                     Top::TypeAlias(alias) => schema.type_aliases.push(alias),
-                    Top::Ignored => {}
+                    Top::Custom(block) => schema.custom_blocks.push(block),
                 }
             }
             schema
@@ -770,7 +787,7 @@ enum Top {
     Datasource(ConfigBlock),
     Generator(ConfigBlock),
     TypeAlias(TypeAlias),
-    Ignored,
+    Custom(CustomBlock),
 }
 
 fn doc_parser<'src, I>() -> impl Parser<'src, I, Vec<String>, ParseExtra<'src>> + Clone
@@ -1620,7 +1637,18 @@ model Example {
             Some(FieldAttribute::Map(value)) if value == "user_id"
         ));
 
+        assert_eq!(schema.custom_blocks.len(), 1);
+        let block = &schema.custom_blocks[0];
+        assert_eq!(block.name.as_str(), "customBlock");
+        assert!(block.contents.contains("nested"));
+        assert!(block.contents.starts_with('{'));
+
         let rendered = schema.to_string();
         assert!(rendered.contains("type UserId = Int @map(\"user_id\")"));
+        assert!(rendered.contains("customBlock {"));
+
+        let reparsed = parse_schema_str(&rendered).expect("reparse custom blocks");
+        assert_eq!(reparsed.custom_blocks.len(), 1);
+        assert_eq!(reparsed.type_aliases.len(), 1);
     }
 }

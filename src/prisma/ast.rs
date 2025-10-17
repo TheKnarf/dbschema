@@ -52,6 +52,7 @@ pub struct Schema {
     pub views: Vec<View>,
     pub composite_types: Vec<CompositeType>,
     pub type_aliases: Vec<TypeAlias>,
+    pub custom_blocks: Vec<CustomBlock>,
     pub datasources: Vec<ConfigBlock>,
     pub generators: Vec<ConfigBlock>,
 }
@@ -84,6 +85,13 @@ pub struct TypeAlias {
     pub name: Identifier,
     pub target: Type,
     pub attributes: Vec<FieldAttribute>,
+    pub documentation: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CustomBlock {
+    pub name: Identifier,
+    pub contents: String,
     pub documentation: Option<String>,
 }
 

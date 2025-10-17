@@ -64,6 +64,15 @@ impl fmt::Display for Schema {
             needs_gap = true;
         }
 
+        for block in &self.custom_blocks {
+            if needs_gap {
+                writeln!(f)?;
+                writeln!(f)?;
+            }
+            write!(f, "{}", block)?;
+            needs_gap = true;
+        }
+
         for block in &self.datasources {
             if needs_gap {
                 writeln!(f)?;
@@ -156,6 +165,18 @@ impl fmt::Display for TypeAlias {
         write!(f, "type {} = {}", self.name, self.target)?;
         for attr in &self.attributes {
             write!(f, " {}", attr)?;
+        }
+        Ok(())
+    }
+}
+
+impl fmt::Display for CustomBlock {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write_documentation(f, &self.documentation)?;
+        if self.contents.starts_with('{') {
+            write!(f, "{} {}", self.name, self.contents)?;
+        } else {
+            write!(f, "{} {{\n{}\n}}", self.name, self.contents)?;
         }
         Ok(())
     }
