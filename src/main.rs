@@ -15,7 +15,7 @@ use walkdir::WalkDir;
 
 #[derive(Parser)]
 #[command(name = "dbschema")]
-#[command(about = "HCL-driven tables, functions, procedures & triggers for Postgres", long_about = None)]
+#[command(about = "Define database schema's as HCL files, and generate idempotent SQL migrations.", long_about = None)]
 struct Cli {
     /// Root HCL file (default: main.hcl)
     #[arg(long, default_value = "main.hcl")]
