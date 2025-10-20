@@ -24,6 +24,55 @@ pub fn literal(s: &str) -> String {
     format!("'{}'", escaped)
 }
 
+pub fn format_type_name(raw: &str) -> String {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return raw.to_string();
+    }
+
+    // Leave complex type expressions unchanged.
+    if trimmed.contains(' ') || trimmed.contains('(') || trimmed.contains(')') || trimmed.contains("::") || trimmed.contains('[') {
+        return raw.to_string();
+    }
+
+    trimmed
+        .split('.')
+        .map(|part| format_type_part(part))
+        .collect::<Vec<_>>()
+        .join(".")
+}
+
+fn format_type_part(part: &str) -> String {
+    if part.is_empty() {
+        return part.to_string();
+    }
+    if part.starts_with('"') && part.ends_with('"') && part.len() >= 2 {
+        return part.to_string();
+    }
+
+    let mut chars = part.chars();
+    let first = match chars.next() {
+        Some(c) => c,
+        None => return part.to_string(),
+    };
+
+    if (first.is_ascii_lowercase() || first == '_')
+        && chars.clone().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '$')
+    {
+        return part.to_string();
+    }
+
+    if (first.is_ascii_uppercase() || first == '_')
+        && part
+            .chars()
+            .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_' || c == '$')
+    {
+        return part.to_lowercase();
+    }
+
+    format!("\"{}\"", part.replace('"', "\"\""))
+}
+
 #[derive(Debug, Clone)]
 pub struct Role {
     pub name: String,
@@ -719,6 +768,7 @@ impl fmt::Display for MaterializedView {
 pub struct Column {
     pub name: String,
     pub r#type: String,
+    pub db_type: Option<String>,
     pub nullable: bool,
     pub default: Option<String>,
 }
@@ -728,6 +778,7 @@ impl From<&crate::ir::ColumnSpec> for Column {
         Self {
             name: c.name.clone(),
             r#type: c.r#type.clone(),
+            db_type: c.db_type.clone(),
             nullable: c.nullable,
             default: c.default.clone(),
         }
@@ -736,7 +787,12 @@ impl From<&crate::ir::ColumnSpec> for Column {
 
 impl fmt::Display for Column {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} {}", ident(&self.name), self.r#type)?;
+        let data_type = self
+            .db_type
+            .as_ref()
+            .map(|s| s.clone())
+            .unwrap_or_else(|| format_type_name(&self.r#type));
+        write!(f, "{} {}", ident(&self.name), data_type)?;
         if !self.nullable {
             write!(f, " NOT NULL")?;
         }
@@ -1637,6 +1693,58 @@ mod tests {
         assert_eq!(
             grant_seq.to_string(),
             "GRANT USAGE ON SEQUENCE \"public\".\"s\" TO \"r\";"
+        );
+    }
+
+    #[test]
+    fn table_quotes_mixed_case_enum_type() {
+        let tspec = crate::ir::TableSpec {
+            name: "status_usage_test".into(),
+            alt_name: None,
+            schema: Some("public".into()),
+            if_not_exists: false,
+            columns: vec![
+                crate::ir::ColumnSpec {
+                    name: "id".into(),
+                    r#type: "text".into(),
+                    nullable: false,
+                    default: None,
+                    db_type: None,
+                    lint_ignore: vec![],
+                    comment: None,
+                    count: 1,
+                },
+                crate::ir::ColumnSpec {
+                    name: "status".into(),
+                    r#type: "StatusType".into(),
+                    nullable: false,
+                    default: None,
+                    db_type: None,
+                    lint_ignore: vec![],
+                    comment: None,
+                    count: 1,
+                },
+            ],
+            primary_key: Some(crate::ir::PrimaryKeySpec {
+                name: None,
+                columns: vec!["id".into()],
+            }),
+            indexes: vec![],
+            checks: vec![],
+            foreign_keys: vec![],
+            partition_by: None,
+            partitions: vec![],
+            back_references: vec![],
+            lint_ignore: vec![],
+            comment: None,
+            map: None,
+        };
+
+        let table = Table::from(&tspec);
+        let sql = table.to_string();
+        assert!(
+            sql.contains("\"status\" \"StatusType\" NOT NULL"),
+            "expected mixed-case enum type to be quoted, got: {sql}"
         );
     }
 
