@@ -1,7 +1,7 @@
 # dbschema
 
-A Rust CLI to define database schema's in a small HCL dialect, and generate idempotent SQL migrations.
-It aims to support all PostgreSQL features (like extensions, functions, triggers, etc).
+Define database schema's as HCL files, and generate idempotent SQL migrations.
+Dbschema aims to support all PostgreSQL features (like extensions, functions, triggers, etc).
 
 Designed to complement Prisma (or any tool) when you want to declaratively define features the ORM might not support out of the box (for example: Postgres triggers).
 Prisma supports custom migrations, so you can generate SQL with this tool and ship it alongside your Prisma migrations.
