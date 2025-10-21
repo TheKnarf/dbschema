@@ -45,6 +45,42 @@ variable "ids" {
 variable "labels" {
   type = "map(string)"
 }
+
+# Complex object variables
+
+You can describe structured data using Terraform-style object types. Each object field must be present and match the declared type, and extra keys are rejected.
+
+```hcl
+variable "columns" {
+  type = "list(object({ name = string, type = string, nullable = optional(bool) }))"
+  default = [
+    { name = "label",   type = "text",  nullable = true  },
+    { name = "payload", type = "jsonb", nullable = false },
+  ]
+}
+
+table "example" {
+  schema = "public"
+
+  column "id" {
+    type     = "text"
+    nullable = false
+  }
+
+  dynamic "column" {
+    for_each = var.columns
+    labels   = [each.value.name]
+    content {
+      type     = each.value.type
+      nullable = each.value.nullable
+    }
+  }
+
+  primary_key { columns = ["id"] }
+}
+```
+
+In this example, the `columns` variable must be a list of objects with `name`, `type`, and an optional `nullable` field. The defaults include `nullable`, but callers can omit it; the object type ensures any supplied value still has the right shape.
 ```
 
 ### `for_each` and `count`

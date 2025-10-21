@@ -739,6 +739,31 @@ fn check_var_type(name: &str, v: &Value, expected: &VarType) -> Result<()> {
                 value_kind(v)
             ),
         },
+        VarType::Object(schema) => match v {
+            Value::Object(map) => {
+                for (field, spec) in schema {
+                    match map.get(field) {
+                        Some(value) => {
+                            check_var_type(&format!("{name}.{field}"), value, &spec.r#type)?;
+                        }
+                        None if spec.optional => {}
+                        None => bail!("variable '{name}' missing required field '{field}'"),
+                    }
+                }
+                for key in map.keys() {
+                    if !schema.contains_key(key) {
+                        bail!(
+                            "variable '{name}' has unknown field '{key}' (expected {expected})"
+                        );
+                    }
+                }
+                Ok(())
+            }
+            _ => bail!(
+                "variable '{name}' expected type {expected}, got {}",
+                value_kind(v)
+            ),
+        },
     }
 }
 
@@ -1649,6 +1674,7 @@ fn load_file(
 mod tests {
     use super::*;
     use crate::frontend::env::EnvVars;
+    use hcl::value::Map;
 
     #[test]
     fn evaluates_conditional_expression() {
@@ -1665,5 +1691,94 @@ mod tests {
         let v = expr_to_value(&expr, &env).unwrap();
         let expected = Value::from(vec![Value::from(1), Value::from(2), Value::from(3)]);
         assert_eq!(v, expected);
+    }
+
+    #[test]
+    fn check_var_type_supports_object_schema() {
+        let ty: VarType = "list(object({ name = string, type = string, nullable = bool }))"
+            .parse()
+            .unwrap();
+        let mut col: Map<String, Value> = Map::new();
+        col.insert("name".into(), Value::from("foo"));
+        col.insert("type".into(), Value::from("text"));
+        col.insert("nullable".into(), Value::from(false));
+        let value = Value::Array(vec![Value::Object(col.clone())]);
+        check_var_type("columns", &value, &ty).unwrap();
+
+        let mut bad = col.clone();
+        bad.insert("nullable".into(), Value::from("nope"));
+        let err = check_var_type(
+            "columns",
+            &Value::Array(vec![Value::Object(bad)]),
+            &ty,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("columns[0].nullable"));
+    }
+
+    #[test]
+    fn check_var_type_rejects_unknown_fields() {
+        let ty: VarType = "object({ name = string })".parse().unwrap();
+        let mut obj: Map<String, Value> = Map::new();
+        obj.insert("name".into(), Value::from("foo"));
+        obj.insert("extra".into(), Value::from(1));
+        let err = check_var_type("col", &Value::Object(obj), &ty).unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("variable 'col' has unknown field 'extra'"));
+    }
+
+    #[test]
+    fn check_var_type_allows_missing_optional_field() {
+        let ty: VarType = r#"object({ name = string, "display-name" = optional(string) })"#
+            .parse()
+            .unwrap();
+        let mut obj: Map<String, Value> = Map::new();
+        obj.insert("name".into(), Value::from("foo"));
+        check_var_type("entity", &Value::Object(obj), &ty).unwrap();
+
+        let mut provided: Map<String, Value> = Map::new();
+        provided.insert("name".into(), Value::from("foo"));
+        provided.insert("display-name".into(), Value::from("Foo"));
+        check_var_type("entity", &Value::Object(provided), &ty).unwrap();
+
+        let mut wrong: Map<String, Value> = Map::new();
+        wrong.insert("name".into(), Value::from("foo"));
+        wrong.insert("display-name".into(), Value::from(1));
+        let err = check_var_type("entity", &Value::Object(wrong), &ty).unwrap_err();
+        let err_msg = err.to_string();
+        assert!(err_msg.contains("variable 'entity.display-name' expected type string"));
+    }
+
+    #[test]
+    fn check_var_type_missing_required_field() {
+        let ty: VarType = "object({ name = string, value = number })".parse().unwrap();
+        let mut obj: Map<String, Value> = Map::new();
+        obj.insert("name".into(), Value::from("foo"));
+        let err = check_var_type("entity", &Value::Object(obj), &ty).unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("variable 'entity' missing required field 'value'"));
+    }
+
+    #[test]
+    fn check_var_type_map_of_lists() {
+        let ty: VarType = "map(list(number))".parse().unwrap();
+        let mut ok_map: Map<String, Value> = Map::new();
+        ok_map.insert(
+            "a".into(),
+            Value::Array(vec![Value::Number(1.into()), Value::Number(2.into())]),
+        );
+        ok_map.insert("b".into(), Value::Array(vec![]));
+        check_var_type("values", &Value::Object(ok_map.clone()), &ty).unwrap();
+
+        let mut bad_map = ok_map;
+        bad_map.insert(
+            "c".into(),
+            Value::Array(vec![Value::Number(1.into()), Value::String("oops".into())]),
+        );
+        let err = check_var_type("values", &Value::Object(bad_map), &ty).unwrap_err();
+        let err_msg = err.to_string();
+        assert!(err_msg.contains("variable 'values.c[1]' expected type number"));
     }
 }
