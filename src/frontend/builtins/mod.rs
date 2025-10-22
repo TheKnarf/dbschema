@@ -24,6 +24,7 @@ pub fn create_context() -> Context<'static> {
     ctx.declare_func("startswith", string::create_startswith_func());
     ctx.declare_func("endswith", string::create_endswith_func());
     ctx.declare_func("trim", string::create_trim_func());
+    ctx.declare_func("trimspace", string::create_trimspace_func());
     ctx.declare_func("replace", string::create_replace_func());
 
     // Numeric functions
@@ -89,6 +90,7 @@ mod tests {
             "startswith",
             "endswith",
             "trim",
+            "trimspace",
             "replace",
             "min",
             "max",

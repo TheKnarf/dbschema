@@ -1,4 +1,5 @@
 use anyhow::{Context, Result, bail};
+use hcl::value::Map;
 use hcl::eval::{Context as HclContext, Evaluate};
 use hcl::template::{Element as TplElement, Template};
 use hcl::{
@@ -554,18 +555,67 @@ pub fn create_eval_context(env: &EnvVars) -> HclContext<'_> {
     for (key, value) in &env.vars {
         ctx.declare_var(key.clone(), value.clone());
     }
+    if !env.vars.is_empty() {
+        let mut object = Map::new();
+        for (k, v) in &env.vars {
+            object.insert(k.clone(), v.clone());
+        }
+        ctx.declare_var("var", Value::Object(object));
+    }
 
     for (key, value) in &env.locals {
         // Declare locals directly without prefix to match how they're referenced in expressions
         ctx.declare_var(key.clone(), value.clone());
     }
+    if !env.locals.is_empty() {
+        let mut object = Map::new();
+        for (k, v) in &env.locals {
+            object.insert(k.clone(), v.clone());
+        }
+        ctx.declare_var("local", Value::Object(object.clone()));
+        ctx.declare_var("locals", Value::Object(object));
+    }
+
+    if !env.modules.is_empty() {
+        let mut module_object = Map::new();
+        for (module_name, outputs) in &env.modules {
+            let mut outputs_object = Map::new();
+            for (output_name, value) in outputs {
+                outputs_object.insert(output_name.clone(), value.clone());
+            }
+            module_object.insert(module_name.clone(), Value::Object(outputs_object));
+        }
+        ctx.declare_var("module", Value::Object(module_object));
+    }
+
+    if !env.data.is_empty() {
+        let mut data_object = Map::new();
+        for (data_type, sources) in &env.data {
+            let mut sources_object = Map::new();
+            for (name, value) in sources {
+                sources_object.insert(name.clone(), value.clone());
+            }
+            data_object.insert(data_type.clone(), Value::Object(sources_object));
+        }
+        ctx.declare_var("data", Value::Object(data_object));
+    }
 
     if let Some((key, value)) = &env.each {
+        let mut each_object = Map::new();
+        each_object.insert("key".to_string(), key.clone());
+        each_object.insert("value".to_string(), value.clone());
+        ctx.declare_var("each", Value::Object(each_object));
         ctx.declare_var("each_key", key.clone());
         ctx.declare_var("each_value", value.clone());
     }
 
     if let Some(index) = env.count {
+        let mut count_object = Map::new();
+        count_object.insert(
+            "index".to_string(),
+            Value::Number(Number::from(index as u64)),
+        );
+        ctx.declare_var("count", Value::Object(count_object));
         ctx.declare_var("count_index", Value::Number(Number::from(index as u64)));
     }
 

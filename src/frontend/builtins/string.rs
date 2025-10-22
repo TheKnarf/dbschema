@@ -78,6 +78,12 @@ pub fn create_trim_func() -> FuncDef {
         .build(|args: FuncArgs| Ok(Value::from(args[0].as_str().unwrap().trim())))
 }
 
+pub fn create_trimspace_func() -> FuncDef {
+    FuncDef::builder()
+        .param(ParamType::String)
+        .build(|args: FuncArgs| Ok(Value::from(args[0].as_str().unwrap().trim())))
+}
+
 pub fn create_replace_func() -> FuncDef {
     FuncDef::builder()
         .param(ParamType::String)
@@ -106,6 +112,7 @@ mod tests {
         ctx.declare_func("startswith", create_startswith_func());
         ctx.declare_func("endswith", create_endswith_func());
         ctx.declare_func("trim", create_trim_func());
+        ctx.declare_func("trimspace", create_trimspace_func());
         ctx.declare_func("replace", create_replace_func());
         ctx
     }
@@ -127,6 +134,19 @@ mod tests {
     fn test_lower_function() {
         let ctx = create_test_context();
         let expr_str = "lower(\"HELLO\")";
+        let body: hcl::Body = hcl::from_str(&format!("test = {}", expr_str)).unwrap();
+        let expr = body
+            .attributes()
+            .find(|a| a.key() == "test")
+            .unwrap()
+            .expr();
+        assert_eq!(expr.evaluate(&ctx).unwrap(), Value::from("hello"));
+    }
+
+    #[test]
+    fn test_trimspace_function() {
+        let ctx = create_test_context();
+        let expr_str = "trimspace(\"  hello  \")";
         let body: hcl::Body = hcl::from_str(&format!("test = {}", expr_str)).unwrap();
         let expr = body
             .attributes()
