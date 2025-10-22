@@ -14,9 +14,13 @@ use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
 #[derive(Parser)]
-#[command(name = "dbschema")]
+#[command(name = "dbschema", version, disable_version_flag = true)]
 #[command(about = "Define database schema's as HCL files, and generate idempotent SQL migrations.", long_about = None)]
 struct Cli {
+    /// Print the version and exit
+    #[arg(long = "version", short = 'v', action = clap::ArgAction::Version)]
+    version: (),
+
     /// Root HCL file (default: main.hcl)
     #[arg(long, default_value = "main.hcl")]
     input: PathBuf,
