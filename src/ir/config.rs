@@ -395,6 +395,7 @@ pub struct PartitionSpec {
 pub struct BackReferenceSpec {
     pub name: String,
     pub table: String,
+    pub relation_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

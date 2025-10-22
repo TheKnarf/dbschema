@@ -42,14 +42,25 @@ fn model_to_ast(t: &TableSpec, enums: &[EnumSpec], strict: bool) -> Result<ps::M
     }
 
     for br in &t.back_references {
+        let mut attrs = Vec::new();
+        if let Some(rel_name) = &br.relation_name {
+            attrs.push(ps::FieldAttribute::Relation(ps::RelationAttribute {
+                name: Some(rel_name.clone()),
+                fields: Vec::new(),
+                references: Vec::new(),
+                map: None,
+                on_delete: None,
+                on_update: None,
+            }));
+        }
         model.fields.push(ps::Field {
             name: ps::Identifier::from(br.name.clone()),
             r#type: ps::Type {
-                name: br.table.clone(),
+                name: to_model_name(&br.table),
                 optional: false,
                 list: true,
             },
-            attributes: Vec::new(),
+            attributes: attrs,
             documentation: None,
         });
     }

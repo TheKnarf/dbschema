@@ -714,6 +714,7 @@ fn populate_back_references(cfg: &mut ir::Config) -> Result<()> {
                     table.back_references.push(crate::ir::BackReferenceSpec {
                         name,
                         table: target_table,
+                        relation_name: fk.back_reference_name.clone(),
                     });
                 }
             }

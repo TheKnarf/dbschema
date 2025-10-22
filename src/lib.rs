@@ -798,6 +798,62 @@ mod tests {
     }
 
     #[test]
+    fn prisma_back_reference_relations_have_names() {
+        let mut files = HashMap::new();
+        files.insert(
+            p("/root/main.hcl"),
+            r#"
+            table "blob" {
+              schema = "public"
+              column "blobId" {
+                type = "text"
+                nullable = false
+              }
+              primary_key { columns = ["blobId"] }
+            }
+
+            table "commit" {
+              schema = "public"
+              column "commitId" {
+                type = "text"
+                nullable = false
+              }
+              column "blobId" {
+                type = "text"
+                nullable = false
+              }
+              primary_key { columns = ["commitId"] }
+              foreign_key {
+                name = "blob_fk"
+                columns = ["blobId"]
+                ref {
+                  schema = "public"
+                  table = "blob"
+                  columns = ["blobId"]
+                }
+                back_reference_name = "commits"
+                on_delete = "RESTRICT"
+              }
+            }
+            "#
+            .to_string(),
+        );
+        let loader = MapLoader { files };
+        let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
+        let prisma = crate::generate_with_backend("prisma", &cfg, false).unwrap();
+        assert!(
+            prisma.contains("commits Commit[] @relation(name: \"commits\")"),
+            "expected commits relation field to include relation name:\n{prisma}"
+        );
+        assert!(
+            prisma.contains(
+                "blob_fk Blob @relation(name: \"commits\", fields: [blobId], references: [blobId]"
+            ),
+            "expected blob relation field to reference relation name:\n{prisma}"
+        );
+    }
+
+    #[test]
     fn parse_table_and_generate_sql() {
         let mut files = HashMap::new();
         files.insert(

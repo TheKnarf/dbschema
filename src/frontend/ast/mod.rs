@@ -370,6 +370,7 @@ pub struct AstPartition {
 pub struct AstBackReference {
     pub name: String,
     pub table: String,
+    pub relation_name: Option<String>,
 }
 
 #[derive(Debug, Clone)]

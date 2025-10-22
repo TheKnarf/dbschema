@@ -674,6 +674,7 @@ impl From<ast::AstBackReference> for ir::BackReferenceSpec {
         Self {
             name: br.name,
             table: br.table,
+            relation_name: br.relation_name,
         }
     }
 }
