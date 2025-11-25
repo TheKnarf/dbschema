@@ -18,7 +18,10 @@ extension "pgcrypto" {
 ## Examples
 
 ```hcl
-extension "pgcrypto" {}
+extension "pgcrypto" {
+}
 
-extension "uuid-ossp" { if_not_exists = true }
+extension "uuid-ossp" {
+   if_not_exists = true
+}
 ```

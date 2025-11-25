@@ -25,7 +25,14 @@ operator "text_prefix" {
 ## Examples
 
 ```hcl
-operator "int_mul" { procedure = "int4mul" left = "int4" right = "int4" }
+operator "int_mul" {
+  procedure = "int4mul"
+  left = "int4"
+  right = "int4"
+}
 
-operator "factorial" { procedure = "factorial" right = "int" }
+operator "factorial" {
+  procedure = "factorial"
+  right = "int"
+}
 ```

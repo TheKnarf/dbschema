@@ -29,10 +29,22 @@ trigger "users_updated_at" {
 
 ```hcl
 table "users" {
-  column "id"          { type = "uuid", nullable = false, default = "gen_random_uuid()" }
-  column "email"       { type = "text", nullable = false }
-  column "updatedDate" { type = "timestamp", nullable = true }
-  primary_key { columns = ["id"] }
+  column "id" {
+    type = "uuid"
+    nullable = false
+    default = "gen_random_uuid()"
+  }
+  column "email" {
+    type = "text"
+    nullable = false
+  }
+  column "updatedDate" {
+    type = "timestamp"
+    nullable = true
+  }
+  primary_key {
+    columns = ["id"]
+  }
 }
 
 function "set_updated_at" {

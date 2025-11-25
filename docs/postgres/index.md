@@ -28,7 +28,11 @@ index "users_email_key" {
 ## Examples
 
 ```hcl
-index "users_email_key" { table = "users" columns = ["email"] unique = true }
+index "users_email_key" {
+  table = "users"
+  columns = ["email"]
+  unique = true
+}
 
 index "posts_title_trgm" {
   table = "posts"

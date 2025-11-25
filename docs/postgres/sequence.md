@@ -35,7 +35,13 @@ sequence "order_id_seq" {
 }
 
 table "orders" {
-  column "id" { type = "bigint", nullable = false, default = "nextval('order_id_seq')" }
-  primary_key { columns = ["id"] }
+  column "id" {
+    type = "bigint"
+    nullable = false
+    default = "nextval('order_id_seq')"
+  }
+  primary_key {
+    columns = ["id"]
+  }
 }
 ```

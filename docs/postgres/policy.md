@@ -27,10 +27,22 @@ policy "user_select" {
 
 ```hcl
 table "docs" {
-  column "id"     { type = "uuid", nullable = false, default = "gen_random_uuid()" }
-  column "owner"  { type = "text", nullable = false }
-  column "title"  { type = "text", nullable = false }
-  primary_key { columns = ["id"] }
+  column "id" {
+    type = "uuid"
+    nullable = false
+    default = "gen_random_uuid()"
+  }
+  column "owner" {
+    type = "text"
+    nullable = false
+  }
+  column "title" {
+    type = "text"
+    nullable = false
+  }
+  primary_key {
+    columns = ["id"]
+  }
 }
 
 -- Enable RLS and allow owners to read their docs

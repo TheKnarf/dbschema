@@ -19,7 +19,11 @@ type "address" {
 
 ```hcl
 type "money_with_currency" {
-  field "amount"   { type = "numeric(12,2)" }
-  field "currency" { type = "char(3)" }
+  field "amount" {
+    type = "numeric(12,2)"
+  }
+  field "currency" {
+    type = "char(3)"
+  }
 }
 ```

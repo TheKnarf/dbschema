@@ -24,7 +24,12 @@ foreign_table "remote" {
 ```hcl
 foreign_table "rt" {
   server = "csv_srv"
-  column "id" { type = "int", nullable = false }
-  options = ["filename '/tmp/data.csv'"]
+  column "id" {
+    type = "int"
+    nullable = false
+  }
+  options = [
+    "filename '/tmp/data.csv'"
+  ]
 }
 ```

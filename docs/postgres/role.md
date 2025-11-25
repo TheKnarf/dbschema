@@ -25,6 +25,11 @@ role "app_user" {
 ## Examples
 
 ```hcl
-role "app_user" { login = true }
-role "app_admin" { login = true in_role = ["app_user"] }
+role "app_user" {
+   login = true
+}
+role "app_admin" {
+   login = true
+   in_role = ["app_user"]
+}
 ```
