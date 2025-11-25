@@ -32,14 +32,36 @@ enum "Status" {
 }
 
 table "users" {
-  column "id"           { type = "uuid"      nullable = false default = "gen_random_uuid()" }
-  column "email"        { type = "text"      nullable = false }
-  column "status"       { type = "Status"    nullable = false }
-  column "createdDate"  { type = "timestamp" nullable = false default = "now()" }
-  column "updatedDate"  { type = "timestamp" nullable = true }
+  column "id" {
+    type = "uuid"
+    nullable = false
+    default = "gen_random_uuid()"
+  }
+  column "email" {
+    type = "text"
+    nullable = false
+  }
+  column "status" {
+    type = "Status"
+    nullable = false
+  }
+  column "createdDate" {
+    type = "timestamp"
+    nullable = false
+    default = "now()"
+  }
+  column "updatedDate" {
+    type = "timestamp"
+    nullable = true
+  }
 
-  primary_key { columns = ["id"] }
-  index "users_email_key" { columns = ["email"] unique = true }
+  primary_key {
+    columns = ["id"]
+  }
+  index "users_email_key" {
+    columns = ["email"]
+    unique = true
+  }
 }
 
 function "set_updated_at" {
