@@ -1191,4 +1191,320 @@ mod tests {
         assert!(sql.contains("CREATE ROLE \"app\" LOGIN CREATEDB;"));
         assert!(sql.contains("GRANT ALL PRIVILEGES ON DATABASE \"appdb\" TO \"app\";"));
     }
+
+    #[test]
+    fn parse_assert_eq_in_test() {
+        let mut files = HashMap::new();
+        files.insert(
+            p("/root/main.hcl"),
+            r#"
+            test "eq_check" {
+              assert_eq {
+                query    = "SELECT 'hello'"
+                expected = "hello"
+              }
+            }
+            "#
+            .to_string(),
+        );
+        let loader = MapLoader { files };
+        let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
+        assert_eq!(cfg.tests.len(), 1);
+        assert_eq!(cfg.tests[0].name, "eq_check");
+        assert_eq!(cfg.tests[0].assert_eq.len(), 1);
+        assert_eq!(cfg.tests[0].assert_eq[0].query, "SELECT 'hello'");
+        assert_eq!(cfg.tests[0].assert_eq[0].expected, "hello");
+    }
+
+    #[test]
+    fn parse_assert_error_in_test() {
+        let mut files = HashMap::new();
+        files.insert(
+            p("/root/main.hcl"),
+            r#"
+            test "error_check" {
+              assert_error {
+                sql              = "SELECT 1/0"
+                message_contains = "division by zero"
+              }
+            }
+            "#
+            .to_string(),
+        );
+        let loader = MapLoader { files };
+        let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
+        assert_eq!(cfg.tests.len(), 1);
+        assert_eq!(cfg.tests[0].name, "error_check");
+        assert_eq!(cfg.tests[0].assert_error.len(), 1);
+        assert_eq!(cfg.tests[0].assert_error[0].sql, "SELECT 1/0");
+        assert_eq!(cfg.tests[0].assert_error[0].message_contains, "division by zero");
+    }
+
+    #[test]
+    fn parse_assert_notify_in_test() {
+        let mut files = HashMap::new();
+        files.insert(
+            p("/root/main.hcl"),
+            r#"
+            test "notify_check" {
+              setup = ["SELECT pg_notify('my_channel', 'payload_data')"]
+              assert_notify {
+                channel          = "my_channel"
+                payload_contains = "payload_data"
+              }
+            }
+            "#
+            .to_string(),
+        );
+        let loader = MapLoader { files };
+        let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
+        assert_eq!(cfg.tests.len(), 1);
+        assert_eq!(cfg.tests[0].name, "notify_check");
+        assert_eq!(cfg.tests[0].assert_notify.len(), 1);
+        assert_eq!(cfg.tests[0].assert_notify[0].channel, "my_channel");
+        assert_eq!(cfg.tests[0].assert_notify[0].payload_contains, Some("payload_data".to_string()));
+    }
+
+    #[test]
+    fn parse_assert_notify_without_payload() {
+        let mut files = HashMap::new();
+        files.insert(
+            p("/root/main.hcl"),
+            r#"
+            test "notify_no_payload" {
+              setup = ["SELECT pg_notify('ch', '')"]
+              assert_notify {
+                channel = "ch"
+              }
+            }
+            "#
+            .to_string(),
+        );
+        let loader = MapLoader { files };
+        let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
+        assert_eq!(cfg.tests[0].assert_notify[0].channel, "ch");
+        assert_eq!(cfg.tests[0].assert_notify[0].payload_contains, None);
+    }
+
+    #[test]
+    fn parse_multiple_assertion_types_in_one_test() {
+        let mut files = HashMap::new();
+        files.insert(
+            p("/root/main.hcl"),
+            r#"
+            test "mixed" {
+              setup = ["SELECT 1"]
+              assert = ["SELECT true"]
+              assert_fail = ["SELECT 1 FROM nonexistent_table"]
+              assert_eq {
+                query    = "SELECT 'x'"
+                expected = "x"
+              }
+              assert_error {
+                sql              = "SELECT 1/0"
+                message_contains = "division"
+              }
+            }
+            "#
+            .to_string(),
+        );
+        let loader = MapLoader { files };
+        let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
+        let t = &cfg.tests[0];
+        assert_eq!(t.setup.len(), 1);
+        assert_eq!(t.asserts.len(), 1);
+        assert_eq!(t.assert_fail.len(), 1);
+        assert_eq!(t.assert_eq.len(), 1);
+        assert_eq!(t.assert_error.len(), 1);
+    }
+
+    #[test]
+    fn test_requires_at_least_one_assertion() {
+        let mut files = HashMap::new();
+        files.insert(
+            p("/root/main.hcl"),
+            r#"
+            test "empty" {
+              setup = ["SELECT 1"]
+            }
+            "#
+            .to_string(),
+        );
+        let loader = MapLoader { files };
+        let err = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap_err();
+        assert!(err.to_string().contains("must define at least one assertion type"));
+    }
+
+    #[test]
+    fn parse_assert_snapshot_in_test() {
+        let mut files = HashMap::new();
+        files.insert(
+            p("/root/main.hcl"),
+            r#"
+            table "users" {
+              column "name" {
+                type = "String"
+              }
+            }
+            test "snapshot_check" {
+              setup = [
+                "INSERT INTO users (name) VALUES ('alice')",
+              ]
+              assert_snapshot {
+                query = "SELECT name FROM users ORDER BY name"
+                rows = [
+                  ["alice"],
+                ]
+              }
+            }
+            "#
+            .to_string(),
+        );
+        let loader = MapLoader { files };
+        let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
+        assert_eq!(cfg.tests.len(), 1);
+        assert_eq!(cfg.tests[0].name, "snapshot_check");
+        assert_eq!(cfg.tests[0].assert_snapshot.len(), 1);
+        assert_eq!(cfg.tests[0].assert_snapshot[0].query, "SELECT name FROM users ORDER BY name");
+        assert_eq!(cfg.tests[0].assert_snapshot[0].rows, vec![vec!["alice".to_string()]]);
+    }
+
+    #[test]
+    fn parse_assert_snapshot_multiple_rows_and_columns() {
+        let mut files = HashMap::new();
+        files.insert(
+            p("/root/main.hcl"),
+            r#"
+            test "multi_snap" {
+              assert_snapshot {
+                query = "SELECT 1 AS a, 2 AS b UNION ALL SELECT 3, 4"
+                rows = [
+                  ["1", "2"],
+                  ["3", "4"],
+                ]
+              }
+            }
+            "#
+            .to_string(),
+        );
+        let loader = MapLoader { files };
+        let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
+        assert_eq!(cfg.tests[0].assert_snapshot[0].rows.len(), 2);
+        assert_eq!(cfg.tests[0].assert_snapshot[0].rows[0], vec!["1", "2"]);
+        assert_eq!(cfg.tests[0].assert_snapshot[0].rows[1], vec!["3", "4"]);
+    }
+
+    #[test]
+    fn parse_invariant_block() {
+        let mut files = HashMap::new();
+        files.insert(
+            p("/root/main.hcl"),
+            r#"
+            invariant "positive_counts" {
+              assert = [
+                "SELECT 1 = 1",
+                "SELECT 2 > 0",
+              ]
+            }
+            test "dummy" {
+              assert = ["SELECT true"]
+            }
+            "#
+            .to_string(),
+        );
+        let loader = MapLoader { files };
+        let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
+        assert_eq!(cfg.invariants.len(), 1);
+        assert_eq!(cfg.invariants[0].name, "positive_counts");
+        assert_eq!(cfg.invariants[0].asserts.len(), 2);
+        assert_eq!(cfg.invariants[0].asserts[0], "SELECT 1 = 1");
+    }
+
+    #[test]
+    fn invariant_requires_at_least_one_assert() {
+        let mut files = HashMap::new();
+        files.insert(
+            p("/root/main.hcl"),
+            r#"
+            invariant "empty" {
+            }
+            "#
+            .to_string(),
+        );
+        let loader = MapLoader { files };
+        let err = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap_err();
+        assert!(err.to_string().contains("must define at least one assert"));
+    }
+
+    #[test]
+    fn test_for_each_array_generates_indexed_tests() {
+        let mut files = HashMap::new();
+        files.insert(
+            p("/root/main.hcl"),
+            r#"
+            test "check" {
+              for_each = ["a", "b", "c"]
+              assert = ["SELECT '${each.value}' IS NOT NULL"]
+            }
+            "#
+            .to_string(),
+        );
+        let loader = MapLoader { files };
+        let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
+        assert_eq!(cfg.tests.len(), 3);
+        assert_eq!(cfg.tests[0].name, "check[0]");
+        assert_eq!(cfg.tests[1].name, "check[1]");
+        assert_eq!(cfg.tests[2].name, "check[2]");
+        assert!(cfg.tests[0].asserts[0].contains("'a'"));
+        assert!(cfg.tests[1].asserts[0].contains("'b'"));
+        assert!(cfg.tests[2].asserts[0].contains("'c'"));
+    }
+
+    #[test]
+    fn test_for_each_object_generates_keyed_tests() {
+        let mut files = HashMap::new();
+        files.insert(
+            p("/root/main.hcl"),
+            r#"
+            test "status" {
+              for_each = {
+                low  = "rejected"
+                high = "approved"
+              }
+              assert_eq {
+                query    = "SELECT '${each.value}'"
+                expected = each.value
+              }
+            }
+            "#
+            .to_string(),
+        );
+        let loader = MapLoader { files };
+        let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
+        assert_eq!(cfg.tests.len(), 2);
+        let names: Vec<&str> = cfg.tests.iter().map(|t| t.name.as_str()).collect();
+        assert!(names.contains(&"status[high]"));
+        assert!(names.contains(&"status[low]"));
+    }
+
+    #[test]
+    fn test_for_each_with_count() {
+        let mut files = HashMap::new();
+        files.insert(
+            p("/root/main.hcl"),
+            r#"
+            test "counted" {
+              count = 3
+              assert = ["SELECT ${count.index} >= 0"]
+            }
+            "#
+            .to_string(),
+        );
+        let loader = MapLoader { files };
+        let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
+        assert_eq!(cfg.tests.len(), 3);
+        assert_eq!(cfg.tests[0].name, "counted[0]");
+        assert_eq!(cfg.tests[1].name, "counted[1]");
+        assert_eq!(cfg.tests[2].name, "counted[2]");
+    }
 }

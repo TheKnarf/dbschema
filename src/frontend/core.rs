@@ -259,7 +259,7 @@ pub fn expr_to_value(expr: &hcl::Expression, env: &EnvVars) -> Result<Value> {
     }
 }
 
-fn value_to_string(v: &Value) -> Result<String> {
+pub fn value_to_string(v: &Value) -> Result<String> {
     match v {
         Value::String(s) => Ok(s.clone()),
         Value::Number(n) => Ok(n.to_string()),
@@ -1654,6 +1654,32 @@ fn load_file(
         )?;
     }
 
+    for blk in body.blocks().filter(|b| b.identifier() == "invariant") {
+        let name = blk
+            .labels()
+            .get(0)
+            .ok_or_else(|| anyhow::anyhow!("invariant block missing name label"))?
+            .as_str()
+            .to_string();
+        let b = blk.body();
+        let asserts: Vec<String> = match find_attr(b, "assert") {
+            Some(attr) => match expr_to_string_vec(attr.expr(), &env) {
+                Ok(v) => v,
+                Err(_) => {
+                    vec![get_attr_string(b, "assert", &env)?.context("invariant 'assert' is required")?]
+                }
+            },
+            None => Vec::new(),
+        };
+        if asserts.is_empty() {
+            return Err(anyhow::anyhow!(
+                "invariant '{}' must define at least one assert",
+                name
+            ));
+        }
+        cfg.invariants.push(ast::AstInvariant { name, asserts });
+    }
+
     for blk in body.blocks().filter(|b| b.identifier() == "test") {
         let name = blk
             .labels()
@@ -1661,78 +1687,16 @@ fn load_file(
             .ok_or_else(|| anyhow::anyhow!("test block missing name label"))?
             .as_str()
             .to_string();
-        let b = blk.body();
-        let setup = match find_attr(b, "setup") {
-            Some(attr) => expr_to_string_vec(attr.expr(), &env)?,
-            None => Vec::new(),
-        };
-        // 'assert' can be a string or an array of strings
-        let asserts: Vec<String> = match find_attr(b, "assert") {
-            Some(attr) => match expr_to_string_vec(attr.expr(), &env) {
-                Ok(v) => v,
-                Err(_) => {
-                    // Fallback: try single string
-                    vec![get_attr_string(b, "assert", &env)?.context("test 'assert' is required")?]
-                }
-            },
-            None => Vec::new(),
-        };
-        // Negative asserts expected to fail
-        let assert_fail = match find_attr(b, "assert_fail") {
-            Some(attr) => expr_to_string_vec(attr.expr(), &env)?,
-            None => Vec::new(),
-        };
-        let mut assert_notify = Vec::new();
-        for nb in b.blocks().filter(|nb| nb.identifier() == "assert_notify") {
-            let nb_body = nb.body();
-            let channel = get_attr_string(nb_body, "channel", &env)?
-                .ok_or_else(|| anyhow::anyhow!("assert_notify missing 'channel'"))?;
-            let payload_contains = get_attr_string(nb_body, "payload_contains", &env)?;
-            assert_notify.push(ast::NotifyAssert {
-                channel,
-                payload_contains,
-            });
-        }
-        let mut assert_eq = Vec::new();
-        for eb in b.blocks().filter(|eb| eb.identifier() == "assert_eq") {
-            let eb_body = eb.body();
-            let query = get_attr_string(eb_body, "query", &env)?
-                .ok_or_else(|| anyhow::anyhow!("assert_eq missing 'query'"))?;
-            let expected = get_attr_string(eb_body, "expected", &env)?
-                .ok_or_else(|| anyhow::anyhow!("assert_eq missing 'expected'"))?;
-            assert_eq.push(ast::EqAssert { query, expected });
-        }
-        let mut assert_error = Vec::new();
-        for erb in b.blocks().filter(|erb| erb.identifier() == "assert_error") {
-            let erb_body = erb.body();
-            let sql = get_attr_string(erb_body, "sql", &env)?
-                .ok_or_else(|| anyhow::anyhow!("assert_error missing 'sql'"))?;
-            let message_contains = get_attr_string(erb_body, "message_contains", &env)?
-                .ok_or_else(|| anyhow::anyhow!("assert_error missing 'message_contains'"))?;
-            assert_error.push(ast::ErrorAssert { sql, message_contains });
-        }
-        if asserts.is_empty() && assert_fail.is_empty() && assert_notify.is_empty()
-            && assert_eq.is_empty() && assert_error.is_empty()
-        {
-            return Err(anyhow::anyhow!(
-                "test '{}' must define 'assert', 'assert_fail', 'assert_notify', 'assert_eq', or 'assert_error'",
-                name
-            ));
-        }
-        let teardown = match find_attr(b, "teardown") {
-            Some(attr) => expr_to_string_vec(attr.expr(), &env)?,
-            None => Vec::new(),
-        };
-        cfg.tests.push(ast::AstTest {
-            name,
-            setup,
-            asserts,
-            assert_fail,
-            assert_notify,
-            assert_eq,
-            assert_error,
-            teardown,
-        });
+        let for_each_expr = find_attr(blk.body(), "for_each");
+        let count_expr = find_attr(blk.body(), "count");
+        execute_for_each::<ast::AstTest>(
+            &name,
+            blk.body(),
+            &env,
+            &mut cfg,
+            for_each_expr,
+            count_expr,
+        )?;
     }
 
     // Handle output blocks

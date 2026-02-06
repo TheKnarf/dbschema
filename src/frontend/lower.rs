@@ -65,6 +65,7 @@ pub fn lower_config(ast: ast::Config) -> ir::Config {
         publications: ast.publications.into_iter().map(Into::into).collect(),
         subscriptions: ast.subscriptions.into_iter().map(Into::into).collect(),
         tests: ast.tests.into_iter().map(Into::into).collect(),
+        invariants: ast.invariants.into_iter().map(Into::into).collect(),
         outputs: ast.outputs.into_iter().map(Into::into).collect(),
     }
 }
@@ -706,6 +707,24 @@ impl From<ast::ErrorAssert> for ir::ErrorAssertSpec {
     }
 }
 
+impl From<ast::SnapshotAssert> for ir::SnapshotAssertSpec {
+    fn from(s: ast::SnapshotAssert) -> Self {
+        Self {
+            query: s.query,
+            rows: s.rows,
+        }
+    }
+}
+
+impl From<ast::AstInvariant> for ir::InvariantSpec {
+    fn from(i: ast::AstInvariant) -> Self {
+        Self {
+            name: i.name,
+            asserts: i.asserts,
+        }
+    }
+}
+
 impl From<ast::AstTest> for ir::TestSpec {
     fn from(t: ast::AstTest) -> Self {
         Self {
@@ -716,6 +735,7 @@ impl From<ast::AstTest> for ir::TestSpec {
             assert_notify: t.assert_notify.into_iter().map(Into::into).collect(),
             assert_eq: t.assert_eq.into_iter().map(Into::into).collect(),
             assert_error: t.assert_error.into_iter().map(Into::into).collect(),
+            assert_snapshot: t.assert_snapshot.into_iter().map(Into::into).collect(),
             teardown: t.teardown,
         }
     }

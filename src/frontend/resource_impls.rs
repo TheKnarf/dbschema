@@ -1352,3 +1352,135 @@ impl ForEachSupport for AstSubscription {
         config.subscriptions.push(item);
     }
 }
+
+// Test implementation
+impl ForEachSupport for AstTest {
+    type Item = Self;
+
+    fn parse_one(name: &str, body: &Body, env: &EnvVars) -> Result<Self::Item> {
+        let test_name = if let Some((key, _)) = &env.each {
+            format!("{}[{}]", name, crate::frontend::core::value_to_string(key)?)
+        } else if let Some(idx) = env.count {
+            format!("{}[{}]", name, idx)
+        } else {
+            name.to_string()
+        };
+        let setup = match find_attr(body, "setup") {
+            Some(attr) => expr_to_string_vec(attr.expr(), env)?,
+            None => Vec::new(),
+        };
+        let asserts: Vec<String> = match find_attr(body, "assert") {
+            Some(attr) => match expr_to_string_vec(attr.expr(), env) {
+                Ok(v) => v,
+                Err(_) => {
+                    vec![get_attr_string(body, "assert", env)?
+                        .context("test 'assert' is required")?]
+                }
+            },
+            None => Vec::new(),
+        };
+        let assert_fail = match find_attr(body, "assert_fail") {
+            Some(attr) => expr_to_string_vec(attr.expr(), env)?,
+            None => Vec::new(),
+        };
+        let mut assert_notify = Vec::new();
+        for nb in body.blocks().filter(|nb| nb.identifier() == "assert_notify") {
+            let nb_body = nb.body();
+            let channel = get_attr_string(nb_body, "channel", env)?
+                .ok_or_else(|| anyhow::anyhow!("assert_notify missing 'channel'"))?;
+            let payload_contains = get_attr_string(nb_body, "payload_contains", env)?;
+            assert_notify.push(NotifyAssert {
+                channel,
+                payload_contains,
+            });
+        }
+        let mut assert_eq = Vec::new();
+        for eb in body.blocks().filter(|eb| eb.identifier() == "assert_eq") {
+            let eb_body = eb.body();
+            let query = get_attr_string(eb_body, "query", env)?
+                .ok_or_else(|| anyhow::anyhow!("assert_eq missing 'query'"))?;
+            let expected = get_attr_string(eb_body, "expected", env)?
+                .ok_or_else(|| anyhow::anyhow!("assert_eq missing 'expected'"))?;
+            assert_eq.push(EqAssert { query, expected });
+        }
+        let mut assert_error = Vec::new();
+        for erb in body.blocks().filter(|erb| erb.identifier() == "assert_error") {
+            let erb_body = erb.body();
+            let sql = get_attr_string(erb_body, "sql", env)?
+                .ok_or_else(|| anyhow::anyhow!("assert_error missing 'sql'"))?;
+            let message_contains = get_attr_string(erb_body, "message_contains", env)?
+                .ok_or_else(|| anyhow::anyhow!("assert_error missing 'message_contains'"))?;
+            assert_error.push(ErrorAssert {
+                sql,
+                message_contains,
+            });
+        }
+        let mut assert_snapshot = Vec::new();
+        for sb in body.blocks().filter(|sb| sb.identifier() == "assert_snapshot") {
+            let sb_body = sb.body();
+            let query = get_attr_string(sb_body, "query", env)?
+                .ok_or_else(|| anyhow::anyhow!("assert_snapshot missing 'query'"))?;
+            let rows_attr = find_attr(sb_body, "rows")
+                .ok_or_else(|| anyhow::anyhow!("assert_snapshot missing 'rows'"))?;
+            let rows_val = expr_to_value(rows_attr.expr(), env)?;
+            let rows = match rows_val {
+                Value::Array(outer) => {
+                    let mut result = Vec::new();
+                    for row in outer {
+                        match row {
+                            Value::Array(inner) => {
+                                let cols: Vec<String> = inner
+                                    .into_iter()
+                                    .map(|v| match v {
+                                        Value::String(s) => Ok(s),
+                                        other => Ok(format!("{}", other)),
+                                    })
+                                    .collect::<Result<_, anyhow::Error>>()?;
+                                result.push(cols);
+                            }
+                            _ => {
+                                return Err(anyhow::anyhow!(
+                                    "assert_snapshot rows must be arrays of arrays"
+                                ))
+                            }
+                        }
+                    }
+                    result
+                }
+                _ => return Err(anyhow::anyhow!("assert_snapshot 'rows' must be an array")),
+            };
+            assert_snapshot.push(SnapshotAssert { query, rows });
+        }
+        if asserts.is_empty()
+            && assert_fail.is_empty()
+            && assert_notify.is_empty()
+            && assert_eq.is_empty()
+            && assert_error.is_empty()
+            && assert_snapshot.is_empty()
+        {
+            return Err(anyhow::anyhow!(
+                "test '{}' must define at least one assertion type",
+                test_name
+            ));
+        }
+        let teardown = match find_attr(body, "teardown") {
+            Some(attr) => expr_to_string_vec(attr.expr(), env)?,
+            None => Vec::new(),
+        };
+        Ok(AstTest {
+            name: test_name,
+            setup,
+            asserts,
+            assert_fail,
+            assert_notify,
+            assert_eq,
+            assert_error,
+            assert_snapshot,
+            teardown,
+        })
+    }
+
+    fn add_to_config(item: Self::Item, config: &mut Config) {
+        config.tests.push(item);
+    }
+}

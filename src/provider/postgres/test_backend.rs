@@ -5,13 +5,13 @@ use std::collections::HashSet;
 use std::time::Duration;
 use url::Url;
 
-use crate::ir::{Config, TestSpec};
+use crate::ir::{Config, InvariantSpec, TestSpec};
 use crate::test_runner::{TestBackend, TestResult, TestSummary, is_verbose};
 use log::info;
 
 /// Run assert, assert_eq, assert_fail, and assert_error against a transaction.
 /// Returns `Ok(())` on success, or `Err(message)` on the first failure.
-fn run_assertions(tx: &mut Transaction, t: &TestSpec) -> std::result::Result<(), String> {
+fn run_assertions(tx: &mut Transaction, t: &TestSpec, invariants: &[InvariantSpec]) -> std::result::Result<(), String> {
     for a in &t.asserts {
         if is_verbose() {
             info!("-- assert: {}", a);
@@ -42,6 +42,60 @@ fn run_assertions(tx: &mut Transaction, t: &TestSpec) -> std::result::Result<(),
                 Err(e) => return Err(format!("assert_eq error: {}", e)),
             },
             Err(e) => return Err(format!("assert_eq query error: {}", e)),
+        }
+    }
+    for snap in &t.assert_snapshot {
+        if is_verbose() {
+            info!("-- assert-snapshot: {}", snap.query);
+        }
+        match tx.query(snap.query.as_str(), &[]) {
+            Ok(rows) => {
+                if rows.len() != snap.rows.len() {
+                    return Err(format!(
+                        "assert_snapshot: expected {} rows, got {}",
+                        snap.rows.len(),
+                        rows.len()
+                    ));
+                }
+                for (ri, (actual_row, expected_row)) in rows.iter().zip(snap.rows.iter()).enumerate() {
+                    let num_cols = actual_row.columns().len();
+                    if num_cols != expected_row.len() {
+                        return Err(format!(
+                            "assert_snapshot row {}: expected {} columns, got {}",
+                            ri, expected_row.len(), num_cols
+                        ));
+                    }
+                    for (ci, expected_val) in expected_row.iter().enumerate() {
+                        match extract_column_string(actual_row, ci) {
+                            Ok(actual_val) => {
+                                if actual_val != *expected_val {
+                                    return Err(format!(
+                                        "assert_snapshot row {} col {}: expected '{}', got '{}'",
+                                        ri, ci, expected_val, actual_val
+                                    ));
+                                }
+                            }
+                            Err(e) => return Err(format!("assert_snapshot row {} col {}: {}", ri, ci, e)),
+                        }
+                    }
+                }
+            }
+            Err(e) => return Err(format!("assert_snapshot query error: {}", e)),
+        }
+    }
+    for inv in invariants {
+        for a in &inv.asserts {
+            if is_verbose() {
+                info!("-- invariant '{}': {}", inv.name, a);
+            }
+            match tx.query(a.as_str(), &[]) {
+                Ok(rows) => match assert_rows_true(&rows) {
+                    Ok(true) => {}
+                    Ok(false) => return Err(format!("invariant '{}' returned false", inv.name)),
+                    Err(e) => return Err(format!("invariant '{}' error: {}", inv.name, e)),
+                },
+                Err(e) => return Err(format!("invariant '{}' query error: {}", inv.name, e)),
+            }
         }
     }
     for a in &t.assert_fail {
@@ -180,10 +234,11 @@ impl TestBackend for PostgresTestBackend {
 
                 // 5. Run remaining assertions in a fresh transaction (if any)
                 let has_tx_asserts = !t.asserts.is_empty() || !t.assert_eq.is_empty()
-                    || !t.assert_fail.is_empty() || !t.assert_error.is_empty();
+                    || !t.assert_fail.is_empty() || !t.assert_error.is_empty()
+                    || !t.assert_snapshot.is_empty() || !cfg.invariants.is_empty();
                 if ok && has_tx_asserts {
                     let mut tx = client.transaction()?;
-                    if let Err(msg) = run_assertions(&mut tx, t) {
+                    if let Err(msg) = run_assertions(&mut tx, t, &cfg.invariants) {
                         ok = false;
                         failed_msg = msg;
                     }
@@ -211,7 +266,7 @@ impl TestBackend for PostgresTestBackend {
                     }
                 }
                 if ok {
-                    if let Err(msg) = run_assertions(&mut tx, t) {
+                    if let Err(msg) = run_assertions(&mut tx, t, &cfg.invariants) {
                         ok = false;
                         failed_msg = msg;
                     }
@@ -313,6 +368,25 @@ static CONVERTERS: &[Converter] = converters!(
 /// * `bool`
 /// * any signed or unsigned integer (non-zero is treated as `true`)
 /// * text values "t" or "true" (case-insensitive)
+fn extract_column_string(row: &Row, col: usize) -> Result<String> {
+    if let Ok(v) = row.try_get::<usize, String>(col) {
+        return Ok(v);
+    }
+    if let Ok(v) = row.try_get::<usize, bool>(col) {
+        return Ok(v.to_string());
+    }
+    if let Ok(v) = row.try_get::<usize, i64>(col) {
+        return Ok(v.to_string());
+    }
+    if let Ok(v) = row.try_get::<usize, i32>(col) {
+        return Ok(v.to_string());
+    }
+    if let Ok(v) = row.try_get::<usize, f64>(col) {
+        return Ok(v.to_string());
+    }
+    Err(anyhow!("unsupported column type"))
+}
+
 fn extract_first_column_string(rows: &[Row]) -> Result<String> {
     if rows.is_empty() {
         return Err(anyhow!("query returned no rows"));
@@ -321,22 +395,7 @@ fn extract_first_column_string(rows: &[Row]) -> Result<String> {
     if row.columns().is_empty() {
         return Err(anyhow!("query returned no columns"));
     }
-    if let Ok(v) = row.try_get::<usize, String>(0) {
-        return Ok(v);
-    }
-    if let Ok(v) = row.try_get::<usize, bool>(0) {
-        return Ok(v.to_string());
-    }
-    if let Ok(v) = row.try_get::<usize, i64>(0) {
-        return Ok(v.to_string());
-    }
-    if let Ok(v) = row.try_get::<usize, i32>(0) {
-        return Ok(v.to_string());
-    }
-    if let Ok(v) = row.try_get::<usize, f64>(0) {
-        return Ok(v.to_string());
-    }
-    Err(anyhow!("unsupported column type"))
+    extract_column_string(row, 0)
 }
 
 fn assert_rows_true(rows: &[Row]) -> Result<bool> {

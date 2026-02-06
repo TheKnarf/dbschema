@@ -87,6 +87,11 @@ impl LintCheck for SqlSyntax {
                 self.check_stmt(&mut msgs, &proc.body, &format!("procedure '{}'", proc.name));
             }
         }
+        for inv in &cfg.invariants {
+            for stmt in &inv.asserts {
+                self.check_stmt(&mut msgs, stmt, &format!("invariant '{}'", inv.name));
+            }
+        }
         for test in &cfg.tests {
             for stmt in test
                 .setup
@@ -103,6 +108,9 @@ impl LintCheck for SqlSyntax {
             for ae in &test.assert_error {
                 self.check_stmt(&mut msgs, &ae.sql, &format!("test '{}' assert_error", test.name));
             }
+            for snap in &test.assert_snapshot {
+                self.check_stmt(&mut msgs, &snap.query, &format!("test '{}' assert_snapshot", test.name));
+            }
         }
 
         msgs
@@ -112,7 +120,7 @@ impl LintCheck for SqlSyntax {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ir::{Config, ViewSpec};
+    use crate::ir::{Config, InvariantSpec, ViewSpec};
     use crate::lint::{LintSettings, run_with_checks};
 
     #[test]
@@ -131,5 +139,33 @@ mod tests {
         };
         let msgs = run_with_checks(&cfg, vec![Box::new(SqlSyntax)], &LintSettings::default());
         assert!(msgs.iter().any(|m| m.check == "sql-syntax"));
+    }
+
+    #[test]
+    fn detects_invalid_invariant_sql() {
+        let inv = InvariantSpec {
+            name: "bad".into(),
+            asserts: vec!["SELEC 1".into()],
+        };
+        let cfg = Config {
+            invariants: vec![inv],
+            ..Default::default()
+        };
+        let msgs = run_with_checks(&cfg, vec![Box::new(SqlSyntax)], &LintSettings::default());
+        assert!(msgs.iter().any(|m| m.check == "sql-syntax" && m.message.contains("invariant")));
+    }
+
+    #[test]
+    fn valid_invariant_sql_passes() {
+        let inv = InvariantSpec {
+            name: "ok".into(),
+            asserts: vec!["SELECT COUNT(*) FROM users".into()],
+        };
+        let cfg = Config {
+            invariants: vec![inv],
+            ..Default::default()
+        };
+        let msgs = run_with_checks(&cfg, vec![Box::new(SqlSyntax)], &LintSettings::default());
+        assert!(msgs.is_empty());
     }
 }

@@ -36,6 +36,7 @@ pub struct Config {
     pub publications: Vec<AstPublication>,
     pub subscriptions: Vec<AstSubscription>,
     pub tests: Vec<AstTest>,
+    pub invariants: Vec<AstInvariant>,
     pub outputs: Vec<AstOutput>,
 }
 
@@ -537,6 +538,12 @@ pub struct ErrorAssert {
 }
 
 #[derive(Debug, Clone)]
+pub struct SnapshotAssert {
+    pub query: String,
+    pub rows: Vec<Vec<String>>,
+}
+
+#[derive(Debug, Clone)]
 pub struct AstTest {
     pub name: String,
     pub setup: Vec<String>,
@@ -545,7 +552,14 @@ pub struct AstTest {
     pub assert_notify: Vec<NotifyAssert>,
     pub assert_eq: Vec<EqAssert>,
     pub assert_error: Vec<ErrorAssert>,
+    pub assert_snapshot: Vec<SnapshotAssert>,
     pub teardown: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AstInvariant {
+    pub name: String,
+    pub asserts: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
