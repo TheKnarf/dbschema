@@ -31,7 +31,7 @@ env_logger = "0.11"
 url = "2"
 postgres-protocol = { version = "0.6", optional = true }
 bytes = { version = "1", optional = true }
-fallible-iterator = { version = "0.3", optional = true }
+fallible-iterator = "0.2"
 tokio = { version = "1", features = ["rt-multi-thread"], optional = true }
 pg_query = "6.1.1"
 ariadne = "0.5"

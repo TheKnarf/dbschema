@@ -679,6 +679,15 @@ impl From<ast::AstBackReference> for ir::BackReferenceSpec {
     }
 }
 
+impl From<ast::NotifyAssert> for ir::NotifyAssertSpec {
+    fn from(n: ast::NotifyAssert) -> Self {
+        Self {
+            channel: n.channel,
+            payload_contains: n.payload_contains,
+        }
+    }
+}
+
 impl From<ast::AstTest> for ir::TestSpec {
     fn from(t: ast::AstTest) -> Self {
         Self {
@@ -686,6 +695,7 @@ impl From<ast::AstTest> for ir::TestSpec {
             setup: t.setup,
             asserts: t.asserts,
             assert_fail: t.assert_fail,
+            assert_notify: t.assert_notify.into_iter().map(Into::into).collect(),
             teardown: t.teardown,
         }
     }

@@ -4,7 +4,7 @@ pub use config::{
     AggregateSpec, BackReferenceSpec, CheckSpec, CollationSpec, ColumnSpec, CompositeTypeFieldSpec,
     CompositeTypeSpec, Config, DomainSpec, EnumSpec, EventTriggerSpec, ExtensionSpec,
     ForeignDataWrapperSpec, ForeignKeySpec, ForeignServerSpec, ForeignTableSpec, FunctionSpec,
-    GrantSpec, IndexSpec, MaterializedViewSpec, OperatorSpec, OutputSpec, PartitionBySpec,
+    GrantSpec, IndexSpec, MaterializedViewSpec, NotifyAssertSpec, OperatorSpec, OutputSpec, PartitionBySpec,
     PartitionSpec, PolicySpec, PrimaryKeySpec, ProcedureSpec, ProviderSpec, PublicationSpec,
     PublicationTableSpec, RoleSpec, RuleSpec, SchemaSpec, SequenceSpec, StandaloneIndexSpec,
     StatisticsSpec, SubscriptionSpec, TableSpec, TablespaceSpec, TestSpec,

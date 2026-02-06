@@ -519,11 +519,18 @@ pub struct AstSubscription {
 }
 
 #[derive(Debug, Clone)]
+pub struct NotifyAssert {
+    pub channel: String,
+    pub payload_contains: Option<String>,
+}
+
+#[derive(Debug, Clone)]
 pub struct AstTest {
     pub name: String,
     pub setup: Vec<String>,
     pub asserts: Vec<String>,
     pub assert_fail: Vec<String>,
+    pub assert_notify: Vec<NotifyAssert>,
     pub teardown: Vec<String>,
 }
 

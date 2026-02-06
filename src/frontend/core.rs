@@ -1682,9 +1682,20 @@ fn load_file(
             Some(attr) => expr_to_string_vec(attr.expr(), &env)?,
             None => Vec::new(),
         };
-        if asserts.is_empty() && assert_fail.is_empty() {
+        let mut assert_notify = Vec::new();
+        for nb in b.blocks().filter(|nb| nb.identifier() == "assert_notify") {
+            let nb_body = nb.body();
+            let channel = get_attr_string(nb_body, "channel", &env)?
+                .ok_or_else(|| anyhow::anyhow!("assert_notify missing 'channel'"))?;
+            let payload_contains = get_attr_string(nb_body, "payload_contains", &env)?;
+            assert_notify.push(ast::NotifyAssert {
+                channel,
+                payload_contains,
+            });
+        }
+        if asserts.is_empty() && assert_fail.is_empty() && assert_notify.is_empty() {
             return Err(anyhow::anyhow!(
-                "test '{}' must define 'assert' or 'assert_fail'",
+                "test '{}' must define 'assert', 'assert_fail', or 'assert_notify'",
                 name
             ));
         }
@@ -1697,6 +1708,7 @@ fn load_file(
             setup,
             asserts,
             assert_fail,
+            assert_notify,
             teardown,
         });
     }
