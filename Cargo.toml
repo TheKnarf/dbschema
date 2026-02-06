@@ -41,6 +41,7 @@ internment = "0.8"
 [dev-dependencies]
 tempfile = "3"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+testcontainers-modules = { version = "0.14", features = ["postgres", "blocking"] }
 
 [features]
 default = []

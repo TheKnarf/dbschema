@@ -430,7 +430,12 @@ fn redacted(dsn: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::redacted;
+    use super::*;
+    use crate::ir::{
+        Config, EqAssertSpec, ErrorAssertSpec, InvariantSpec, NotifyAssertSpec,
+        SnapshotAssertSpec, TestSpec,
+    };
+    use crate::test_runner::TestBackend;
 
     #[test]
     fn masks_password() {
@@ -457,5 +462,739 @@ mod tests {
     fn falls_back_on_parse_failure() {
         let dsn = "host=localhost user=me password=secret";
         assert_eq!(redacted(dsn), dsn);
+    }
+
+    // --- Integration tests using testcontainers ---
+
+    fn start_pg() -> (testcontainers_modules::testcontainers::Container<testcontainers_modules::postgres::Postgres>, String) {
+        use testcontainers_modules::postgres::Postgres as PgImage;
+        use testcontainers_modules::testcontainers::runners::SyncRunner;
+        let container = PgImage::default().start().unwrap();
+        let host = container.get_host().unwrap();
+        let port = container.get_host_port_ipv4(5432).unwrap();
+        let dsn = format!("postgres://postgres:postgres@{}:{}/postgres", host, port);
+        (container, dsn)
+    }
+
+    fn test_spec(name: &str) -> TestSpec {
+        TestSpec {
+            name: name.into(),
+            setup: vec![],
+            asserts: vec![],
+            assert_fail: vec![],
+            assert_notify: vec![],
+            assert_eq: vec![],
+            assert_error: vec![],
+            assert_snapshot: vec![],
+            teardown: vec![],
+        }
+    }
+
+    fn run_one(dsn: &str, test: TestSpec) -> crate::test_runner::TestResult {
+        let cfg = Config {
+            tests: vec![test],
+            ..Default::default()
+        };
+        let summary = PostgresTestBackend.run(&cfg, dsn, None).unwrap();
+        summary.results.into_iter().next().unwrap()
+    }
+
+    fn run_one_with_invariants(dsn: &str, test: TestSpec, invariants: Vec<InvariantSpec>) -> crate::test_runner::TestResult {
+        let cfg = Config {
+            tests: vec![test],
+            invariants,
+            ..Default::default()
+        };
+        let summary = PostgresTestBackend.run(&cfg, dsn, None).unwrap();
+        summary.results.into_iter().next().unwrap()
+    }
+
+    // -- assert --
+
+    #[test]
+    fn assert_true_passes() {
+        let (_c, dsn) = start_pg();
+        let mut t = test_spec("t");
+        t.asserts = vec!["SELECT 1 = 1".into()];
+        let r = run_one(&dsn, t);
+        assert!(r.passed, "expected pass: {}", r.message);
+    }
+
+    #[test]
+    fn assert_false_fails() {
+        let (_c, dsn) = start_pg();
+        let mut t = test_spec("t");
+        t.asserts = vec!["SELECT 1 = 2".into()];
+        let r = run_one(&dsn, t);
+        assert!(!r.passed);
+        assert!(r.message.contains("assert returned false"), "msg: {}", r.message);
+    }
+
+    // -- assert_eq --
+
+    #[test]
+    fn assert_eq_passes() {
+        let (_c, dsn) = start_pg();
+        let mut t = test_spec("t");
+        t.assert_eq = vec![EqAssertSpec {
+            query: "SELECT 'hello'".into(),
+            expected: "hello".into(),
+        }];
+        let r = run_one(&dsn, t);
+        assert!(r.passed, "expected pass: {}", r.message);
+    }
+
+    #[test]
+    fn assert_eq_fails_on_mismatch() {
+        let (_c, dsn) = start_pg();
+        let mut t = test_spec("t");
+        t.assert_eq = vec![EqAssertSpec {
+            query: "SELECT 'hello'".into(),
+            expected: "world".into(),
+        }];
+        let r = run_one(&dsn, t);
+        assert!(!r.passed);
+        assert!(r.message.contains("expected 'world'"), "msg: {}", r.message);
+        assert!(r.message.contains("got 'hello'"), "msg: {}", r.message);
+    }
+
+    // -- assert_error --
+
+    #[test]
+    fn assert_error_passes_on_matching_error() {
+        let (_c, dsn) = start_pg();
+        let mut t = test_spec("t");
+        t.assert_error = vec![ErrorAssertSpec {
+            sql: "SELECT 1/0".into(),
+            message_contains: "division by zero".into(),
+        }];
+        let r = run_one(&dsn, t);
+        assert!(r.passed, "expected pass: {}", r.message);
+    }
+
+    #[test]
+    fn assert_error_fails_on_wrong_message() {
+        let (_c, dsn) = start_pg();
+        let mut t = test_spec("t");
+        t.assert_error = vec![ErrorAssertSpec {
+            sql: "SELECT 1/0".into(),
+            message_contains: "not found".into(),
+        }];
+        let r = run_one(&dsn, t);
+        assert!(!r.passed);
+        assert!(r.message.contains("does not contain 'not found'"), "msg: {}", r.message);
+    }
+
+    #[test]
+    fn assert_error_fails_when_no_error() {
+        let (_c, dsn) = start_pg();
+        let mut t = test_spec("t");
+        t.assert_error = vec![ErrorAssertSpec {
+            sql: "SELECT 1".into(),
+            message_contains: "anything".into(),
+        }];
+        let r = run_one(&dsn, t);
+        assert!(!r.passed);
+        assert!(r.message.contains("succeeded unexpectedly"), "msg: {}", r.message);
+    }
+
+    // -- assert_fail --
+
+    #[test]
+    fn assert_fail_passes_on_error() {
+        let (_c, dsn) = start_pg();
+        let mut t = test_spec("t");
+        t.assert_fail = vec!["SELECT 1 FROM nonexistent_table_xyz".into()];
+        let r = run_one(&dsn, t);
+        assert!(r.passed, "expected pass: {}", r.message);
+    }
+
+    #[test]
+    fn assert_fail_fails_on_success() {
+        let (_c, dsn) = start_pg();
+        let mut t = test_spec("t");
+        t.assert_fail = vec!["SELECT 1".into()];
+        let r = run_one(&dsn, t);
+        assert!(!r.passed);
+        assert!(r.message.contains("succeeded unexpectedly"), "msg: {}", r.message);
+    }
+
+    // -- assert_snapshot --
+
+    #[test]
+    fn assert_snapshot_passes() {
+        let (_c, dsn) = start_pg();
+        let mut t = test_spec("t");
+        t.assert_snapshot = vec![SnapshotAssertSpec {
+            query: "SELECT 1 AS a, 'x' AS b".into(),
+            rows: vec![vec!["1".into(), "x".into()]],
+        }];
+        let r = run_one(&dsn, t);
+        assert!(r.passed, "expected pass: {}", r.message);
+    }
+
+    #[test]
+    fn assert_snapshot_fails_on_wrong_value() {
+        let (_c, dsn) = start_pg();
+        let mut t = test_spec("t");
+        t.assert_snapshot = vec![SnapshotAssertSpec {
+            query: "SELECT 1 AS a, 'x' AS b".into(),
+            rows: vec![vec!["1".into(), "y".into()]],
+        }];
+        let r = run_one(&dsn, t);
+        assert!(!r.passed);
+        assert!(r.message.contains("expected 'y'"), "msg: {}", r.message);
+        assert!(r.message.contains("got 'x'"), "msg: {}", r.message);
+    }
+
+    #[test]
+    fn assert_snapshot_fails_on_wrong_row_count() {
+        let (_c, dsn) = start_pg();
+        let mut t = test_spec("t");
+        t.assert_snapshot = vec![SnapshotAssertSpec {
+            query: "SELECT 1".into(),
+            rows: vec![vec!["1".into()], vec!["2".into()]],
+        }];
+        let r = run_one(&dsn, t);
+        assert!(!r.passed);
+        assert!(r.message.contains("expected 2 rows, got 1"), "msg: {}", r.message);
+    }
+
+    // -- invariants --
+
+    #[test]
+    fn invariant_passes() {
+        let (_c, dsn) = start_pg();
+        let mut t = test_spec("t");
+        t.asserts = vec!["SELECT true".into()];
+        let inv = InvariantSpec {
+            name: "always_true".into(),
+            asserts: vec!["SELECT 1 = 1".into()],
+        };
+        let r = run_one_with_invariants(&dsn, t, vec![inv]);
+        assert!(r.passed, "expected pass: {}", r.message);
+    }
+
+    #[test]
+    fn invariant_failure_fails_test() {
+        let (_c, dsn) = start_pg();
+        let mut t = test_spec("t");
+        t.asserts = vec!["SELECT true".into()];
+        let inv = InvariantSpec {
+            name: "always_false".into(),
+            asserts: vec!["SELECT 1 = 2".into()],
+        };
+        let r = run_one_with_invariants(&dsn, t, vec![inv]);
+        assert!(!r.passed);
+        assert!(r.message.contains("invariant 'always_false'"), "msg: {}", r.message);
+    }
+
+    // -- assert_notify --
+
+    #[test]
+    fn assert_notify_passes() {
+        let (_c, dsn) = start_pg();
+        let mut t = test_spec("t");
+        t.setup = vec!["SELECT pg_notify('test_ch', 'hello')".into()];
+        t.assert_notify = vec![NotifyAssertSpec {
+            channel: "test_ch".into(),
+            payload_contains: Some("hello".into()),
+        }];
+        t.teardown = vec![];
+        let r = run_one(&dsn, t);
+        assert!(r.passed, "expected pass: {}", r.message);
+    }
+
+    // -- setup failure --
+
+    #[test]
+    fn setup_failure_fails_test() {
+        let (_c, dsn) = start_pg();
+        let mut t = test_spec("t");
+        t.setup = vec!["SELECT 1 FROM nonexistent_table_xyz".into()];
+        t.asserts = vec!["SELECT true".into()];
+        let r = run_one(&dsn, t);
+        assert!(!r.passed);
+        assert!(r.message.contains("setup failed"), "msg: {}", r.message);
+    }
+
+    // -- multiple assertions in one test --
+
+    #[test]
+    fn multiple_assertions_all_pass() {
+        let (_c, dsn) = start_pg();
+        let mut t = test_spec("t");
+        t.asserts = vec!["SELECT true".into()];
+        t.assert_eq = vec![EqAssertSpec {
+            query: "SELECT '42'".into(),
+            expected: "42".into(),
+        }];
+        t.assert_snapshot = vec![SnapshotAssertSpec {
+            query: "SELECT 1 AS n".into(),
+            rows: vec![vec!["1".into()]],
+        }];
+        let r = run_one(&dsn, t);
+        assert!(r.passed, "expected pass: {}", r.message);
+    }
+
+    // -- only filtering --
+
+    fn run_cfg(dsn: &str, cfg: Config, only: Option<&HashSet<String>>) -> crate::test_runner::TestSummary {
+        PostgresTestBackend.run(&cfg, dsn, only).unwrap()
+    }
+
+    #[test]
+    fn only_filter_runs_selected_test() {
+        let (_c, dsn) = start_pg();
+        let mut t1 = test_spec("included");
+        t1.asserts = vec!["SELECT true".into()];
+        let mut t2 = test_spec("excluded");
+        t2.asserts = vec!["SELECT true".into()];
+        let cfg = Config {
+            tests: vec![t1, t2],
+            ..Default::default()
+        };
+        let only: HashSet<String> = ["included".to_string()].into();
+        let summary = run_cfg(&dsn, cfg, Some(&only));
+        assert_eq!(summary.total, 1);
+        assert_eq!(summary.passed, 1);
+        assert_eq!(summary.results[0].name, "included");
+    }
+
+    #[test]
+    fn only_filter_no_match_returns_empty() {
+        let (_c, dsn) = start_pg();
+        let mut t = test_spec("some_test");
+        t.asserts = vec!["SELECT true".into()];
+        let cfg = Config {
+            tests: vec![t],
+            ..Default::default()
+        };
+        let only: HashSet<String> = ["nonexistent".to_string()].into();
+        let summary = run_cfg(&dsn, cfg, Some(&only));
+        assert_eq!(summary.total, 0);
+        assert_eq!(summary.passed, 0);
+        assert_eq!(summary.failed, 0);
+    }
+
+    // -- mixed assert_notify + transactional assertions --
+
+    #[test]
+    fn notify_with_transactional_assertions() {
+        let (_c, dsn) = start_pg();
+        let mut t = test_spec("t");
+        t.setup = vec!["SELECT pg_notify('ch', 'payload')".into()];
+        t.assert_notify = vec![NotifyAssertSpec {
+            channel: "ch".into(),
+            payload_contains: Some("payload".into()),
+        }];
+        t.asserts = vec!["SELECT 1 = 1".into()];
+        t.assert_eq = vec![EqAssertSpec {
+            query: "SELECT 'ok'".into(),
+            expected: "ok".into(),
+        }];
+        let r = run_one(&dsn, t);
+        assert!(r.passed, "expected pass: {}", r.message);
+    }
+
+    #[test]
+    fn notify_with_failing_transactional_assertion() {
+        let (_c, dsn) = start_pg();
+        let mut t = test_spec("t");
+        t.setup = vec!["SELECT pg_notify('ch', 'payload')".into()];
+        t.assert_notify = vec![NotifyAssertSpec {
+            channel: "ch".into(),
+            payload_contains: Some("payload".into()),
+        }];
+        t.asserts = vec!["SELECT 1 = 2".into()]; // will fail
+        let r = run_one(&dsn, t);
+        assert!(!r.passed);
+        assert!(r.message.contains("assert returned false"), "msg: {}", r.message);
+    }
+
+    // -- assert_notify edge cases --
+
+    #[test]
+    fn assert_notify_without_payload_passes() {
+        let (_c, dsn) = start_pg();
+        let mut t = test_spec("t");
+        t.setup = vec!["SELECT pg_notify('ch', 'anything')".into()];
+        t.assert_notify = vec![NotifyAssertSpec {
+            channel: "ch".into(),
+            payload_contains: None,
+        }];
+        let r = run_one(&dsn, t);
+        assert!(r.passed, "expected pass: {}", r.message);
+    }
+
+    #[test]
+    fn assert_notify_wrong_channel_fails() {
+        let (_c, dsn) = start_pg();
+        let mut t = test_spec("t");
+        t.setup = vec!["SELECT pg_notify('actual_ch', 'data')".into()];
+        t.assert_notify = vec![NotifyAssertSpec {
+            channel: "wrong_ch".into(),
+            payload_contains: None,
+        }];
+        let r = run_one(&dsn, t);
+        assert!(!r.passed);
+        assert!(r.message.contains("assert_notify"), "msg: {}", r.message);
+    }
+
+    #[test]
+    fn assert_notify_wrong_payload_fails() {
+        let (_c, dsn) = start_pg();
+        let mut t = test_spec("t");
+        t.setup = vec!["SELECT pg_notify('ch', 'actual')".into()];
+        t.assert_notify = vec![NotifyAssertSpec {
+            channel: "ch".into(),
+            payload_contains: Some("expected".into()),
+        }];
+        let r = run_one(&dsn, t);
+        assert!(!r.passed);
+        assert!(r.message.contains("assert_notify"), "msg: {}", r.message);
+        assert!(r.message.contains("expected"), "msg: {}", r.message);
+    }
+
+    #[test]
+    fn assert_notify_multiple_channels() {
+        let (_c, dsn) = start_pg();
+        let mut t = test_spec("t");
+        t.setup = vec![
+            "SELECT pg_notify('ch1', 'one')".into(),
+            "SELECT pg_notify('ch2', 'two')".into(),
+        ];
+        t.assert_notify = vec![
+            NotifyAssertSpec {
+                channel: "ch1".into(),
+                payload_contains: Some("one".into()),
+            },
+            NotifyAssertSpec {
+                channel: "ch2".into(),
+                payload_contains: Some("two".into()),
+            },
+        ];
+        let r = run_one(&dsn, t);
+        assert!(r.passed, "expected pass: {}", r.message);
+    }
+
+    #[test]
+    fn setup_failure_on_notify_path() {
+        let (_c, dsn) = start_pg();
+        let mut t = test_spec("t");
+        t.setup = vec!["SELECT 1 FROM nonexistent_xyz".into()];
+        t.assert_notify = vec![NotifyAssertSpec {
+            channel: "ch".into(),
+            payload_contains: None,
+        }];
+        let r = run_one(&dsn, t);
+        assert!(!r.passed);
+        assert!(r.message.contains("setup failed"), "msg: {}", r.message);
+    }
+
+    // -- multiple tests with mixed pass/fail summary --
+
+    #[test]
+    fn summary_counts_mixed_pass_fail() {
+        let (_c, dsn) = start_pg();
+        let mut t1 = test_spec("pass1");
+        t1.asserts = vec!["SELECT true".into()];
+        let mut t2 = test_spec("fail1");
+        t2.asserts = vec!["SELECT false".into()];
+        let mut t3 = test_spec("pass2");
+        t3.asserts = vec!["SELECT 1 = 1".into()];
+        let cfg = Config {
+            tests: vec![t1, t2, t3],
+            ..Default::default()
+        };
+        let summary = run_cfg(&dsn, cfg, None);
+        assert_eq!(summary.total, 3);
+        assert_eq!(summary.passed, 2);
+        assert_eq!(summary.failed, 1);
+        assert!(summary.results[0].passed);
+        assert!(!summary.results[1].passed);
+        assert!(summary.results[2].passed);
+    }
+
+    #[test]
+    fn summary_results_preserve_order_and_names() {
+        let (_c, dsn) = start_pg();
+        let mut t1 = test_spec("alpha");
+        t1.asserts = vec!["SELECT true".into()];
+        let mut t2 = test_spec("beta");
+        t2.asserts = vec!["SELECT true".into()];
+        let mut t3 = test_spec("gamma");
+        t3.asserts = vec!["SELECT true".into()];
+        let cfg = Config {
+            tests: vec![t1, t2, t3],
+            ..Default::default()
+        };
+        let summary = run_cfg(&dsn, cfg, None);
+        let names: Vec<&str> = summary.results.iter().map(|r| r.name.as_str()).collect();
+        assert_eq!(names, vec!["alpha", "beta", "gamma"]);
+    }
+
+    // -- temporary database setup/cleanup --
+
+    #[test]
+    fn temporary_database_setup_and_cleanup() {
+        let (_c, dsn) = start_pg();
+        let db_name = "test_temp_db_integration";
+        let new_dsn = PostgresTestBackend
+            .setup_temporary_database(&dsn, db_name, false)
+            .expect("setup_temporary_database failed");
+        assert!(new_dsn.contains(db_name), "DSN should contain db name: {}", new_dsn);
+
+        // Verify we can connect to the new database
+        let client = Client::connect(&new_dsn, NoTls);
+        assert!(client.is_ok(), "should connect to temp database");
+        drop(client);
+
+        // Cleanup
+        PostgresTestBackend
+            .cleanup_temporary_database(&dsn, db_name, false)
+            .expect("cleanup failed");
+
+        // Verify connection to cleaned-up database fails
+        let client = Client::connect(&new_dsn, NoTls);
+        assert!(client.is_err(), "database should be dropped");
+    }
+
+    #[test]
+    fn temporary_database_setup_replaces_existing() {
+        let (_c, dsn) = start_pg();
+        let db_name = "test_temp_replace_db";
+        // Create once
+        let dsn1 = PostgresTestBackend
+            .setup_temporary_database(&dsn, db_name, false)
+            .expect("first setup failed");
+        // Create table in the first database
+        let mut c1 = Client::connect(&dsn1, NoTls).unwrap();
+        c1.batch_execute("CREATE TABLE marker (id int)").unwrap();
+        drop(c1);
+
+        // Setup again — should DROP and recreate, losing the table
+        let dsn2 = PostgresTestBackend
+            .setup_temporary_database(&dsn, db_name, false)
+            .expect("second setup failed");
+        let mut c2 = Client::connect(&dsn2, NoTls).unwrap();
+        let result = c2.batch_execute("SELECT 1 FROM marker");
+        assert!(result.is_err(), "table should not exist after re-setup");
+        drop(c2);
+
+        PostgresTestBackend
+            .cleanup_temporary_database(&dsn, db_name, false)
+            .unwrap();
+    }
+
+    #[test]
+    fn cleanup_nonexistent_database_is_ok() {
+        let (_c, dsn) = start_pg();
+        let result = PostgresTestBackend
+            .cleanup_temporary_database(&dsn, "db_that_does_not_exist", false);
+        assert!(result.is_ok(), "cleanup of nonexistent db should succeed");
+    }
+
+    #[test]
+    fn supports_temporary_database_is_true() {
+        assert!(PostgresTestBackend.supports_temporary_database());
+    }
+
+    // -- assert_snapshot edge cases --
+
+    #[test]
+    fn assert_snapshot_column_count_mismatch() {
+        let (_c, dsn) = start_pg();
+        let mut t = test_spec("t");
+        t.assert_snapshot = vec![SnapshotAssertSpec {
+            query: "SELECT 1 AS a, 2 AS b, 3 AS c".into(),
+            rows: vec![vec!["1".into(), "2".into()]], // expect 2 cols, query returns 3
+        }];
+        let r = run_one(&dsn, t);
+        assert!(!r.passed);
+        assert!(r.message.contains("expected 2 columns, got 3"), "msg: {}", r.message);
+    }
+
+    #[test]
+    fn assert_snapshot_multi_row_passes() {
+        let (_c, dsn) = start_pg();
+        let mut t = test_spec("t");
+        t.assert_snapshot = vec![SnapshotAssertSpec {
+            query: "SELECT * FROM (VALUES (1, 'a'), (2, 'b'), (3, 'c')) AS t(id, name)".into(),
+            rows: vec![
+                vec!["1".into(), "a".into()],
+                vec!["2".into(), "b".into()],
+                vec!["3".into(), "c".into()],
+            ],
+        }];
+        let r = run_one(&dsn, t);
+        assert!(r.passed, "expected pass: {}", r.message);
+    }
+
+    #[test]
+    fn assert_snapshot_multi_row_second_row_mismatch() {
+        let (_c, dsn) = start_pg();
+        let mut t = test_spec("t");
+        t.assert_snapshot = vec![SnapshotAssertSpec {
+            query: "SELECT * FROM (VALUES (1, 'a'), (2, 'b')) AS t(id, name)".into(),
+            rows: vec![
+                vec!["1".into(), "a".into()],
+                vec!["2".into(), "WRONG".into()],
+            ],
+        }];
+        let r = run_one(&dsn, t);
+        assert!(!r.passed);
+        assert!(r.message.contains("row 1"), "msg: {}", r.message);
+        assert!(r.message.contains("expected 'WRONG'"), "msg: {}", r.message);
+        assert!(r.message.contains("got 'b'"), "msg: {}", r.message);
+    }
+
+    // -- multiple invariants and assertion ordering --
+
+    #[test]
+    fn multiple_invariants_all_pass() {
+        let (_c, dsn) = start_pg();
+        let mut t = test_spec("t");
+        t.asserts = vec!["SELECT true".into()];
+        let inv1 = InvariantSpec {
+            name: "inv1".into(),
+            asserts: vec!["SELECT 1 = 1".into()],
+        };
+        let inv2 = InvariantSpec {
+            name: "inv2".into(),
+            asserts: vec!["SELECT 2 = 2".into()],
+        };
+        let r = run_one_with_invariants(&dsn, t, vec![inv1, inv2]);
+        assert!(r.passed, "expected pass: {}", r.message);
+    }
+
+    #[test]
+    fn multiple_invariants_second_fails() {
+        let (_c, dsn) = start_pg();
+        let mut t = test_spec("t");
+        t.asserts = vec!["SELECT true".into()];
+        let inv1 = InvariantSpec {
+            name: "ok_inv".into(),
+            asserts: vec!["SELECT 1 = 1".into()],
+        };
+        let inv2 = InvariantSpec {
+            name: "bad_inv".into(),
+            asserts: vec!["SELECT 1 = 2".into()],
+        };
+        let r = run_one_with_invariants(&dsn, t, vec![inv1, inv2]);
+        assert!(!r.passed);
+        assert!(r.message.contains("invariant 'bad_inv'"), "msg: {}", r.message);
+    }
+
+    #[test]
+    fn invariant_with_multiple_asserts_second_fails() {
+        let (_c, dsn) = start_pg();
+        let mut t = test_spec("t");
+        t.asserts = vec!["SELECT true".into()];
+        let inv = InvariantSpec {
+            name: "multi_assert".into(),
+            asserts: vec!["SELECT 1 = 1".into(), "SELECT 1 = 2".into()],
+        };
+        let r = run_one_with_invariants(&dsn, t, vec![inv]);
+        assert!(!r.passed);
+        assert!(r.message.contains("invariant 'multi_assert'"), "msg: {}", r.message);
+    }
+
+    #[test]
+    fn assert_passes_but_assert_eq_fails() {
+        let (_c, dsn) = start_pg();
+        let mut t = test_spec("t");
+        t.asserts = vec!["SELECT true".into()];
+        t.assert_eq = vec![EqAssertSpec {
+            query: "SELECT 'a'".into(),
+            expected: "b".into(),
+        }];
+        let r = run_one(&dsn, t);
+        assert!(!r.passed);
+        assert!(r.message.contains("assert_eq"), "msg: {}", r.message);
+    }
+
+    #[test]
+    fn assert_fails_skips_later_assertions() {
+        let (_c, dsn) = start_pg();
+        let mut t = test_spec("t");
+        t.asserts = vec!["SELECT 1 = 2".into()]; // fails
+        t.assert_eq = vec![EqAssertSpec {
+            query: "SELECT 'a'".into(),
+            expected: "b".into(), // would also fail, but shouldn't be reached
+        }];
+        let r = run_one(&dsn, t);
+        assert!(!r.passed);
+        // The error should be from assert, not assert_eq
+        assert!(r.message.contains("assert returned false"), "msg: {}", r.message);
+    }
+
+    // -- type conversion edge cases --
+
+    #[test]
+    fn assert_with_integer_truthiness() {
+        let (_c, dsn) = start_pg();
+        let mut t = test_spec("t");
+        t.asserts = vec!["SELECT 42".into()]; // non-zero integer is truthy
+        let r = run_one(&dsn, t);
+        assert!(r.passed, "expected pass: {}", r.message);
+    }
+
+    #[test]
+    fn assert_with_zero_is_false() {
+        let (_c, dsn) = start_pg();
+        let mut t = test_spec("t");
+        t.asserts = vec!["SELECT 0".into()]; // zero is falsy
+        let r = run_one(&dsn, t);
+        assert!(!r.passed);
+        assert!(r.message.contains("assert returned false"), "msg: {}", r.message);
+    }
+
+    #[test]
+    fn assert_snapshot_with_boolean() {
+        let (_c, dsn) = start_pg();
+        let mut t = test_spec("t");
+        t.assert_snapshot = vec![SnapshotAssertSpec {
+            query: "SELECT true AS b".into(),
+            rows: vec![vec!["true".into()]],
+        }];
+        let r = run_one(&dsn, t);
+        assert!(r.passed, "expected pass: {}", r.message);
+    }
+
+    #[test]
+    fn assert_snapshot_with_float() {
+        let (_c, dsn) = start_pg();
+        let mut t = test_spec("t");
+        t.assert_snapshot = vec![SnapshotAssertSpec {
+            query: "SELECT 3.14::float8 AS f".into(),
+            rows: vec![vec!["3.14".into()]],
+        }];
+        let r = run_one(&dsn, t);
+        assert!(r.passed, "expected pass: {}", r.message);
+    }
+
+    #[test]
+    fn assert_eq_with_integer() {
+        let (_c, dsn) = start_pg();
+        let mut t = test_spec("t");
+        t.assert_eq = vec![EqAssertSpec {
+            query: "SELECT 100".into(),
+            expected: "100".into(),
+        }];
+        let r = run_one(&dsn, t);
+        assert!(r.passed, "expected pass: {}", r.message);
+    }
+
+    #[test]
+    fn assert_eq_with_boolean() {
+        let (_c, dsn) = start_pg();
+        let mut t = test_spec("t");
+        t.assert_eq = vec![EqAssertSpec {
+            query: "SELECT true".into(),
+            expected: "true".into(),
+        }];
+        let r = run_one(&dsn, t);
+        assert!(r.passed, "expected pass: {}", r.message);
     }
 }
