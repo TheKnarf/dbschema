@@ -2,7 +2,8 @@ pub mod config;
 
 pub use config::{
     AggregateSpec, BackReferenceSpec, CheckSpec, CollationSpec, ColumnSpec, CompositeTypeFieldSpec,
-    CompositeTypeSpec, Config, DomainSpec, EnumSpec, EventTriggerSpec, ExtensionSpec,
+    CompositeTypeSpec, Config, DomainSpec, EnumSpec, EqAssertSpec, ErrorAssertSpec,
+    EventTriggerSpec, ExtensionSpec,
     ForeignDataWrapperSpec, ForeignKeySpec, ForeignServerSpec, ForeignTableSpec, FunctionSpec,
     GrantSpec, IndexSpec, MaterializedViewSpec, NotifyAssertSpec, OperatorSpec, OutputSpec, PartitionBySpec,
     PartitionSpec, PolicySpec, PrimaryKeySpec, ProcedureSpec, ProviderSpec, PublicationSpec,

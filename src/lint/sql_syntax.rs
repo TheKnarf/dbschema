@@ -97,6 +97,12 @@ impl LintCheck for SqlSyntax {
             {
                 self.check_stmt(&mut msgs, stmt, &format!("test '{}'", test.name));
             }
+            for ae in &test.assert_eq {
+                self.check_stmt(&mut msgs, &ae.query, &format!("test '{}' assert_eq", test.name));
+            }
+            for ae in &test.assert_error {
+                self.check_stmt(&mut msgs, &ae.sql, &format!("test '{}' assert_error", test.name));
+            }
         }
 
         msgs

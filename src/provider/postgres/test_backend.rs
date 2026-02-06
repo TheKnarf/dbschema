@@ -1,13 +1,85 @@
 use anyhow::{Context, Result, anyhow};
 use fallible_iterator::FallibleIterator;
-use postgres::{Client, NoTls, Row};
+use postgres::{Client, NoTls, Row, Transaction};
 use std::collections::HashSet;
 use std::time::Duration;
 use url::Url;
 
-use crate::ir::Config;
+use crate::ir::{Config, TestSpec};
 use crate::test_runner::{TestBackend, TestResult, TestSummary, is_verbose};
 use log::info;
+
+/// Run assert, assert_eq, assert_fail, and assert_error against a transaction.
+/// Returns `Ok(())` on success, or `Err(message)` on the first failure.
+fn run_assertions(tx: &mut Transaction, t: &TestSpec) -> std::result::Result<(), String> {
+    for a in &t.asserts {
+        if is_verbose() {
+            info!("-- assert: {}", a);
+        }
+        match tx.query(a, &[]) {
+            Ok(rows) => match assert_rows_true(&rows) {
+                Ok(true) => {}
+                Ok(false) => return Err("assert returned false".into()),
+                Err(e) => return Err(format!("assert error: {}", e)),
+            },
+            Err(e) => return Err(format!("assert query error: {}", e)),
+        }
+    }
+    for ae in &t.assert_eq {
+        if is_verbose() {
+            info!("-- assert-eq: {} == {}", ae.query, ae.expected);
+        }
+        match tx.query(ae.query.as_str(), &[]) {
+            Ok(rows) => match extract_first_column_string(&rows) {
+                Ok(actual) => {
+                    if actual != ae.expected {
+                        return Err(format!(
+                            "assert_eq: expected '{}', got '{}'",
+                            ae.expected, actual
+                        ));
+                    }
+                }
+                Err(e) => return Err(format!("assert_eq error: {}", e)),
+            },
+            Err(e) => return Err(format!("assert_eq query error: {}", e)),
+        }
+    }
+    for a in &t.assert_fail {
+        if is_verbose() {
+            info!("-- assert-fail: {}", a);
+        }
+        match tx.batch_execute(a) {
+            Ok(_) => return Err("assert-fail succeeded unexpectedly".into()),
+            Err(_) => {}
+        }
+    }
+    for ae in &t.assert_error {
+        if is_verbose() {
+            info!("-- assert-error: {} (expect: {})", ae.sql, ae.message_contains);
+        }
+        let mut sp = tx.savepoint("assert_error_sp").map_err(|e| format!("savepoint error: {}", e))?;
+        match sp.batch_execute(ae.sql.as_str()) {
+            Ok(_) => {
+                let _ = sp.rollback();
+                return Err(format!(
+                    "assert_error: statement succeeded unexpectedly (expected error containing '{}')",
+                    ae.message_contains
+                ));
+            }
+            Err(e) => {
+                let err_msg = e.to_string();
+                let _ = sp.rollback();
+                if !err_msg.contains(&ae.message_contains) {
+                    return Err(format!(
+                        "assert_error: error message '{}' does not contain '{}'",
+                        err_msg, ae.message_contains
+                    ));
+                }
+            }
+        }
+    }
+    Ok(())
+}
 
 pub struct PostgresTestBackend;
 
@@ -106,33 +178,14 @@ impl TestBackend for PostgresTestBackend {
                     }
                 }
 
-                // 5. Run regular asserts in a fresh transaction (if any)
-                if ok && !t.asserts.is_empty() {
+                // 5. Run remaining assertions in a fresh transaction (if any)
+                let has_tx_asserts = !t.asserts.is_empty() || !t.assert_eq.is_empty()
+                    || !t.assert_fail.is_empty() || !t.assert_error.is_empty();
+                if ok && has_tx_asserts {
                     let mut tx = client.transaction()?;
-                    for a in &t.asserts {
-                        if is_verbose() {
-                            info!("-- assert: {}", a);
-                        }
-                        match tx.query(a, &[]) {
-                            Ok(rows) => match assert_rows_true(&rows) {
-                                Ok(true) => {}
-                                Ok(false) => {
-                                    ok = false;
-                                    failed_msg = "assert returned false".into();
-                                    break;
-                                }
-                                Err(e) => {
-                                    ok = false;
-                                    failed_msg = format!("assert error: {}", e);
-                                    break;
-                                }
-                            },
-                            Err(e) => {
-                                ok = false;
-                                failed_msg = format!("assert query error: {}", e);
-                                break;
-                            }
-                        }
+                    if let Err(msg) = run_assertions(&mut tx, t) {
+                        ok = false;
+                        failed_msg = msg;
                     }
                     let _ = tx.rollback();
                 }
@@ -145,7 +198,7 @@ impl TestBackend for PostgresTestBackend {
                     let _ = client.batch_execute(s);
                 }
             } else {
-                // --- Standard transactional path (unchanged) ---
+                // --- Standard transactional path ---
                 let mut tx = client.transaction()?;
                 for s in &t.setup {
                     if is_verbose() {
@@ -158,45 +211,9 @@ impl TestBackend for PostgresTestBackend {
                     }
                 }
                 if ok {
-                    for a in &t.asserts {
-                        if is_verbose() {
-                            info!("-- assert: {}", a);
-                        }
-                        match tx.query(a, &[]) {
-                            Ok(rows) => match assert_rows_true(&rows) {
-                                Ok(true) => {}
-                                Ok(false) => {
-                                    ok = false;
-                                    failed_msg = "assert returned false".into();
-                                    break;
-                                }
-                                Err(e) => {
-                                    ok = false;
-                                    failed_msg = format!("assert error: {}", e);
-                                    break;
-                                }
-                            },
-                            Err(e) => {
-                                ok = false;
-                                failed_msg = format!("assert query error: {}", e);
-                                break;
-                            }
-                        }
-                    }
-                }
-                if ok {
-                    for a in &t.assert_fail {
-                        if is_verbose() {
-                            info!("-- assert-fail: {}", a);
-                        }
-                        match tx.batch_execute(a) {
-                            Ok(_) => {
-                                ok = false;
-                                failed_msg = "assert-fail succeeded unexpectedly".into();
-                                break;
-                            }
-                            Err(_) => {}
-                        }
+                    if let Err(msg) = run_assertions(&mut tx, t) {
+                        ok = false;
+                        failed_msg = msg;
                     }
                 }
                 let _ = tx.rollback();
@@ -296,6 +313,32 @@ static CONVERTERS: &[Converter] = converters!(
 /// * `bool`
 /// * any signed or unsigned integer (non-zero is treated as `true`)
 /// * text values "t" or "true" (case-insensitive)
+fn extract_first_column_string(rows: &[Row]) -> Result<String> {
+    if rows.is_empty() {
+        return Err(anyhow!("query returned no rows"));
+    }
+    let row = &rows[0];
+    if row.columns().is_empty() {
+        return Err(anyhow!("query returned no columns"));
+    }
+    if let Ok(v) = row.try_get::<usize, String>(0) {
+        return Ok(v);
+    }
+    if let Ok(v) = row.try_get::<usize, bool>(0) {
+        return Ok(v.to_string());
+    }
+    if let Ok(v) = row.try_get::<usize, i64>(0) {
+        return Ok(v.to_string());
+    }
+    if let Ok(v) = row.try_get::<usize, i32>(0) {
+        return Ok(v.to_string());
+    }
+    if let Ok(v) = row.try_get::<usize, f64>(0) {
+        return Ok(v.to_string());
+    }
+    Err(anyhow!("unsupported column type"))
+}
+
 fn assert_rows_true(rows: &[Row]) -> Result<bool> {
     if rows.is_empty() {
         return Ok(false);

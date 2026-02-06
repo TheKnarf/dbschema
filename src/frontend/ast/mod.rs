@@ -525,12 +525,26 @@ pub struct NotifyAssert {
 }
 
 #[derive(Debug, Clone)]
+pub struct EqAssert {
+    pub query: String,
+    pub expected: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct ErrorAssert {
+    pub sql: String,
+    pub message_contains: String,
+}
+
+#[derive(Debug, Clone)]
 pub struct AstTest {
     pub name: String,
     pub setup: Vec<String>,
     pub asserts: Vec<String>,
     pub assert_fail: Vec<String>,
     pub assert_notify: Vec<NotifyAssert>,
+    pub assert_eq: Vec<EqAssert>,
+    pub assert_error: Vec<ErrorAssert>,
     pub teardown: Vec<String>,
 }
 

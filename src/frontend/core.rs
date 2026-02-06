@@ -1693,9 +1693,29 @@ fn load_file(
                 payload_contains,
             });
         }
-        if asserts.is_empty() && assert_fail.is_empty() && assert_notify.is_empty() {
+        let mut assert_eq = Vec::new();
+        for eb in b.blocks().filter(|eb| eb.identifier() == "assert_eq") {
+            let eb_body = eb.body();
+            let query = get_attr_string(eb_body, "query", &env)?
+                .ok_or_else(|| anyhow::anyhow!("assert_eq missing 'query'"))?;
+            let expected = get_attr_string(eb_body, "expected", &env)?
+                .ok_or_else(|| anyhow::anyhow!("assert_eq missing 'expected'"))?;
+            assert_eq.push(ast::EqAssert { query, expected });
+        }
+        let mut assert_error = Vec::new();
+        for erb in b.blocks().filter(|erb| erb.identifier() == "assert_error") {
+            let erb_body = erb.body();
+            let sql = get_attr_string(erb_body, "sql", &env)?
+                .ok_or_else(|| anyhow::anyhow!("assert_error missing 'sql'"))?;
+            let message_contains = get_attr_string(erb_body, "message_contains", &env)?
+                .ok_or_else(|| anyhow::anyhow!("assert_error missing 'message_contains'"))?;
+            assert_error.push(ast::ErrorAssert { sql, message_contains });
+        }
+        if asserts.is_empty() && assert_fail.is_empty() && assert_notify.is_empty()
+            && assert_eq.is_empty() && assert_error.is_empty()
+        {
             return Err(anyhow::anyhow!(
-                "test '{}' must define 'assert', 'assert_fail', or 'assert_notify'",
+                "test '{}' must define 'assert', 'assert_fail', 'assert_notify', 'assert_eq', or 'assert_error'",
                 name
             ));
         }
@@ -1709,6 +1729,8 @@ fn load_file(
             asserts,
             assert_fail,
             assert_notify,
+            assert_eq,
+            assert_error,
             teardown,
         });
     }

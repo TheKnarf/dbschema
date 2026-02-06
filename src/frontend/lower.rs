@@ -688,6 +688,24 @@ impl From<ast::NotifyAssert> for ir::NotifyAssertSpec {
     }
 }
 
+impl From<ast::EqAssert> for ir::EqAssertSpec {
+    fn from(e: ast::EqAssert) -> Self {
+        Self {
+            query: e.query,
+            expected: e.expected,
+        }
+    }
+}
+
+impl From<ast::ErrorAssert> for ir::ErrorAssertSpec {
+    fn from(e: ast::ErrorAssert) -> Self {
+        Self {
+            sql: e.sql,
+            message_contains: e.message_contains,
+        }
+    }
+}
+
 impl From<ast::AstTest> for ir::TestSpec {
     fn from(t: ast::AstTest) -> Self {
         Self {
@@ -696,6 +714,8 @@ impl From<ast::AstTest> for ir::TestSpec {
             asserts: t.asserts,
             assert_fail: t.assert_fail,
             assert_notify: t.assert_notify.into_iter().map(Into::into).collect(),
+            assert_eq: t.assert_eq.into_iter().map(Into::into).collect(),
+            assert_error: t.assert_error.into_iter().map(Into::into).collect(),
             teardown: t.teardown,
         }
     }
