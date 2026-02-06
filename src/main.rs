@@ -693,6 +693,7 @@ mod tests {
 
     #[test]
     fn test_run_target() -> Result<()> {
+        let original_dir = std::env::current_dir()?;
         let dir = tempdir()?;
         let dbschema_toml_path = dir.path().join("dbschema.toml");
         let main_hcl_path = dir.path().join("main.hcl");
@@ -824,6 +825,7 @@ table_name = "from_file"
         let output_alt_name = fs::read_to_string("with_alt_name.json")?;
         assert!(output_alt_name.contains("from_file"));
 
+        std::env::set_current_dir(&original_dir)?;
         dir.close()?;
         Ok(())
     }
