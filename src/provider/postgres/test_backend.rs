@@ -121,7 +121,10 @@ fn run_assertions(tx: &mut Transaction, t: &TestSpec, invariants: &[InvariantSpe
                 ));
             }
             Err(e) => {
-                let err_msg = e.to_string();
+                let err_msg = match e.as_db_error() {
+                    Some(db) => db.to_string(),
+                    None => e.to_string(),
+                };
                 let _ = sp.rollback();
                 if !err_msg.contains(&ae.message_contains) {
                     return Err(format!(
