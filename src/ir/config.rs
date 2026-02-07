@@ -558,6 +558,15 @@ pub struct ScenarioMapSpec {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct ScenarioStepSpec {
+    pub setup: Vec<String>,
+    pub maps: Vec<ScenarioMapSpec>,
+    pub checks: Vec<InvariantSpec>,
+    pub assert_eq: Vec<EqAssertSpec>,
+    pub assert_snapshot: Vec<SnapshotAssertSpec>,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct ScenarioSpec {
     pub name: String,
     pub program: String,
@@ -570,6 +579,9 @@ pub struct ScenarioSpec {
     pub assert_snapshot: Vec<SnapshotAssertSpec>,
     pub params: Vec<(String, String)>,
     pub teardown: Vec<String>,
+    pub seed: Option<u32>,
+    pub steps: Option<usize>,
+    pub step_blocks: Vec<ScenarioStepSpec>,
 }
 
 #[derive(Debug, Clone, Serialize)]

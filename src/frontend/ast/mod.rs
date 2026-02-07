@@ -571,6 +571,15 @@ pub struct ScenarioMap {
 }
 
 #[derive(Debug, Clone)]
+pub struct AstScenarioStep {
+    pub setup: Vec<String>,
+    pub maps: Vec<ScenarioMap>,
+    pub checks: Vec<AstInvariant>,
+    pub assert_eq: Vec<EqAssert>,
+    pub assert_snapshot: Vec<SnapshotAssert>,
+}
+
+#[derive(Debug, Clone)]
 pub struct AstScenario {
     pub name: String,
     pub program: String,
@@ -583,6 +592,9 @@ pub struct AstScenario {
     pub assert_snapshot: Vec<SnapshotAssert>,
     pub params: Vec<(String, String)>,
     pub teardown: Vec<String>,
+    pub seed: Option<u32>,
+    pub steps: Option<usize>,
+    pub step_blocks: Vec<AstScenarioStep>,
 }
 
 #[derive(Debug, Clone)]

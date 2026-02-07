@@ -1353,6 +1353,47 @@ impl ForEachSupport for AstSubscription {
     }
 }
 
+/// Parse assert_snapshot blocks from a body (shared between top-level and step blocks).
+fn parse_scenario_snapshot_blocks(body: &Body, env: &EnvVars) -> Result<Vec<SnapshotAssert>> {
+    let mut assert_snapshot = Vec::new();
+    for sb in body.blocks().filter(|sb| sb.identifier() == "assert_snapshot") {
+        let sb_body = sb.body();
+        let query = get_attr_string(sb_body, "query", env)?
+            .ok_or_else(|| anyhow::anyhow!("assert_snapshot missing 'query'"))?;
+        let rows_attr = find_attr(sb_body, "rows")
+            .ok_or_else(|| anyhow::anyhow!("assert_snapshot missing 'rows'"))?;
+        let rows_val = expr_to_value(rows_attr.expr(), env)?;
+        let rows = match rows_val {
+            Value::Array(outer) => {
+                let mut result = Vec::new();
+                for row in outer {
+                    match row {
+                        Value::Array(inner) => {
+                            let cols: Vec<String> = inner
+                                .into_iter()
+                                .map(|v| match v {
+                                    Value::String(s) => Ok(s),
+                                    other => Ok(format!("{}", other)),
+                                })
+                                .collect::<Result<_, anyhow::Error>>()?;
+                            result.push(cols);
+                        }
+                        _ => {
+                            return Err(anyhow::anyhow!(
+                                "assert_snapshot rows must be arrays of arrays"
+                            ))
+                        }
+                    }
+                }
+                result
+            }
+            _ => return Err(anyhow::anyhow!("assert_snapshot 'rows' must be an array")),
+        };
+        assert_snapshot.push(SnapshotAssert { query, rows });
+    }
+    Ok(assert_snapshot)
+}
+
 // Scenario implementation
 impl ForEachSupport for AstScenario {
     type Item = Self;
@@ -1372,6 +1413,16 @@ impl ForEachSupport for AstScenario {
         let teardown = match find_attr(body, "teardown") {
             Some(attr) => expr_to_string_vec(attr.expr(), env)?,
             None => Vec::new(),
+        };
+
+        let seed = match get_attr_string(body, "seed", env)? {
+            Some(s) => Some(s.parse::<u32>().with_context(|| format!("scenario 'seed' must be a non-negative integer, got '{}'", s))?),
+            None => None,
+        };
+
+        let steps = match get_attr_string(body, "steps", env)? {
+            Some(s) => Some(s.parse::<usize>().with_context(|| "steps must be a positive integer")?),
+            None => None,
         };
 
         // Parse params object
@@ -1440,41 +1491,71 @@ impl ForEachSupport for AstScenario {
         }
 
         // Parse assert_snapshot blocks
-        let mut assert_snapshot = Vec::new();
-        for sb in body.blocks().filter(|sb| sb.identifier() == "assert_snapshot") {
-            let sb_body = sb.body();
-            let query = get_attr_string(sb_body, "query", env)?
-                .ok_or_else(|| anyhow::anyhow!("assert_snapshot missing 'query'"))?;
-            let rows_attr = find_attr(sb_body, "rows")
-                .ok_or_else(|| anyhow::anyhow!("assert_snapshot missing 'rows'"))?;
-            let rows_val = expr_to_value(rows_attr.expr(), env)?;
-            let rows = match rows_val {
-                Value::Array(outer) => {
-                    let mut result = Vec::new();
-                    for row in outer {
-                        match row {
-                            Value::Array(inner) => {
-                                let cols: Vec<String> = inner
-                                    .into_iter()
-                                    .map(|v| match v {
-                                        Value::String(s) => Ok(s),
-                                        other => Ok(format!("{}", other)),
-                                    })
-                                    .collect::<Result<_, anyhow::Error>>()?;
-                                result.push(cols);
-                            }
-                            _ => {
-                                return Err(anyhow::anyhow!(
-                                    "assert_snapshot rows must be arrays of arrays"
-                                ))
-                            }
-                        }
-                    }
-                    result
-                }
-                _ => return Err(anyhow::anyhow!("assert_snapshot 'rows' must be an array")),
+        let assert_snapshot = parse_scenario_snapshot_blocks(body, env)?;
+
+        // Parse step {} blocks
+        let mut step_blocks = Vec::new();
+        for sblk in body.blocks().filter(|b| b.identifier() == "step") {
+            let sb = sblk.body();
+
+            let step_setup = match find_attr(sb, "setup") {
+                Some(attr) => expr_to_string_vec(attr.expr(), env)?,
+                None => Vec::new(),
             };
-            assert_snapshot.push(SnapshotAssert { query, rows });
+
+            let mut step_maps = Vec::new();
+            for mblk in sb.blocks().filter(|b| b.identifier() == "map") {
+                let atom_name = mblk
+                    .labels()
+                    .get(0)
+                    .ok_or_else(|| anyhow::anyhow!("map block missing atom name label"))?
+                    .as_str()
+                    .to_string();
+                let mb = mblk.body();
+                let sql = get_attr_string(mb, "sql", env)?
+                    .context("map 'sql' is required")?;
+                let order_by = match get_attr_string(mb, "order_by", env)? {
+                    Some(s) => Some(s.parse::<usize>().with_context(|| "order_by must be an integer")?),
+                    None => None,
+                };
+                step_maps.push(ScenarioMap { atom_name, sql, order_by });
+            }
+
+            let mut step_checks = Vec::new();
+            for cblk in sb.blocks().filter(|b| b.identifier() == "check") {
+                let check_name = cblk
+                    .labels()
+                    .get(0)
+                    .ok_or_else(|| anyhow::anyhow!("check block missing name label"))?
+                    .as_str()
+                    .to_string();
+                let cb = cblk.body();
+                let asserts = match find_attr(cb, "assert") {
+                    Some(attr) => expr_to_string_vec(attr.expr(), env)?,
+                    None => bail!("check '{}' must define assert = [..]", check_name),
+                };
+                step_checks.push(AstInvariant { name: check_name, asserts });
+            }
+
+            let mut step_assert_eq = Vec::new();
+            for eb in sb.blocks().filter(|eb| eb.identifier() == "assert_eq") {
+                let eb_body = eb.body();
+                let query = get_attr_string(eb_body, "query", env)?
+                    .ok_or_else(|| anyhow::anyhow!("assert_eq missing 'query'"))?;
+                let expected = get_attr_string(eb_body, "expected", env)?
+                    .ok_or_else(|| anyhow::anyhow!("assert_eq missing 'expected'"))?;
+                step_assert_eq.push(EqAssert { query, expected });
+            }
+
+            let step_assert_snapshot = parse_scenario_snapshot_blocks(sb, env)?;
+
+            step_blocks.push(AstScenarioStep {
+                setup: step_setup,
+                maps: step_maps,
+                checks: step_checks,
+                assert_eq: step_assert_eq,
+                assert_snapshot: step_assert_snapshot,
+            });
         }
 
         Ok(AstScenario {
@@ -1489,6 +1570,9 @@ impl ForEachSupport for AstScenario {
             assert_snapshot,
             params,
             teardown,
+            seed,
+            steps,
+            step_blocks,
         })
     }
 

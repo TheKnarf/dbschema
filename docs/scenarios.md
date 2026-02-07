@@ -148,6 +148,22 @@ teardown = [
 ]
 ```
 
+### `seed`
+
+Random seed for the clingo solver. Controls answer set enumeration order for reproducible test runs.
+
+When omitted, a random seed is generated automatically. When a scenario test fails, the seed is included in the error message so you can reproduce the exact run.
+
+```hcl
+seed = 42
+```
+
+Override all scenario seeds from the CLI:
+
+```bash
+dbschema test --seed 42 --dsn postgres://... --apply
+```
+
 ## Execution order
 
 For each answer set produced by clingo:
@@ -175,6 +191,116 @@ scenario[1: bid(alice,200), bid(bob,100)]
 ```
 
 Up to 5 atoms are shown; larger sets display `... (N total)`.
+
+## Multi-step scenarios
+
+Multi-step scenarios use clingo's `#program step(t)` directive to model temporal workflows. Step 1 might create entities, step 2 performs actions, step 3 verifies results. Each step commits its own transaction so data accumulates across steps.
+
+### `steps` attribute
+
+Number of step parts to ground. When set, clingo grounds `base` + `step(1)` through `step(N)` together, then solves once.
+
+```hcl
+steps = 2
+```
+
+### `step {}` blocks
+
+Ordered blocks that execute sequentially for each answer set. Each step block supports the same elements as the top level: `setup`, `map`, `check`, `assert_eq`, `assert_snapshot`.
+
+```hcl
+step {
+  map "bid" {
+    sql = "INSERT INTO bids (user_name, amount) VALUES ('{1}', {2})"
+  }
+  check "bids_exist" {
+    assert = ["SELECT COUNT(*) > 0 FROM bids"]
+  }
+}
+
+step {
+  map "winner" {
+    sql = "UPDATE users SET won = true WHERE name = '{1}'"
+  }
+  assert_eq {
+    query = "SELECT COUNT(*)::text FROM users WHERE won = true"
+    expected = "1"
+  }
+}
+```
+
+### ASP `#program step(t)` usage
+
+The ASP program uses `#program step(t).` to declare rules that are grounded for each step value. Use conditions on `t` to control which atoms appear at which step:
+
+```asp
+#program base.
+user(alice; bob).
+
+#program step(t).
+bid(U, 100) :- user(U), t == 1.
+winner(U) :- bid(U, A), A = #max { V : bid(_, V) }, t == 2.
+```
+
+### Multi-step execution order
+
+For each answer set:
+
+1. **Base transaction**: begin tx → top-level `setup` SQL → top-level `map` blocks → commit
+2. **For each `step` block** (in declaration order):
+   - Begin transaction
+   - Run step `setup` SQL
+   - Execute step `map` blocks against the full atom set
+   - Run step `assert_eq` / `assert_snapshot`
+   - Run step `check` blocks
+   - Commit transaction
+3. **Final verification transaction**: begin tx → top-level `assert_eq` / `assert_snapshot` → top-level `check` blocks → global `invariant` blocks → rollback (read-only)
+4. **Teardown**: execute `teardown` SQL (cleanup committed data)
+
+### Example
+
+```hcl
+scenario "auction_workflow" {
+  program = <<-ASP
+    #program base.
+    user(alice; bob).
+
+    #program step(t).
+    bid(U, 100) :- user(U), t == 1.
+    winner(U) :- bid(U, A), A = #max { V : bid(_, V) }, t == 2.
+  ASP
+
+  steps = 2
+
+  setup = ["INSERT INTO items (name) VALUES ('Widget')"]
+
+  step {
+    map "bid" {
+      sql = "INSERT INTO bids (user_name, amount) VALUES ('{1}', {2})"
+    }
+    check "bids_exist" {
+      assert = ["SELECT COUNT(*) > 0 FROM bids"]
+    }
+  }
+
+  step {
+    map "winner" {
+      sql = "UPDATE users SET won = true WHERE name = '{1}'"
+    }
+    assert_eq {
+      query = "SELECT COUNT(*)::text FROM users WHERE won = true"
+      expected = "1"
+    }
+  }
+
+  teardown = [
+    "DELETE FROM bids",
+    "DELETE FROM items",
+  ]
+}
+```
+
+**Note:** Teardown is essential for multi-step scenarios since data is committed (not rolled back).
 
 ## Running scenarios
 

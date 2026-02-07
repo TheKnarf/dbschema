@@ -1759,4 +1759,144 @@ mod tests {
         assert_eq!(cfg.scenarios[0].teardown[0], "DELETE FROM test_table");
         assert_eq!(cfg.scenarios[0].teardown[1], "DROP TABLE IF EXISTS test_table");
     }
+
+    #[test]
+    fn parse_scenario_seed() {
+        let mut files = HashMap::new();
+        files.insert(
+            p("/root/main.hcl"),
+            r#"
+            scenario "seeded" {
+              program = "a(1)."
+              seed = 42
+              map "a" {
+                sql = "SELECT {1}"
+              }
+            }
+            "#
+            .to_string(),
+        );
+        let loader = MapLoader { files };
+        let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
+        assert_eq!(cfg.scenarios[0].seed, Some(42));
+    }
+
+    #[test]
+    fn parse_scenario_seed_omitted() {
+        let mut files = HashMap::new();
+        files.insert(
+            p("/root/main.hcl"),
+            r#"
+            scenario "no_seed" {
+              program = "a(1)."
+              map "a" {
+                sql = "SELECT {1}"
+              }
+            }
+            "#
+            .to_string(),
+        );
+        let loader = MapLoader { files };
+        let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
+        assert_eq!(cfg.scenarios[0].seed, None);
+    }
+
+    #[test]
+    fn parse_scenario_with_steps() {
+        let mut files = HashMap::new();
+        files.insert(
+            p("/root/main.hcl"),
+            r#"
+            scenario "multi_step" {
+              program = <<-ASP
+                #program base.
+                user(alice; bob).
+                #program step(1).
+                bid(U, 100) :- user(U).
+                #program step(2).
+                winner(U) :- bid(U, A), A = #max { V : bid(_, V) }.
+              ASP
+
+              steps = 2
+
+              setup = ["INSERT INTO items (name) VALUES ('Widget')"]
+
+              step {
+                map "bid" {
+                  sql = "INSERT INTO bids (user_name, amount) VALUES ('{1}', {2})"
+                }
+                check "bids_exist" {
+                  assert = ["SELECT COUNT(*) > 0 FROM bids"]
+                }
+              }
+
+              step {
+                map "winner" {
+                  sql = "UPDATE users SET won = true WHERE name = '{1}'"
+                }
+                assert_eq {
+                  query = "SELECT COUNT(*)::text FROM users WHERE won = true"
+                  expected = "1"
+                }
+                assert_snapshot {
+                  query = "SELECT 1 AS a"
+                  rows = [["1"]]
+                }
+              }
+
+              teardown = ["DELETE FROM bids"]
+            }
+            "#
+            .to_string(),
+        );
+        let loader = MapLoader { files };
+        let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
+        assert_eq!(cfg.scenarios.len(), 1);
+        assert_eq!(cfg.scenarios[0].steps, Some(2));
+        assert_eq!(cfg.scenarios[0].step_blocks.len(), 2);
+        // Step 1
+        assert_eq!(cfg.scenarios[0].step_blocks[0].maps.len(), 1);
+        assert_eq!(cfg.scenarios[0].step_blocks[0].maps[0].atom_name, "bid");
+        assert_eq!(cfg.scenarios[0].step_blocks[0].checks.len(), 1);
+        assert_eq!(cfg.scenarios[0].step_blocks[0].checks[0].name, "bids_exist");
+        // Step 2
+        assert_eq!(cfg.scenarios[0].step_blocks[1].maps.len(), 1);
+        assert_eq!(cfg.scenarios[0].step_blocks[1].maps[0].atom_name, "winner");
+        assert_eq!(cfg.scenarios[0].step_blocks[1].assert_eq.len(), 1);
+        assert_eq!(cfg.scenarios[0].step_blocks[1].assert_snapshot.len(), 1);
+        // Top-level fields still work
+        assert_eq!(cfg.scenarios[0].setup.len(), 1);
+        assert_eq!(cfg.scenarios[0].teardown.len(), 1);
+    }
+
+    #[test]
+    fn parse_scenario_no_steps_backward_compat() {
+        let mut files = HashMap::new();
+        files.insert(
+            p("/root/main.hcl"),
+            r#"
+            scenario "single_step" {
+              program = "a(1)."
+              map "a" {
+                sql = "SELECT {1}"
+              }
+              check "positive" {
+                assert = ["SELECT 1 > 0"]
+              }
+              assert_eq {
+                query = "SELECT 'ok'"
+                expected = "ok"
+              }
+            }
+            "#
+            .to_string(),
+        );
+        let loader = MapLoader { files };
+        let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
+        assert_eq!(cfg.scenarios[0].steps, None);
+        assert!(cfg.scenarios[0].step_blocks.is_empty());
+        assert_eq!(cfg.scenarios[0].maps.len(), 1);
+        assert_eq!(cfg.scenarios[0].checks.len(), 1);
+        assert_eq!(cfg.scenarios[0].assert_eq.len(), 1);
+    }
 }

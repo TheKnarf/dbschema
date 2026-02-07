@@ -752,6 +752,18 @@ impl From<ast::ScenarioMap> for ir::ScenarioMapSpec {
     }
 }
 
+impl From<ast::AstScenarioStep> for ir::ScenarioStepSpec {
+    fn from(s: ast::AstScenarioStep) -> Self {
+        Self {
+            setup: s.setup,
+            maps: s.maps.into_iter().map(Into::into).collect(),
+            checks: s.checks.into_iter().map(Into::into).collect(),
+            assert_eq: s.assert_eq.into_iter().map(Into::into).collect(),
+            assert_snapshot: s.assert_snapshot.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
 impl From<ast::AstScenario> for ir::ScenarioSpec {
     fn from(s: ast::AstScenario) -> Self {
         Self {
@@ -766,6 +778,9 @@ impl From<ast::AstScenario> for ir::ScenarioSpec {
             assert_snapshot: s.assert_snapshot.into_iter().map(Into::into).collect(),
             params: s.params,
             teardown: s.teardown,
+            seed: s.seed,
+            steps: s.steps,
+            step_blocks: s.step_blocks.into_iter().map(Into::into).collect(),
         }
     }
 }

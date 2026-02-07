@@ -290,13 +290,19 @@ impl TestBackend for PostgresTestBackend {
         #[cfg(feature = "scenario")]
         {
             if !cfg.scenarios.is_empty() {
-                let scenario_results = crate::scenario::run_scenarios(cfg, &mut client)
+                let (scenario_results, scenario_stats) = crate::scenario::run_scenarios(cfg, &mut client)
                     .context("running scenarios")?;
                 for r in scenario_results {
                     if r.passed {
                         passed += 1;
                     }
                     results.push(r);
+                }
+                for s in &scenario_stats {
+                    info!(
+                        "Scenario '{}': seed={}, {} answer sets, {} passed, {} failed",
+                        s.scenario_name, s.seed, s.models_tested, s.passed, s.failed
+                    );
                 }
             }
         }
@@ -454,7 +460,7 @@ mod tests {
         SnapshotAssertSpec, TestSpec,
     };
     #[cfg(feature = "scenario")]
-    use crate::ir::{ScenarioMapSpec, ScenarioSpec};
+    use crate::ir::{ScenarioMapSpec, ScenarioSpec, ScenarioStepSpec};
     use crate::test_runner::TestBackend;
 
     #[test]
@@ -1306,6 +1312,9 @@ mod tests {
             assert_snapshot: vec![],
             params: vec![],
             teardown: vec![],
+            seed: None,
+            steps: None,
+            step_blocks: vec![],
         };
 
         let cfg = Config {
@@ -1392,6 +1401,9 @@ mod tests {
             ],
             params: vec![],
             teardown: vec![],
+            seed: None,
+            steps: None,
+            step_blocks: vec![],
         };
 
         let cfg = Config {
@@ -1441,6 +1453,9 @@ mod tests {
             assert_snapshot: vec![],
             params: vec![],
             teardown: vec![],
+            seed: None,
+            steps: None,
+            step_blocks: vec![],
         };
 
         let cfg = Config {
@@ -1488,6 +1503,9 @@ mod tests {
             assert_snapshot: vec![],
             params: vec![],
             teardown: vec![],
+            seed: None,
+            steps: None,
+            step_blocks: vec![],
         };
 
         let cfg = Config {
@@ -1539,6 +1557,9 @@ mod tests {
             assert_snapshot: vec![],
             params: vec![],
             teardown: vec![],
+            seed: None,
+            steps: None,
+            step_blocks: vec![],
         };
 
         let cfg = Config {
@@ -1589,6 +1610,9 @@ mod tests {
             assert_snapshot: vec![],
             params: vec![],
             teardown: vec![],
+            seed: None,
+            steps: None,
+            step_blocks: vec![],
         };
 
         let cfg = Config {
@@ -1641,6 +1665,9 @@ mod tests {
             assert_snapshot: vec![],
             params: vec![],
             teardown: vec![],
+            seed: None,
+            steps: None,
+            step_blocks: vec![],
         };
 
         let cfg = Config {
@@ -1690,6 +1717,9 @@ mod tests {
             assert_snapshot: vec![],
             params: vec![],
             teardown: vec![],
+            seed: None,
+            steps: None,
+            step_blocks: vec![],
         };
 
         let cfg = Config {
@@ -1741,6 +1771,9 @@ mod tests {
             ],
             params: vec![],
             teardown: vec![],
+            seed: None,
+            steps: None,
+            step_blocks: vec![],
         };
 
         let cfg = Config {
@@ -1778,6 +1811,9 @@ mod tests {
             assert_snapshot: vec![],
             params: vec![],
             teardown: vec![],
+            seed: None,
+            steps: None,
+            step_blocks: vec![],
         };
 
         let cfg = Config {
@@ -1833,6 +1869,9 @@ mod tests {
                 ("n".into(), "2".into()), // #const n=2
             ],
             teardown: vec![],
+            seed: None,
+            steps: None,
+            step_blocks: vec![],
         };
 
         let cfg = Config {
@@ -1885,6 +1924,9 @@ mod tests {
             teardown: vec![
                 "INSERT INTO teardown_log (cleaned) VALUES (true)".into(),
             ],
+            seed: None,
+            steps: None,
+            step_blocks: vec![],
         };
 
         let cfg = Config {
@@ -1949,6 +1991,9 @@ mod tests {
             teardown: vec![
                 "INSERT INTO combined_teardown (done) VALUES (true)".into(),
             ],
+            seed: None,
+            steps: None,
+            step_blocks: vec![],
         };
 
         let cfg = Config {
@@ -1969,5 +2014,622 @@ mod tests {
         let rows = verify_client.query("SELECT COUNT(*) FROM combined_teardown WHERE done = true", &[]).unwrap();
         let count: i64 = rows[0].get(0);
         assert!(count >= 1, "teardown should have run at least once");
+    }
+
+    #[test]
+    #[cfg(feature = "scenario")]
+    fn scenario_with_explicit_seed() {
+        let (_c, dsn) = start_pg();
+
+        {
+            let mut setup_client = Client::connect(&dsn, NoTls).unwrap();
+            setup_client.batch_execute("
+                CREATE TABLE seed_items (id serial PRIMARY KEY, name text);
+            ").unwrap();
+        }
+
+        let scenario = ScenarioSpec {
+            name: "seeded".into(),
+            program: "item(a;b;c). 1 { pick(I) : item(I) } 2.".into(),
+            setup: vec![],
+            maps: vec![
+                ScenarioMapSpec {
+                    atom_name: "pick".into(),
+                    sql: "INSERT INTO seed_items (name) VALUES ('{1}')".into(),
+                    order_by: None,
+                },
+            ],
+            runs: 3,
+            checks: vec![],
+            expect_error: false,
+            assert_eq: vec![],
+            assert_snapshot: vec![],
+            params: vec![],
+            teardown: vec![],
+            seed: Some(42),
+            steps: None,
+            step_blocks: vec![],
+        };
+
+        let cfg = Config {
+            scenarios: vec![scenario],
+            ..Default::default()
+        };
+
+        let summary = PostgresTestBackend.run(&cfg, &dsn, None).unwrap();
+        assert_eq!(summary.results.len(), 3);
+        assert_eq!(summary.passed, 3, "all seeded scenario tests should pass");
+    }
+
+    #[test]
+    #[cfg(feature = "scenario")]
+    fn scenario_seed_in_failure_message() {
+        let (_c, dsn) = start_pg();
+
+        {
+            let mut setup_client = Client::connect(&dsn, NoTls).unwrap();
+            setup_client.batch_execute("
+                CREATE TABLE fail_items (id serial PRIMARY KEY, name text NOT NULL UNIQUE);
+            ").unwrap();
+        }
+
+        let scenario = ScenarioSpec {
+            name: "seed_fail".into(),
+            // Generate answer sets where two atoms produce the same insert, causing a unique violation
+            program: "item(a). 1 { dup(I) : item(I) } 1. :- not dup(a).".into(),
+            setup: vec![
+                "INSERT INTO fail_items (name) VALUES ('a')".into(),
+            ],
+            maps: vec![
+                ScenarioMapSpec {
+                    atom_name: "dup".into(),
+                    sql: "INSERT INTO fail_items (name) VALUES ('{1}')".into(),
+                    order_by: None,
+                },
+            ],
+            runs: 1,
+            checks: vec![],
+            expect_error: false,
+            assert_eq: vec![],
+            assert_snapshot: vec![],
+            params: vec![],
+            teardown: vec![],
+            seed: Some(99),
+            steps: None,
+            step_blocks: vec![],
+        };
+
+        let cfg = Config {
+            scenarios: vec![scenario],
+            ..Default::default()
+        };
+
+        let summary = PostgresTestBackend.run(&cfg, &dsn, None).unwrap();
+        assert_eq!(summary.failed, 1, "should have one failure");
+        let failed = summary.results.iter().find(|r| !r.passed).unwrap();
+        assert!(
+            failed.message.contains("(seed: 99)"),
+            "failure message should contain seed: {}",
+            failed.message
+        );
+    }
+
+    // -- multi-step scenarios --
+
+    #[test]
+    #[cfg(feature = "scenario")]
+    fn scenario_multi_step_basic() {
+        let (_c, dsn) = start_pg();
+
+        {
+            let mut setup_client = Client::connect(&dsn, NoTls).unwrap();
+            setup_client.batch_execute("
+                CREATE TABLE step_items (id serial PRIMARY KEY, name text NOT NULL);
+                CREATE TABLE step_log (id serial PRIMARY KEY, item_name text NOT NULL, action text NOT NULL);
+            ").unwrap();
+        }
+
+        let scenario = ScenarioSpec {
+            name: "multi_step_basic".into(),
+            program: "#program base.\nitem(apple; banana).\n#program step(t).\nadd(I) :- item(I), t == 1.\nlog(I) :- item(I), t == 2.".into(),
+            setup: vec![],
+            maps: vec![],
+            runs: 0,
+            checks: vec![],
+            expect_error: false,
+            assert_eq: vec![
+                EqAssertSpec {
+                    query: "SELECT COUNT(*)::text FROM step_items".into(),
+                    expected: "2".into(),
+                },
+            ],
+            assert_snapshot: vec![],
+            params: vec![],
+            teardown: vec![
+                "DELETE FROM step_log".into(),
+                "DELETE FROM step_items".into(),
+            ],
+            seed: Some(1),
+            steps: Some(2),
+            step_blocks: vec![
+                ScenarioStepSpec {
+                    setup: vec![],
+                    maps: vec![
+                        ScenarioMapSpec {
+                            atom_name: "add".into(),
+                            sql: "INSERT INTO step_items (name) VALUES ('{1}')".into(),
+                            order_by: None,
+                        },
+                    ],
+                    checks: vec![],
+                    assert_eq: vec![],
+                    assert_snapshot: vec![],
+                },
+                ScenarioStepSpec {
+                    setup: vec![],
+                    maps: vec![
+                        ScenarioMapSpec {
+                            atom_name: "log".into(),
+                            sql: "INSERT INTO step_log (item_name, action) VALUES ('{1}', 'logged')".into(),
+                            order_by: None,
+                        },
+                    ],
+                    checks: vec![],
+                    assert_eq: vec![
+                        EqAssertSpec {
+                            query: "SELECT COUNT(*)::text FROM step_log".into(),
+                            expected: "2".into(),
+                        },
+                    ],
+                    assert_snapshot: vec![],
+                },
+            ],
+        };
+
+        let cfg = Config {
+            scenarios: vec![scenario],
+            ..Default::default()
+        };
+
+        let summary = PostgresTestBackend.run(&cfg, &dsn, None).unwrap();
+        assert_eq!(summary.results.len(), 1);
+        assert!(summary.results[0].passed, "multi-step basic test should pass: {}", summary.results[0].message);
+    }
+
+    #[test]
+    #[cfg(feature = "scenario")]
+    fn scenario_multi_step_data_accumulates() {
+        let (_c, dsn) = start_pg();
+
+        {
+            let mut setup_client = Client::connect(&dsn, NoTls).unwrap();
+            setup_client.batch_execute("
+                CREATE TABLE accum (id serial PRIMARY KEY, val int NOT NULL);
+            ").unwrap();
+        }
+
+        let scenario = ScenarioSpec {
+            name: "accum_test".into(),
+            program: "#program base.\nnum(10).\n#program step(t).\nadd(N) :- num(N), t == 1.\nupdate_val(N) :- num(N), t == 2.".into(),
+            setup: vec![],
+            maps: vec![],
+            runs: 0,
+            checks: vec![],
+            expect_error: false,
+            assert_eq: vec![
+                EqAssertSpec {
+                    query: "SELECT val::text FROM accum LIMIT 1".into(),
+                    expected: "20".into(),
+                },
+            ],
+            assert_snapshot: vec![],
+            params: vec![],
+            teardown: vec![
+                "DELETE FROM accum".into(),
+            ],
+            seed: Some(1),
+            steps: Some(2),
+            step_blocks: vec![
+                ScenarioStepSpec {
+                    setup: vec![],
+                    maps: vec![
+                        ScenarioMapSpec {
+                            atom_name: "add".into(),
+                            sql: "INSERT INTO accum (val) VALUES ({1})".into(),
+                            order_by: None,
+                        },
+                    ],
+                    checks: vec![],
+                    assert_eq: vec![
+                        EqAssertSpec {
+                            query: "SELECT val::text FROM accum LIMIT 1".into(),
+                            expected: "10".into(),
+                        },
+                    ],
+                    assert_snapshot: vec![],
+                },
+                ScenarioStepSpec {
+                    setup: vec![],
+                    maps: vec![
+                        ScenarioMapSpec {
+                            atom_name: "update_val".into(),
+                            sql: "UPDATE accum SET val = val + {1}".into(),
+                            order_by: None,
+                        },
+                    ],
+                    checks: vec![],
+                    assert_eq: vec![
+                        EqAssertSpec {
+                            query: "SELECT val::text FROM accum LIMIT 1".into(),
+                            expected: "20".into(),
+                        },
+                    ],
+                    assert_snapshot: vec![],
+                },
+            ],
+        };
+
+        let cfg = Config {
+            scenarios: vec![scenario],
+            ..Default::default()
+        };
+
+        let summary = PostgresTestBackend.run(&cfg, &dsn, None).unwrap();
+        assert_eq!(summary.results.len(), 1);
+        assert!(summary.results[0].passed, "multi-step data accumulation test should pass: {}", summary.results[0].message);
+    }
+
+    #[test]
+    #[cfg(feature = "scenario")]
+    fn scenario_multi_step_setup_checks_snapshot() {
+        let (_c, dsn) = start_pg();
+
+        {
+            let mut setup_client = Client::connect(&dsn, NoTls).unwrap();
+            setup_client.batch_execute("
+                CREATE TABLE ms_products (id serial PRIMARY KEY, name text NOT NULL);
+                CREATE TABLE ms_orders (id serial PRIMARY KEY, product_id int NOT NULL REFERENCES ms_products(id), qty int NOT NULL);
+            ").unwrap();
+        }
+
+        let scenario = ScenarioSpec {
+            name: "step_features".into(),
+            program: "#program base.\nproduct(widget).\n#program step(t).\ncreate(P) :- product(P), t == 1.\norder(P, 5) :- product(P), t == 2.".into(),
+            setup: vec![],
+            maps: vec![],
+            runs: 0,
+            checks: vec![],
+            expect_error: false,
+            assert_eq: vec![
+                EqAssertSpec {
+                    query: "SELECT COUNT(*)::text FROM ms_orders".into(),
+                    expected: "1".into(),
+                },
+            ],
+            assert_snapshot: vec![],
+            params: vec![],
+            teardown: vec![
+                "DELETE FROM ms_orders".into(),
+                "DELETE FROM ms_products".into(),
+            ],
+            seed: Some(1),
+            steps: Some(2),
+            step_blocks: vec![
+                ScenarioStepSpec {
+                    setup: vec![
+                        "INSERT INTO ms_products (name) VALUES ('seed_product')".into(),
+                    ],
+                    maps: vec![
+                        ScenarioMapSpec {
+                            atom_name: "create".into(),
+                            sql: "INSERT INTO ms_products (name) VALUES ('{1}')".into(),
+                            order_by: None,
+                        },
+                    ],
+                    checks: vec![
+                        InvariantSpec {
+                            name: "products_exist".into(),
+                            asserts: vec!["SELECT COUNT(*) > 0 FROM ms_products".into()],
+                        },
+                    ],
+                    assert_eq: vec![
+                        EqAssertSpec {
+                            query: "SELECT COUNT(*)::text FROM ms_products".into(),
+                            expected: "2".into(),
+                        },
+                    ],
+                    assert_snapshot: vec![],
+                },
+                ScenarioStepSpec {
+                    setup: vec![],
+                    maps: vec![
+                        ScenarioMapSpec {
+                            atom_name: "order".into(),
+                            sql: "INSERT INTO ms_orders (product_id, qty) VALUES ((SELECT id FROM ms_products WHERE name = '{1}'), {2})".into(),
+                            order_by: None,
+                        },
+                    ],
+                    checks: vec![],
+                    assert_eq: vec![],
+                    assert_snapshot: vec![
+                        SnapshotAssertSpec {
+                            query: "SELECT p.name, o.qty::text FROM ms_orders o JOIN ms_products p ON p.id = o.product_id ORDER BY p.name".into(),
+                            rows: vec![vec!["widget".into(), "5".into()]],
+                        },
+                    ],
+                },
+            ],
+        };
+
+        let cfg = Config {
+            scenarios: vec![scenario],
+            ..Default::default()
+        };
+
+        let summary = PostgresTestBackend.run(&cfg, &dsn, None).unwrap();
+        assert_eq!(summary.results.len(), 1);
+        assert!(summary.results[0].passed, "step setup/checks/snapshot test should pass: {}", summary.results[0].message);
+    }
+
+    #[test]
+    #[cfg(feature = "scenario")]
+    fn scenario_multi_step_base_maps() {
+        let (_c, dsn) = start_pg();
+
+        {
+            let mut setup_client = Client::connect(&dsn, NoTls).unwrap();
+            setup_client.batch_execute("
+                CREATE TABLE bm_items (id serial PRIMARY KEY, name text NOT NULL);
+                CREATE TABLE bm_tags (id serial PRIMARY KEY, item_name text NOT NULL, tag text NOT NULL);
+            ").unwrap();
+        }
+
+        let scenario = ScenarioSpec {
+            name: "base_maps".into(),
+            program: "#program base.\nitem(apple).\n#program step(t).\ntag(I, fresh) :- item(I), t == 1.".into(),
+            setup: vec![],
+            maps: vec![
+                ScenarioMapSpec {
+                    atom_name: "item".into(),
+                    sql: "INSERT INTO bm_items (name) VALUES ('{1}')".into(),
+                    order_by: None,
+                },
+            ],
+            runs: 0,
+            checks: vec![],
+            expect_error: false,
+            assert_eq: vec![
+                EqAssertSpec {
+                    query: "SELECT COUNT(*)::text FROM bm_tags".into(),
+                    expected: "1".into(),
+                },
+            ],
+            assert_snapshot: vec![],
+            params: vec![],
+            teardown: vec![
+                "DELETE FROM bm_tags".into(),
+                "DELETE FROM bm_items".into(),
+            ],
+            seed: Some(1),
+            steps: Some(1),
+            step_blocks: vec![
+                ScenarioStepSpec {
+                    setup: vec![],
+                    maps: vec![
+                        ScenarioMapSpec {
+                            atom_name: "tag".into(),
+                            sql: "INSERT INTO bm_tags (item_name, tag) VALUES ('{1}', '{2}')".into(),
+                            order_by: None,
+                        },
+                    ],
+                    checks: vec![],
+                    assert_eq: vec![],
+                    assert_snapshot: vec![],
+                },
+            ],
+        };
+
+        let cfg = Config {
+            scenarios: vec![scenario],
+            ..Default::default()
+        };
+
+        let summary = PostgresTestBackend.run(&cfg, &dsn, None).unwrap();
+        assert_eq!(summary.results.len(), 1);
+        assert!(summary.results[0].passed, "base maps + step test should pass: {}", summary.results[0].message);
+    }
+
+    #[test]
+    #[cfg(feature = "scenario")]
+    fn scenario_multi_step_assertion_failure() {
+        let (_c, dsn) = start_pg();
+
+        {
+            let mut setup_client = Client::connect(&dsn, NoTls).unwrap();
+            setup_client.batch_execute("
+                CREATE TABLE af_data (id serial PRIMARY KEY, val int NOT NULL);
+            ").unwrap();
+        }
+
+        let scenario = ScenarioSpec {
+            name: "step_fail".into(),
+            program: "#program base.\nnum(1).\n#program step(t).\nadd(N) :- num(N), t == 1.".into(),
+            setup: vec![],
+            maps: vec![],
+            runs: 0,
+            checks: vec![],
+            expect_error: false,
+            assert_eq: vec![],
+            assert_snapshot: vec![],
+            params: vec![],
+            teardown: vec![
+                "DELETE FROM af_data".into(),
+            ],
+            seed: Some(1),
+            steps: Some(1),
+            step_blocks: vec![
+                ScenarioStepSpec {
+                    setup: vec![],
+                    maps: vec![
+                        ScenarioMapSpec {
+                            atom_name: "add".into(),
+                            sql: "INSERT INTO af_data (val) VALUES ({1})".into(),
+                            order_by: None,
+                        },
+                    ],
+                    checks: vec![],
+                    assert_eq: vec![
+                        EqAssertSpec {
+                            query: "SELECT COUNT(*)::text FROM af_data".into(),
+                            expected: "999".into(), // deliberately wrong
+                        },
+                    ],
+                    assert_snapshot: vec![],
+                },
+            ],
+        };
+
+        let cfg = Config {
+            scenarios: vec![scenario],
+            ..Default::default()
+        };
+
+        let summary = PostgresTestBackend.run(&cfg, &dsn, None).unwrap();
+        assert_eq!(summary.results.len(), 1);
+        assert!(!summary.results[0].passed, "step assertion failure should fail the scenario");
+        assert!(summary.results[0].message.contains("step 1"), "failure message should mention step: {}", summary.results[0].message);
+        assert!(summary.results[0].message.contains("expected '999'"), "failure message should mention expected value: {}", summary.results[0].message);
+    }
+
+    #[test]
+    #[cfg(feature = "scenario")]
+    fn scenario_multi_step_check_failure() {
+        let (_c, dsn) = start_pg();
+
+        {
+            let mut setup_client = Client::connect(&dsn, NoTls).unwrap();
+            setup_client.batch_execute("
+                CREATE TABLE cf_data (id serial PRIMARY KEY, val int NOT NULL);
+            ").unwrap();
+        }
+
+        let scenario = ScenarioSpec {
+            name: "step_check_fail".into(),
+            program: "#program base.\nnum(1).\n#program step(t).\nadd(N) :- num(N), t == 1.".into(),
+            setup: vec![],
+            maps: vec![],
+            runs: 0,
+            checks: vec![],
+            expect_error: false,
+            assert_eq: vec![],
+            assert_snapshot: vec![],
+            params: vec![],
+            teardown: vec![
+                "DELETE FROM cf_data".into(),
+            ],
+            seed: Some(1),
+            steps: Some(1),
+            step_blocks: vec![
+                ScenarioStepSpec {
+                    setup: vec![],
+                    maps: vec![
+                        ScenarioMapSpec {
+                            atom_name: "add".into(),
+                            sql: "INSERT INTO cf_data (val) VALUES ({1})".into(),
+                            order_by: None,
+                        },
+                    ],
+                    checks: vec![
+                        InvariantSpec {
+                            name: "impossible_check".into(),
+                            asserts: vec!["SELECT false".into()], // always fails
+                        },
+                    ],
+                    assert_eq: vec![],
+                    assert_snapshot: vec![],
+                },
+            ],
+        };
+
+        let cfg = Config {
+            scenarios: vec![scenario],
+            ..Default::default()
+        };
+
+        let summary = PostgresTestBackend.run(&cfg, &dsn, None).unwrap();
+        assert_eq!(summary.results.len(), 1);
+        assert!(!summary.results[0].passed, "step check failure should fail the scenario");
+        assert!(summary.results[0].message.contains("step 1"), "failure message should mention step: {}", summary.results[0].message);
+        assert!(summary.results[0].message.contains("impossible_check"), "failure message should mention check name: {}", summary.results[0].message);
+    }
+
+    #[test]
+    #[cfg(feature = "scenario")]
+    fn scenario_multi_step_expect_error() {
+        let (_c, dsn) = start_pg();
+
+        {
+            let mut setup_client = Client::connect(&dsn, NoTls).unwrap();
+            setup_client.batch_execute("
+                CREATE TABLE ee_data (id serial PRIMARY KEY, val int NOT NULL UNIQUE);
+            ").unwrap();
+        }
+
+        // Step 1 inserts val=1, step 2 tries to insert duplicate val=1 → expect_error
+        let scenario = ScenarioSpec {
+            name: "multi_expect_error".into(),
+            program: "#program base.\nnum(1).\n#program step(t).\nadd(N) :- num(N), t == 1.\ndup(N) :- num(N), t == 2.".into(),
+            setup: vec![],
+            maps: vec![],
+            runs: 0,
+            checks: vec![],
+            expect_error: true,
+            assert_eq: vec![],
+            assert_snapshot: vec![],
+            params: vec![],
+            teardown: vec![
+                "DELETE FROM ee_data".into(),
+            ],
+            seed: Some(1),
+            steps: Some(2),
+            step_blocks: vec![
+                ScenarioStepSpec {
+                    setup: vec![],
+                    maps: vec![
+                        ScenarioMapSpec {
+                            atom_name: "add".into(),
+                            sql: "INSERT INTO ee_data (val) VALUES ({1})".into(),
+                            order_by: None,
+                        },
+                    ],
+                    checks: vec![],
+                    assert_eq: vec![],
+                    assert_snapshot: vec![],
+                },
+                ScenarioStepSpec {
+                    setup: vec![],
+                    maps: vec![
+                        ScenarioMapSpec {
+                            atom_name: "dup".into(),
+                            sql: "INSERT INTO ee_data (val) VALUES ({1})".into(), // duplicate unique constraint
+                            order_by: None,
+                        },
+                    ],
+                    checks: vec![],
+                    assert_eq: vec![],
+                    assert_snapshot: vec![],
+                },
+            ],
+        };
+
+        let cfg = Config {
+            scenarios: vec![scenario],
+            ..Default::default()
+        };
+
+        let summary = PostgresTestBackend.run(&cfg, &dsn, None).unwrap();
+        assert_eq!(summary.results.len(), 1);
+        assert!(summary.results[0].passed, "multi-step expect_error should pass when SQL errors: {}", summary.results[0].message);
+        assert!(summary.results[0].message.contains("expected error"), "message should mention expected error: {}", summary.results[0].message);
     }
 }

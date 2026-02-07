@@ -1,10 +1,20 @@
 use anyhow::Result;
 use clingo::{ShowType, SolveMode};
 use postgres::{Client, Transaction};
+use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::ir::{Config, EqAssertSpec, InvariantSpec, ScenarioSpec, SnapshotAssertSpec};
+use crate::ir::{Config, EqAssertSpec, InvariantSpec, ScenarioMapSpec, ScenarioSpec, SnapshotAssertSpec};
 use crate::test_runner::{TestResult, is_verbose};
 use log::info;
+
+/// Statistics collected from a scenario run.
+pub struct ScenarioStats {
+    pub scenario_name: String,
+    pub seed: u32,
+    pub models_tested: usize,
+    pub passed: usize,
+    pub failed: usize,
+}
 
 /// Substitute `{1}`, `{2}`, ... in a SQL template with atom arguments.
 fn substitute_args(template: &str, args: &[String]) -> String {
@@ -13,6 +23,14 @@ fn substitute_args(template: &str, args: &[String]) -> String {
         result = result.replace(&format!("{{{}}}", i + 1), arg);
     }
     result
+}
+
+/// Generate a random seed from current time (no `rand` dependency needed).
+fn generate_random_seed() -> u32 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| (d.as_nanos() & 0xFFFF_FFFF) as u32)
+        .unwrap_or(42)
 }
 
 /// Run assertions (invariants) against a transaction.
@@ -137,27 +155,36 @@ fn build_atoms_label(symbols: &[clingo::Symbol]) -> String {
     }
 }
 
-/// Run all scenarios in the config, returning test results.
+/// Run all scenarios in the config, returning test results and statistics.
 pub fn run_scenarios(
     cfg: &Config,
     client: &mut Client,
-) -> Result<Vec<TestResult>> {
+) -> Result<(Vec<TestResult>, Vec<ScenarioStats>)> {
     let mut all_results = Vec::new();
+    let mut all_stats = Vec::new();
 
     for spec in &cfg.scenarios {
-        let results = run_one_scenario(spec, &cfg.invariants, client)?;
+        let (results, stats) = run_one_scenario(spec, &cfg.invariants, client)?;
         all_results.extend(results);
+        all_stats.push(stats);
     }
 
-    Ok(all_results)
+    Ok((all_results, all_stats))
 }
 
 fn run_one_scenario(
     spec: &ScenarioSpec,
     invariants: &[InvariantSpec],
     client: &mut Client,
-) -> Result<Vec<TestResult>> {
+) -> Result<(Vec<TestResult>, ScenarioStats)> {
     let mut results = Vec::new();
+
+    // Determine seed: use explicit or generate random
+    let seed = spec.seed.unwrap_or_else(generate_random_seed);
+
+    if is_verbose() {
+        info!("-- scenario '{}': seed={}", spec.name, seed);
+    }
 
     // Build program with params (#10)
     let mut full_program = String::new();
@@ -167,17 +194,30 @@ fn run_one_scenario(
     full_program.push_str(&spec.program);
 
     // Create clingo control and add the ASP program
-    // Pass "0" to enumerate all models (by default clingo stops after the first)
-    let mut ctl = clingo::control(vec!["0".into()])
+    // Pass "0" to enumerate all models, plus --seed for reproducibility
+    let mut ctl = clingo::control(vec!["0".into(), format!("--seed={}", seed)])
         .map_err(|e| anyhow::anyhow!("clingo control creation failed: {:?}", e))?;
 
     ctl.add("base", &[], &full_program)
         .map_err(|e| anyhow::anyhow!("clingo add program failed: {:?}", e))?;
 
-    let parts = vec![clingo::Part::new("base", vec![])
-        .map_err(|e| anyhow::anyhow!("clingo part creation failed: {:?}", e))?];
-    ctl.ground(&parts)
-        .map_err(|e| anyhow::anyhow!("clingo ground failed: {:?}", e))?;
+    if let Some(num_steps) = spec.steps {
+        // Multi-step: ground base + all step parts together
+        let mut parts = vec![clingo::Part::new("base", vec![])
+            .map_err(|e| anyhow::anyhow!("clingo part creation failed: {:?}", e))?];
+        for t in 1..=num_steps {
+            parts.push(clingo::Part::new("step", vec![clingo::Symbol::create_number(t as i32)])
+                .map_err(|e| anyhow::anyhow!("clingo step part creation failed: {:?}", e))?);
+        }
+        ctl.ground(&parts)
+            .map_err(|e| anyhow::anyhow!("clingo ground failed: {:?}", e))?;
+    } else {
+        // Single-step: existing behavior
+        let parts = vec![clingo::Part::new("base", vec![])
+            .map_err(|e| anyhow::anyhow!("clingo part creation failed: {:?}", e))?];
+        ctl.ground(&parts)
+            .map_err(|e| anyhow::anyhow!("clingo ground failed: {:?}", e))?;
+    }
 
     // Solve and collect answer sets
     let mut solve_handle = ctl.solve(SolveMode::YIELD, &[])
@@ -219,6 +259,7 @@ fn run_one_scenario(
             spec,
             invariants,
             &symbols,
+            seed,
             client,
         );
 
@@ -228,7 +269,87 @@ fn run_one_scenario(
     solve_handle.close()
         .map_err(|e| anyhow::anyhow!("clingo close failed: {:?}", e))?;
 
-    Ok(results)
+    let passed = results.iter().filter(|r| r.passed).count();
+    let failed = results.len() - passed;
+
+    let stats = ScenarioStats {
+        scenario_name: spec.name.clone(),
+        seed,
+        models_tested: results.len(),
+        passed,
+        failed,
+    };
+
+    Ok((results, stats))
+}
+
+/// Execute map blocks against a transaction, matching atoms from the symbol set.
+/// Returns Ok(Some("ok (expected error)")) if expect_error consumed an error,
+/// Ok(None) on normal success, Err(msg) on unexpected failure.
+fn execute_maps(
+    tx: &mut Transaction,
+    maps: &[ScenarioMapSpec],
+    symbols: &[clingo::Symbol],
+    expect_error: bool,
+    atoms_label: &str,
+    seed: u32,
+) -> std::result::Result<Option<String>, String> {
+    for map in maps {
+        let mut matching_args: Vec<Vec<String>> = Vec::new();
+
+        for sym in symbols {
+            let sym_name = sym.name()
+                .map_err(|e| format!("symbol name error: {:?}", e))?;
+            if sym_name == map.atom_name {
+                let args = sym.arguments()
+                    .map_err(|e| format!("symbol arguments error: {:?}", e))?;
+                let arg_strings: Vec<String> = args.iter().map(|a| {
+                    if let Ok(n) = a.number() {
+                        n.to_string()
+                    } else if let Ok(s) = a.string() {
+                        s.to_string()
+                    } else {
+                        a.name()
+                            .map(|s| s.to_string())
+                            .unwrap_or_else(|_| a.to_string())
+                    }
+                }).collect();
+                matching_args.push(arg_strings);
+            }
+        }
+
+        // Sort by order_by index or alphabetically
+        if let Some(order_idx) = map.order_by {
+            let idx = if order_idx > 0 { order_idx - 1 } else { 0 };
+            matching_args.sort_by(|a, b| {
+                let a_val = a.get(idx).map(|s| s.as_str()).unwrap_or("");
+                let b_val = b.get(idx).map(|s| s.as_str()).unwrap_or("");
+                match (a_val.parse::<f64>(), b_val.parse::<f64>()) {
+                    (Ok(an), Ok(bn)) => an.partial_cmp(&bn).unwrap_or(std::cmp::Ordering::Equal),
+                    _ => a_val.cmp(b_val),
+                }
+            });
+        } else {
+            matching_args.sort();
+        }
+
+        for args in &matching_args {
+            let sql = substitute_args(&map.sql, args);
+            if is_verbose() {
+                info!("-- map '{}': {}", map.atom_name, sql);
+            }
+            match tx.batch_execute(&sql) {
+                Ok(()) => {}
+                Err(e) => {
+                    if expect_error {
+                        return Ok(Some("ok (expected error)".to_string()));
+                    }
+                    return Err(format!("map '{}' SQL failed: {} [atoms: {}] (seed: {})", map.atom_name, e, atoms_label, seed));
+                }
+            }
+        }
+    }
+    Ok(None)
 }
 
 fn execute_answer_set(
@@ -236,102 +357,20 @@ fn execute_answer_set(
     spec: &ScenarioSpec,
     invariants: &[InvariantSpec],
     symbols: &[clingo::Symbol],
+    seed: u32,
     client: &mut Client,
 ) -> TestResult {
     let atoms_label = build_atoms_label(symbols);
 
-    let run_result = (|| -> std::result::Result<String, String> {
-        let mut tx = client.transaction().map_err(|e| format!("begin transaction: {}", e))?;
+    let run_result = if !spec.step_blocks.is_empty() {
+        // Multi-step path: each step gets its own committed transaction
+        execute_multi_step(spec, invariants, symbols, seed, client, &atoms_label)
+    } else {
+        // Single-step path: single transaction, rollback
+        execute_single_step(spec, invariants, symbols, seed, client, &atoms_label)
+    };
 
-        // 1. Run setup SQL
-        for s in &spec.setup {
-            if is_verbose() {
-                info!("-- setup: {}", s);
-            }
-            tx.batch_execute(s).map_err(|e| format!("setup failed: {}", e))?;
-        }
-
-        // 2. For each map block (in declaration order), find matching atoms,
-        //    sort by order_by or alphabetically, execute SQL
-        for map in &spec.maps {
-            let mut matching_args: Vec<Vec<String>> = Vec::new();
-
-            for sym in symbols {
-                let sym_name = sym.name()
-                    .map_err(|e| format!("symbol name error: {:?}", e))?;
-                if sym_name == map.atom_name {
-                    let args = sym.arguments()
-                        .map_err(|e| format!("symbol arguments error: {:?}", e))?;
-                    let arg_strings: Vec<String> = args.iter().map(|a| {
-                        if let Ok(n) = a.number() {
-                            n.to_string()
-                        } else if let Ok(s) = a.string() {
-                            s.to_string()
-                        } else {
-                            // For identifiers like alice, bob — name() returns the atom name
-                            a.name()
-                                .map(|s| s.to_string())
-                                .unwrap_or_else(|_| a.to_string())
-                        }
-                    }).collect();
-                    matching_args.push(arg_strings);
-                }
-            }
-
-            // Sort by order_by index (#5) or alphabetically
-            if let Some(order_idx) = map.order_by {
-                let idx = if order_idx > 0 { order_idx - 1 } else { 0 }; // 1-based to 0-based
-                matching_args.sort_by(|a, b| {
-                    let a_val = a.get(idx).map(|s| s.as_str()).unwrap_or("");
-                    let b_val = b.get(idx).map(|s| s.as_str()).unwrap_or("");
-                    // Try numeric comparison first, fall back to string
-                    match (a_val.parse::<f64>(), b_val.parse::<f64>()) {
-                        (Ok(an), Ok(bn)) => an.partial_cmp(&bn).unwrap_or(std::cmp::Ordering::Equal),
-                        _ => a_val.cmp(b_val),
-                    }
-                });
-            } else {
-                matching_args.sort();
-            }
-
-            for args in &matching_args {
-                let sql = substitute_args(&map.sql, args);
-                if is_verbose() {
-                    info!("-- map '{}': {}", map.atom_name, sql);
-                }
-                match tx.batch_execute(&sql) {
-                    Ok(()) => {}
-                    Err(e) => {
-                        if spec.expect_error {
-                            // Expected error — pass immediately (#7)
-                            let _ = tx.rollback();
-                            return Ok("ok (expected error)".to_string());
-                        }
-                        return Err(format!("map '{}' SQL failed: {} [atoms: {}]", map.atom_name, e, atoms_label));
-                    }
-                }
-            }
-        }
-
-        // 4. Run assert_eq / assert_snapshot (#8)
-        run_scenario_assertions(&mut tx, &spec.assert_eq, &spec.assert_snapshot)
-            .map_err(|e| format!("{} [atoms: {}]", e, atoms_label))?;
-
-        // 5. Run scenario-scoped checks (#6)
-        run_invariants(&mut tx, &spec.checks)
-            .map_err(|e| format!("{} [atoms: {}]", e, atoms_label))?;
-
-        // 6. Run global invariants
-        run_invariants(&mut tx, invariants)
-            .map_err(|e| format!("{} [atoms: {}]", e, atoms_label))?;
-
-        // 7. Rollback
-        let _ = tx.rollback();
-
-        Ok("ok".to_string())
-    })();
-
-    // 8. Run teardown outside transaction (#11)
+    // Run teardown outside transaction
     for s in &spec.teardown {
         if is_verbose() {
             info!("-- teardown: {}", s);
@@ -351,4 +390,120 @@ fn execute_answer_set(
             message: msg,
         },
     }
+}
+
+fn execute_single_step(
+    spec: &ScenarioSpec,
+    invariants: &[InvariantSpec],
+    symbols: &[clingo::Symbol],
+    seed: u32,
+    client: &mut Client,
+    atoms_label: &str,
+) -> std::result::Result<String, String> {
+    let mut tx = client.transaction().map_err(|e| format!("begin transaction: {}", e))?;
+
+    // 1. Run setup SQL
+    for s in &spec.setup {
+        if is_verbose() {
+            info!("-- setup: {}", s);
+        }
+        tx.batch_execute(s).map_err(|e| format!("setup failed: {}", e))?;
+    }
+
+    // 2. Execute maps
+    if let Some(msg) = execute_maps(&mut tx, &spec.maps, symbols, spec.expect_error, atoms_label, seed)? {
+        let _ = tx.rollback();
+        return Ok(msg);
+    }
+
+    // 3. Run assert_eq / assert_snapshot
+    run_scenario_assertions(&mut tx, &spec.assert_eq, &spec.assert_snapshot)
+        .map_err(|e| format!("{} [atoms: {}] (seed: {})", e, atoms_label, seed))?;
+
+    // 4. Run scenario-scoped checks
+    run_invariants(&mut tx, &spec.checks)
+        .map_err(|e| format!("{} [atoms: {}] (seed: {})", e, atoms_label, seed))?;
+
+    // 5. Run global invariants
+    run_invariants(&mut tx, invariants)
+        .map_err(|e| format!("{} [atoms: {}] (seed: {})", e, atoms_label, seed))?;
+
+    // 6. Rollback
+    let _ = tx.rollback();
+
+    Ok("ok".to_string())
+}
+
+fn execute_multi_step(
+    spec: &ScenarioSpec,
+    invariants: &[InvariantSpec],
+    symbols: &[clingo::Symbol],
+    seed: u32,
+    client: &mut Client,
+    atoms_label: &str,
+) -> std::result::Result<String, String> {
+    // Base transaction: top-level setup + top-level maps → commit
+    {
+        let mut tx = client.transaction().map_err(|e| format!("begin base transaction: {}", e))?;
+        for s in &spec.setup {
+            if is_verbose() {
+                info!("-- base setup: {}", s);
+            }
+            tx.batch_execute(s).map_err(|e| format!("base setup failed: {}", e))?;
+        }
+
+        if let Some(msg) = execute_maps(&mut tx, &spec.maps, symbols, spec.expect_error, atoms_label, seed)? {
+            let _ = tx.rollback();
+            return Ok(msg);
+        }
+
+        tx.commit().map_err(|e| format!("base commit failed: {}", e))?;
+    }
+
+    // Per-step transactions
+    for (step_idx, step) in spec.step_blocks.iter().enumerate() {
+        let mut tx = client.transaction().map_err(|e| format!("begin step {} transaction: {}", step_idx + 1, e))?;
+
+        // Step setup SQL
+        for s in &step.setup {
+            if is_verbose() {
+                info!("-- step {} setup: {}", step_idx + 1, s);
+            }
+            tx.batch_execute(s).map_err(|e| format!("step {} setup failed: {}", step_idx + 1, e))?;
+        }
+
+        // Step maps
+        if let Some(msg) = execute_maps(&mut tx, &step.maps, symbols, spec.expect_error, atoms_label, seed)? {
+            let _ = tx.rollback();
+            return Ok(msg);
+        }
+
+        // Step assertions
+        run_scenario_assertions(&mut tx, &step.assert_eq, &step.assert_snapshot)
+            .map_err(|e| format!("step {}: {} [atoms: {}] (seed: {})", step_idx + 1, e, atoms_label, seed))?;
+
+        // Step checks
+        run_invariants(&mut tx, &step.checks)
+            .map_err(|e| format!("step {}: {} [atoms: {}] (seed: {})", step_idx + 1, e, atoms_label, seed))?;
+
+        tx.commit().map_err(|e| format!("step {} commit failed: {}", step_idx + 1, e))?;
+    }
+
+    // Final verification transaction: top-level assertions + checks + global invariants → rollback
+    {
+        let mut tx = client.transaction().map_err(|e| format!("begin final verification transaction: {}", e))?;
+
+        run_scenario_assertions(&mut tx, &spec.assert_eq, &spec.assert_snapshot)
+            .map_err(|e| format!("{} [atoms: {}] (seed: {})", e, atoms_label, seed))?;
+
+        run_invariants(&mut tx, &spec.checks)
+            .map_err(|e| format!("{} [atoms: {}] (seed: {})", e, atoms_label, seed))?;
+
+        run_invariants(&mut tx, invariants)
+            .map_err(|e| format!("{} [atoms: {}] (seed: {})", e, atoms_label, seed))?;
+
+        let _ = tx.rollback();
+    }
+
+    Ok("ok".to_string())
 }

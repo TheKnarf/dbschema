@@ -115,6 +115,9 @@ enum Commands {
         /// Verbose: print SQL being executed (apply + test phases)
         #[arg(long)]
         verbose: bool,
+        /// Override all scenario seeds for reproducible runs (requires --features scenario)
+        #[arg(long)]
+        seed: Option<u32>,
     },
 }
 
@@ -297,9 +300,11 @@ fn main() -> Result<()> {
                 create_db,
                 keep_db,
                 verbose,
+                seed,
             } => {
                 let mut backend = backend;
-                let (dsn, config) = if cli.config {
+                #[allow(unused_mut)]
+                let (dsn, mut config) = if cli.config {
                     let dbschema_config = config::load_config()
                         .with_context(|| "failed to load dbschema.toml")?
                         .ok_or_else(|| anyhow!("dbschema.toml not found"))?;
@@ -413,6 +418,13 @@ fn main() -> Result<()> {
                 }
 
                 dbschema::test_runner::set_verbose(verbose);
+                if let Some(seed_override) = seed {
+                    #[cfg(feature = "scenario")]
+                    for scenario in &mut config.scenarios {
+                        scenario.seed = Some(seed_override);
+                    }
+                    let _ = seed_override;
+                }
                 let only: Option<std::collections::HashSet<String>> = if names.is_empty() {
                     None
                 } else {
