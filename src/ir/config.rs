@@ -582,6 +582,11 @@ pub struct ScenarioSpec {
     pub seed: Option<u32>,
     pub steps: Option<usize>,
     pub step_blocks: Vec<ScenarioStepSpec>,
+    pub project: bool,
+    pub opt_mode: Option<String>,
+    pub focus: Vec<String>,
+    pub time_limit: Option<u32>,
+    pub enum_mode: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

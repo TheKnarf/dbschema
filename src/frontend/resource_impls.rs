@@ -1420,6 +1420,34 @@ impl ForEachSupport for AstScenario {
             None => None,
         };
 
+        let project = get_attr_bool(body, "project", env)?.unwrap_or(false);
+
+        let opt_mode = get_attr_string(body, "opt_mode", env)?;
+        if let Some(ref m) = opt_mode {
+            match m.as_str() {
+                "opt" | "optN" | "enum" | "ignore" => {}
+                _ => bail!("scenario 'opt_mode' must be one of: opt, optN, enum, ignore"),
+            }
+        }
+
+        let focus = match find_attr(body, "focus") {
+            Some(attr) => expr_to_string_vec(attr.expr(), env)?,
+            None => vec![],
+        };
+
+        let time_limit = match get_attr_string(body, "time_limit", env)? {
+            Some(s) => Some(s.parse::<u32>().with_context(|| format!("scenario 'time_limit' must be a positive integer, got '{}'", s))?),
+            None => None,
+        };
+
+        let enum_mode = get_attr_string(body, "enum_mode", env)?;
+        if let Some(ref m) = enum_mode {
+            match m.as_str() {
+                "auto" | "bt" | "record" | "domRec" | "brave" | "cautious" => {}
+                _ => bail!("scenario 'enum_mode' must be one of: auto, bt, record, domRec, brave, cautious"),
+            }
+        }
+
         let steps = match get_attr_string(body, "steps", env)? {
             Some(s) => Some(s.parse::<usize>().with_context(|| "steps must be a positive integer")?),
             None => None,
@@ -1573,6 +1601,11 @@ impl ForEachSupport for AstScenario {
             seed,
             steps,
             step_blocks,
+            project,
+            opt_mode,
+            focus,
+            time_limit,
+            enum_mode,
         })
     }
 

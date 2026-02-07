@@ -1315,6 +1315,11 @@ mod tests {
             seed: None,
             steps: None,
             step_blocks: vec![],
+            project: false,
+            opt_mode: None,
+            focus: vec![],
+            time_limit: None,
+            enum_mode: None,
         };
 
         let cfg = Config {
@@ -1404,6 +1409,11 @@ mod tests {
             seed: None,
             steps: None,
             step_blocks: vec![],
+            project: false,
+            opt_mode: None,
+            focus: vec![],
+            time_limit: None,
+            enum_mode: None,
         };
 
         let cfg = Config {
@@ -1456,6 +1466,11 @@ mod tests {
             seed: None,
             steps: None,
             step_blocks: vec![],
+            project: false,
+            opt_mode: None,
+            focus: vec![],
+            time_limit: None,
+            enum_mode: None,
         };
 
         let cfg = Config {
@@ -1506,6 +1521,11 @@ mod tests {
             seed: None,
             steps: None,
             step_blocks: vec![],
+            project: false,
+            opt_mode: None,
+            focus: vec![],
+            time_limit: None,
+            enum_mode: None,
         };
 
         let cfg = Config {
@@ -1560,6 +1580,11 @@ mod tests {
             seed: None,
             steps: None,
             step_blocks: vec![],
+            project: false,
+            opt_mode: None,
+            focus: vec![],
+            time_limit: None,
+            enum_mode: None,
         };
 
         let cfg = Config {
@@ -1613,6 +1638,11 @@ mod tests {
             seed: None,
             steps: None,
             step_blocks: vec![],
+            project: false,
+            opt_mode: None,
+            focus: vec![],
+            time_limit: None,
+            enum_mode: None,
         };
 
         let cfg = Config {
@@ -1668,6 +1698,11 @@ mod tests {
             seed: None,
             steps: None,
             step_blocks: vec![],
+            project: false,
+            opt_mode: None,
+            focus: vec![],
+            time_limit: None,
+            enum_mode: None,
         };
 
         let cfg = Config {
@@ -1720,6 +1755,11 @@ mod tests {
             seed: None,
             steps: None,
             step_blocks: vec![],
+            project: false,
+            opt_mode: None,
+            focus: vec![],
+            time_limit: None,
+            enum_mode: None,
         };
 
         let cfg = Config {
@@ -1774,6 +1814,11 @@ mod tests {
             seed: None,
             steps: None,
             step_blocks: vec![],
+            project: false,
+            opt_mode: None,
+            focus: vec![],
+            time_limit: None,
+            enum_mode: None,
         };
 
         let cfg = Config {
@@ -1814,6 +1859,11 @@ mod tests {
             seed: None,
             steps: None,
             step_blocks: vec![],
+            project: false,
+            opt_mode: None,
+            focus: vec![],
+            time_limit: None,
+            enum_mode: None,
         };
 
         let cfg = Config {
@@ -1872,6 +1922,11 @@ mod tests {
             seed: None,
             steps: None,
             step_blocks: vec![],
+            project: false,
+            opt_mode: None,
+            focus: vec![],
+            time_limit: None,
+            enum_mode: None,
         };
 
         let cfg = Config {
@@ -1927,6 +1982,11 @@ mod tests {
             seed: None,
             steps: None,
             step_blocks: vec![],
+            project: false,
+            opt_mode: None,
+            focus: vec![],
+            time_limit: None,
+            enum_mode: None,
         };
 
         let cfg = Config {
@@ -1994,6 +2054,11 @@ mod tests {
             seed: None,
             steps: None,
             step_blocks: vec![],
+            project: false,
+            opt_mode: None,
+            focus: vec![],
+            time_limit: None,
+            enum_mode: None,
         };
 
         let cfg = Config {
@@ -2049,6 +2114,11 @@ mod tests {
             seed: Some(42),
             steps: None,
             step_blocks: vec![],
+            project: false,
+            opt_mode: None,
+            focus: vec![],
+            time_limit: None,
+            enum_mode: None,
         };
 
         let cfg = Config {
@@ -2097,6 +2167,11 @@ mod tests {
             seed: Some(99),
             steps: None,
             step_blocks: vec![],
+            project: false,
+            opt_mode: None,
+            focus: vec![],
+            time_limit: None,
+            enum_mode: None,
         };
 
         let cfg = Config {
@@ -2184,6 +2259,11 @@ mod tests {
                     assert_snapshot: vec![],
                 },
             ],
+            project: false,
+            opt_mode: None,
+            focus: vec![],
+            time_limit: None,
+            enum_mode: None,
         };
 
         let cfg = Config {
@@ -2267,6 +2347,11 @@ mod tests {
                     assert_snapshot: vec![],
                 },
             ],
+            project: false,
+            opt_mode: None,
+            focus: vec![],
+            time_limit: None,
+            enum_mode: None,
         };
 
         let cfg = Config {
@@ -2359,6 +2444,11 @@ mod tests {
                     ],
                 },
             ],
+            project: false,
+            opt_mode: None,
+            focus: vec![],
+            time_limit: None,
+            enum_mode: None,
         };
 
         let cfg = Config {
@@ -2427,6 +2517,11 @@ mod tests {
                     assert_snapshot: vec![],
                 },
             ],
+            project: false,
+            opt_mode: None,
+            focus: vec![],
+            time_limit: None,
+            enum_mode: None,
         };
 
         let cfg = Config {
@@ -2487,6 +2582,11 @@ mod tests {
                     assert_snapshot: vec![],
                 },
             ],
+            project: false,
+            opt_mode: None,
+            focus: vec![],
+            time_limit: None,
+            enum_mode: None,
         };
 
         let cfg = Config {
@@ -2549,6 +2649,11 @@ mod tests {
                     assert_snapshot: vec![],
                 },
             ],
+            project: false,
+            opt_mode: None,
+            focus: vec![],
+            time_limit: None,
+            enum_mode: None,
         };
 
         let cfg = Config {
@@ -2620,6 +2725,11 @@ mod tests {
                     assert_snapshot: vec![],
                 },
             ],
+            project: false,
+            opt_mode: None,
+            focus: vec![],
+            time_limit: None,
+            enum_mode: None,
         };
 
         let cfg = Config {
@@ -2631,5 +2741,391 @@ mod tests {
         assert_eq!(summary.results.len(), 1);
         assert!(summary.results[0].passed, "multi-step expect_error should pass when SQL errors: {}", summary.results[0].message);
         assert!(summary.results[0].message.contains("expected error"), "message should mention expected error: {}", summary.results[0].message);
+    }
+
+    #[test]
+    #[cfg(feature = "scenario")]
+    fn scenario_project_deduplicates() {
+        let (_c, dsn) = start_pg();
+
+        {
+            let mut setup_client = Client::connect(&dsn, NoTls).unwrap();
+            setup_client.batch_execute("
+                CREATE TABLE proj_items (id serial PRIMARY KEY, name text NOT NULL);
+            ").unwrap();
+        }
+
+        // Without projection: auxiliary atom `role` creates duplicate answer sets
+        // for the same `pick` atoms (different `role` assignments produce same `pick` set)
+        let scenario_no_proj = ScenarioSpec {
+            name: "no_proj".into(),
+            program: "item(a; b). role(x; y). 1 { pick(I) : item(I) } 1. 1 { assign(R) : role(R) } 1. #show pick/1.".into(),
+            setup: vec![],
+            maps: vec![
+                ScenarioMapSpec {
+                    atom_name: "pick".into(),
+                    sql: "INSERT INTO proj_items (name) VALUES ('{1}')".into(),
+                    order_by: None,
+                },
+            ],
+            runs: 0,
+            checks: vec![],
+            expect_error: false,
+            assert_eq: vec![],
+            assert_snapshot: vec![],
+            params: vec![],
+            teardown: vec!["DELETE FROM proj_items".into()],
+            seed: Some(1),
+            steps: None,
+            step_blocks: vec![],
+            project: false,
+            opt_mode: None,
+            focus: vec![],
+            time_limit: None,
+            enum_mode: None,
+        };
+
+        let cfg_no_proj = Config {
+            scenarios: vec![scenario_no_proj],
+            ..Default::default()
+        };
+        let summary_no_proj = PostgresTestBackend.run(&cfg_no_proj, &dsn, None).unwrap();
+        let no_proj_count = summary_no_proj.results.len();
+
+        // With projection: duplicate shown-atom sets are collapsed
+        let scenario_proj = ScenarioSpec {
+            name: "proj".into(),
+            program: "item(a; b). role(x; y). 1 { pick(I) : item(I) } 1. 1 { assign(R) : role(R) } 1. #show pick/1.".into(),
+            setup: vec![],
+            maps: vec![
+                ScenarioMapSpec {
+                    atom_name: "pick".into(),
+                    sql: "INSERT INTO proj_items (name) VALUES ('{1}')".into(),
+                    order_by: None,
+                },
+            ],
+            runs: 0,
+            checks: vec![],
+            expect_error: false,
+            assert_eq: vec![],
+            assert_snapshot: vec![],
+            params: vec![],
+            teardown: vec!["DELETE FROM proj_items".into()],
+            seed: Some(1),
+            steps: None,
+            step_blocks: vec![],
+            project: true,
+            opt_mode: None,
+            focus: vec![],
+            time_limit: None,
+            enum_mode: None,
+        };
+
+        let cfg_proj = Config {
+            scenarios: vec![scenario_proj],
+            ..Default::default()
+        };
+        let summary_proj = PostgresTestBackend.run(&cfg_proj, &dsn, None).unwrap();
+        let proj_count = summary_proj.results.len();
+
+        assert!(proj_count < no_proj_count,
+            "projection should produce fewer answer sets: {} (projected) vs {} (not projected)",
+            proj_count, no_proj_count);
+    }
+
+    #[test]
+    #[cfg(feature = "scenario")]
+    fn scenario_opt_mode_optn() {
+        let (_c, dsn) = start_pg();
+
+        {
+            let mut setup_client = Client::connect(&dsn, NoTls).unwrap();
+            setup_client.batch_execute("
+                CREATE TABLE opt_items (id serial PRIMARY KEY, name text NOT NULL);
+            ").unwrap();
+        }
+
+        // With optN, only optimal models (maximizing picks) should be tested
+        let scenario = ScenarioSpec {
+            name: "opt_test".into(),
+            program: "item(a; b; c). { pick(I) : item(I) }. #maximize { 1,I : pick(I) }.".into(),
+            setup: vec![],
+            maps: vec![
+                ScenarioMapSpec {
+                    atom_name: "pick".into(),
+                    sql: "INSERT INTO opt_items (name) VALUES ('{1}')".into(),
+                    order_by: None,
+                },
+            ],
+            runs: 0,
+            checks: vec![],
+            expect_error: false,
+            assert_eq: vec![
+                EqAssertSpec {
+                    query: "SELECT COUNT(*)::text FROM opt_items".into(),
+                    expected: "3".into(), // optimal = all 3 items picked
+                },
+            ],
+            assert_snapshot: vec![],
+            params: vec![],
+            teardown: vec!["DELETE FROM opt_items".into()],
+            seed: Some(1),
+            steps: None,
+            step_blocks: vec![],
+            project: false,
+            opt_mode: Some("optN".into()),
+            focus: vec![],
+            time_limit: None,
+            enum_mode: None,
+        };
+
+        let cfg = Config {
+            scenarios: vec![scenario],
+            ..Default::default()
+        };
+        let summary = PostgresTestBackend.run(&cfg, &dsn, None).unwrap();
+
+        // With #maximize and optN, only the optimal model (all 3 picked) should remain
+        assert_eq!(summary.results.len(), 1, "optN should yield exactly 1 optimal model");
+        assert!(summary.results[0].passed, "optimal model test should pass: {}", summary.results[0].message);
+    }
+
+    #[test]
+    #[cfg(feature = "scenario")]
+    fn scenario_focus_filters_atoms() {
+        let (_c, dsn) = start_pg();
+
+        {
+            let mut setup_client = Client::connect(&dsn, NoTls).unwrap();
+            setup_client.batch_execute("
+                CREATE TABLE focus_items (id serial PRIMARY KEY, name text NOT NULL);
+            ").unwrap();
+        }
+
+        // Focus on pick(a) — only answer sets containing pick(a) should be enumerated
+        let scenario = ScenarioSpec {
+            name: "focused".into(),
+            program: "item(a; b; c). 1 { pick(I) : item(I) } 2. :- pick(I1), pick(I2), I1 != I2, I1 > I2.".into(),
+            setup: vec![],
+            maps: vec![
+                ScenarioMapSpec {
+                    atom_name: "pick".into(),
+                    sql: "INSERT INTO focus_items (name) VALUES ('{1}')".into(),
+                    order_by: None,
+                },
+            ],
+            runs: 0,
+            checks: vec![],
+            expect_error: false,
+            assert_eq: vec![],
+            assert_snapshot: vec![],
+            params: vec![],
+            teardown: vec!["DELETE FROM focus_items".into()],
+            seed: Some(1),
+            steps: None,
+            step_blocks: vec![],
+            project: false,
+            opt_mode: None,
+            focus: vec!["pick(a)".into()],
+            time_limit: None,
+            enum_mode: None,
+        };
+
+        let cfg = Config {
+            scenarios: vec![scenario],
+            ..Default::default()
+        };
+        let summary = PostgresTestBackend.run(&cfg, &dsn, None).unwrap();
+
+        // All results should contain pick(a) in their name/atoms
+        assert!(summary.results.len() > 0, "should have at least one result");
+        for r in &summary.results {
+            assert!(r.name.contains("pick(a)"),
+                "all answer sets should contain pick(a), got: {}", r.name);
+        }
+    }
+
+    #[cfg(feature = "scenario")]
+    #[test]
+    fn scenario_enum_mode_brave() {
+        let (_c, dsn) = start_pg();
+
+        {
+            let mut setup_client = Client::connect(&dsn, NoTls).unwrap();
+            setup_client.batch_execute("
+                CREATE TABLE brave_items (id serial PRIMARY KEY, name text NOT NULL);
+            ").unwrap();
+        }
+
+        // Brave consequences: atoms true in at least one answer set.
+        // With choice rule 1{pick(I): item(I)}1, brave consequences include pick(a), pick(b), pick(c).
+        // Use #show pick/1 so only pick atoms appear in labels/maps.
+        let scenario = ScenarioSpec {
+            name: "brave_test".into(),
+            program: "item(a; b; c). 1 { pick(I) : item(I) } 1. #show pick/1.".into(),
+            setup: vec![],
+            maps: vec![
+                ScenarioMapSpec {
+                    atom_name: "pick".into(),
+                    sql: "INSERT INTO brave_items (name) VALUES ('{1}')".into(),
+                    order_by: None,
+                },
+            ],
+            runs: 0,
+            checks: vec![],
+            expect_error: false,
+            assert_eq: vec![],
+            assert_snapshot: vec![],
+            params: vec![],
+            teardown: vec!["DELETE FROM brave_items".into()],
+            seed: Some(1),
+            steps: None,
+            step_blocks: vec![],
+            project: false,
+            opt_mode: None,
+            focus: vec![],
+            time_limit: None,
+            enum_mode: Some("brave".into()),
+        };
+
+        let cfg = Config {
+            scenarios: vec![scenario],
+            ..Default::default()
+        };
+        let summary = PostgresTestBackend.run(&cfg, &dsn, None).unwrap();
+
+        // Brave mode produces a single model
+        assert_eq!(summary.results.len(), 1, "brave mode should produce exactly one model");
+        assert!(summary.results[0].passed, "brave test should pass");
+        // The label should contain "brave:" prefix
+        assert!(summary.results[0].name.contains("brave:"),
+            "brave result should have 'brave:' prefix, got: {}", summary.results[0].name);
+        // Brave consequences should include all items since each is picked in some answer set
+        assert!(summary.results[0].name.contains("pick(a)"),
+            "brave consequences should include pick(a), got: {}", summary.results[0].name);
+        assert!(summary.results[0].name.contains("pick(b)"),
+            "brave consequences should include pick(b), got: {}", summary.results[0].name);
+        assert!(summary.results[0].name.contains("pick(c)"),
+            "brave consequences should include pick(c), got: {}", summary.results[0].name);
+    }
+
+    #[cfg(feature = "scenario")]
+    #[test]
+    fn scenario_enum_mode_cautious() {
+        let (_c, dsn) = start_pg();
+
+        {
+            let mut setup_client = Client::connect(&dsn, NoTls).unwrap();
+            setup_client.batch_execute("
+                CREATE TABLE cautious_items (id serial PRIMARY KEY, name text NOT NULL);
+            ").unwrap();
+        }
+
+        // Cautious consequences: atoms true in ALL answer sets.
+        // With item(a; b; c) and 1{pick(I): item(I)}1, no single pick atom
+        // is in every answer set. But item(a), item(b), item(c) are always true.
+        // We only map "item" atoms, not "pick" atoms.
+        let scenario = ScenarioSpec {
+            name: "cautious_test".into(),
+            program: "item(a; b; c). 1 { pick(I) : item(I) } 1. #show item/1. #show pick/1.".into(),
+            setup: vec![],
+            maps: vec![
+                ScenarioMapSpec {
+                    atom_name: "item".into(),
+                    sql: "INSERT INTO cautious_items (name) VALUES ('{1}')".into(),
+                    order_by: None,
+                },
+            ],
+            runs: 0,
+            checks: vec![],
+            expect_error: false,
+            assert_eq: vec![
+                EqAssertSpec {
+                    query: "SELECT COUNT(*)::text FROM cautious_items".into(),
+                    expected: "3".into(),
+                },
+            ],
+            assert_snapshot: vec![],
+            params: vec![],
+            teardown: vec!["DELETE FROM cautious_items".into()],
+            seed: Some(1),
+            steps: None,
+            step_blocks: vec![],
+            project: false,
+            opt_mode: None,
+            focus: vec![],
+            time_limit: None,
+            enum_mode: Some("cautious".into()),
+        };
+
+        let cfg = Config {
+            scenarios: vec![scenario],
+            ..Default::default()
+        };
+        let summary = PostgresTestBackend.run(&cfg, &dsn, None).unwrap();
+
+        // Cautious mode produces a single model
+        assert_eq!(summary.results.len(), 1, "cautious mode should produce exactly one model");
+        assert!(summary.results[0].passed, "cautious test should pass");
+        // The label should contain "cautious:" prefix
+        assert!(summary.results[0].name.contains("cautious:"),
+            "cautious result should have 'cautious:' prefix, got: {}", summary.results[0].name);
+        // Cautious consequences include item(a), item(b), item(c) since they're always true
+        assert!(summary.results[0].name.contains("item(a)"),
+            "cautious consequences should include item(a), got: {}", summary.results[0].name);
+    }
+
+    #[cfg(feature = "scenario")]
+    #[test]
+    fn scenario_time_limit() {
+        let (_c, dsn) = start_pg();
+
+        {
+            let mut setup_client = Client::connect(&dsn, NoTls).unwrap();
+            setup_client.batch_execute("
+                CREATE TABLE tl_items (id serial PRIMARY KEY, name text NOT NULL);
+            ").unwrap();
+        }
+
+        // Simple scenario with time_limit — should complete well within the limit
+        let scenario = ScenarioSpec {
+            name: "time_limited".into(),
+            program: "item(a; b). 1 { pick(I) : item(I) } 1.".into(),
+            setup: vec![],
+            maps: vec![
+                ScenarioMapSpec {
+                    atom_name: "pick".into(),
+                    sql: "INSERT INTO tl_items (name) VALUES ('{1}')".into(),
+                    order_by: None,
+                },
+            ],
+            runs: 0,
+            checks: vec![],
+            expect_error: false,
+            assert_eq: vec![],
+            assert_snapshot: vec![],
+            params: vec![],
+            teardown: vec!["DELETE FROM tl_items".into()],
+            seed: Some(1),
+            steps: None,
+            step_blocks: vec![],
+            project: false,
+            opt_mode: None,
+            focus: vec![],
+            time_limit: Some(30),
+            enum_mode: None,
+        };
+
+        let cfg = Config {
+            scenarios: vec![scenario],
+            ..Default::default()
+        };
+        let summary = PostgresTestBackend.run(&cfg, &dsn, None).unwrap();
+
+        // Should produce 2 answer sets (pick(a) or pick(b)) within the time limit
+        assert_eq!(summary.results.len(), 2, "should produce 2 models within time limit");
+        for r in &summary.results {
+            assert!(r.passed, "all tests should pass");
+        }
     }
 }

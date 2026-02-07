@@ -1899,4 +1899,267 @@ mod tests {
         assert_eq!(cfg.scenarios[0].checks.len(), 1);
         assert_eq!(cfg.scenarios[0].assert_eq.len(), 1);
     }
+
+    #[test]
+    fn parse_scenario_project() {
+        let mut files = HashMap::new();
+        files.insert(
+            p("/root/main.hcl"),
+            r#"
+            scenario "projected" {
+              program = <<-ASP
+                item(a; b). role(x; y).
+                1 { pick(I, R) : item(I), role(R) } 2.
+                #show pick/2.
+              ASP
+              project = true
+              map "pick" {
+                sql = "SELECT '{1}', '{2}'"
+              }
+            }
+            "#
+            .to_string(),
+        );
+        let loader = MapLoader { files };
+        let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
+        assert_eq!(cfg.scenarios[0].project, true);
+    }
+
+    #[test]
+    fn parse_scenario_project_default_false() {
+        let mut files = HashMap::new();
+        files.insert(
+            p("/root/main.hcl"),
+            r#"
+            scenario "no_project" {
+              program = "a(1)."
+              map "a" { sql = "SELECT {1}" }
+            }
+            "#
+            .to_string(),
+        );
+        let loader = MapLoader { files };
+        let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
+        assert_eq!(cfg.scenarios[0].project, false);
+    }
+
+    #[test]
+    fn parse_scenario_opt_mode() {
+        let mut files = HashMap::new();
+        files.insert(
+            p("/root/main.hcl"),
+            r#"
+            scenario "optimized" {
+              program = <<-ASP
+                item(a; b; c).
+                1 { pick(I) : item(I) } 2.
+                #maximize { 1,I : pick(I) }.
+              ASP
+              opt_mode = "optN"
+              map "pick" {
+                sql = "SELECT '{1}'"
+              }
+            }
+            "#
+            .to_string(),
+        );
+        let loader = MapLoader { files };
+        let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
+        assert_eq!(cfg.scenarios[0].opt_mode, Some("optN".to_string()));
+    }
+
+    #[test]
+    fn parse_scenario_opt_mode_invalid() {
+        let mut files = HashMap::new();
+        files.insert(
+            p("/root/main.hcl"),
+            r#"
+            scenario "bad_opt" {
+              program = "a(1)."
+              opt_mode = "invalid"
+              map "a" { sql = "SELECT {1}" }
+            }
+            "#
+            .to_string(),
+        );
+        let loader = MapLoader { files };
+        let err = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap_err();
+        assert!(err.to_string().contains("opt_mode"));
+    }
+
+    #[test]
+    fn parse_scenario_focus() {
+        let mut files = HashMap::new();
+        files.insert(
+            p("/root/main.hcl"),
+            r#"
+            scenario "focused" {
+              program = <<-ASP
+                item(a; b; c).
+                1 { pick(I) : item(I) } 2.
+              ASP
+              focus = ["pick(a)"]
+              map "pick" {
+                sql = "SELECT '{1}'"
+              }
+            }
+            "#
+            .to_string(),
+        );
+        let loader = MapLoader { files };
+        let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
+        assert_eq!(cfg.scenarios[0].focus, vec!["pick(a)".to_string()]);
+    }
+
+    #[test]
+    fn parse_scenario_focus_multiple() {
+        let mut files = HashMap::new();
+        files.insert(
+            p("/root/main.hcl"),
+            r#"
+            scenario "multi_focus" {
+              program = "item(a; b). tag(x; y). 1 { pick(I) : item(I) } 1. 1 { sel(T) : tag(T) } 1."
+              focus = ["pick(a)", "sel(x)"]
+              map "pick" { sql = "SELECT '{1}'" }
+              map "sel" { sql = "SELECT '{1}'" }
+            }
+            "#
+            .to_string(),
+        );
+        let loader = MapLoader { files };
+        let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
+        assert_eq!(cfg.scenarios[0].focus.len(), 2);
+        assert_eq!(cfg.scenarios[0].focus[0], "pick(a)");
+        assert_eq!(cfg.scenarios[0].focus[1], "sel(x)");
+    }
+
+    #[test]
+    fn parse_scenario_focus_default_empty() {
+        let mut files = HashMap::new();
+        files.insert(
+            p("/root/main.hcl"),
+            r#"
+            scenario "no_focus" {
+              program = "a(1)."
+              map "a" { sql = "SELECT {1}" }
+            }
+            "#
+            .to_string(),
+        );
+        let loader = MapLoader { files };
+        let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
+        assert!(cfg.scenarios[0].focus.is_empty());
+    }
+
+    #[test]
+    fn parse_scenario_time_limit() {
+        let mut files = HashMap::new();
+        files.insert(
+            p("/root/main.hcl"),
+            r#"
+            scenario "timed" {
+              program = "a(1)."
+              time_limit = 30
+              map "a" { sql = "SELECT {1}" }
+            }
+            "#
+            .to_string(),
+        );
+        let loader = MapLoader { files };
+        let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
+        assert_eq!(cfg.scenarios[0].time_limit, Some(30));
+    }
+
+    #[test]
+    fn parse_scenario_time_limit_default_none() {
+        let mut files = HashMap::new();
+        files.insert(
+            p("/root/main.hcl"),
+            r#"
+            scenario "no_limit" {
+              program = "a(1)."
+              map "a" { sql = "SELECT {1}" }
+            }
+            "#
+            .to_string(),
+        );
+        let loader = MapLoader { files };
+        let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
+        assert_eq!(cfg.scenarios[0].time_limit, None);
+    }
+
+    #[test]
+    fn parse_scenario_enum_mode() {
+        let mut files = HashMap::new();
+        files.insert(
+            p("/root/main.hcl"),
+            r#"
+            scenario "brave_test" {
+              program = "a(1)."
+              enum_mode = "brave"
+              map "a" { sql = "SELECT {1}" }
+            }
+            "#
+            .to_string(),
+        );
+        let loader = MapLoader { files };
+        let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
+        assert_eq!(cfg.scenarios[0].enum_mode, Some("brave".to_string()));
+    }
+
+    #[test]
+    fn parse_scenario_enum_mode_cautious() {
+        let mut files = HashMap::new();
+        files.insert(
+            p("/root/main.hcl"),
+            r#"
+            scenario "cautious_test" {
+              program = "a(1)."
+              enum_mode = "cautious"
+              map "a" { sql = "SELECT {1}" }
+            }
+            "#
+            .to_string(),
+        );
+        let loader = MapLoader { files };
+        let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
+        assert_eq!(cfg.scenarios[0].enum_mode, Some("cautious".to_string()));
+    }
+
+    #[test]
+    fn parse_scenario_enum_mode_invalid() {
+        let mut files = HashMap::new();
+        files.insert(
+            p("/root/main.hcl"),
+            r#"
+            scenario "bad_enum" {
+              program = "a(1)."
+              enum_mode = "invalid"
+              map "a" { sql = "SELECT {1}" }
+            }
+            "#
+            .to_string(),
+        );
+        let loader = MapLoader { files };
+        let err = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap_err();
+        assert!(err.to_string().contains("enum_mode"));
+    }
+
+    #[test]
+    fn parse_scenario_enum_mode_default_none() {
+        let mut files = HashMap::new();
+        files.insert(
+            p("/root/main.hcl"),
+            r#"
+            scenario "no_enum" {
+              program = "a(1)."
+              map "a" { sql = "SELECT {1}" }
+            }
+            "#
+            .to_string(),
+        );
+        let loader = MapLoader { files };
+        let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
+        assert_eq!(cfg.scenarios[0].enum_mode, None);
+    }
 }

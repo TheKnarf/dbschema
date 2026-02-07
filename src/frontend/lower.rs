@@ -781,6 +781,11 @@ impl From<ast::AstScenario> for ir::ScenarioSpec {
             seed: s.seed,
             steps: s.steps,
             step_blocks: s.step_blocks.into_iter().map(Into::into).collect(),
+            project: s.project,
+            opt_mode: s.opt_mode,
+            focus: s.focus,
+            time_limit: s.time_limit,
+            enum_mode: s.enum_mode,
         }
     }
 }

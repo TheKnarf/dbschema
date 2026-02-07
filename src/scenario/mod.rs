@@ -1,7 +1,7 @@
 use anyhow::Result;
 use clingo::{ShowType, SolveMode};
 use postgres::{Client, Transaction};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use crate::ir::{Config, EqAssertSpec, InvariantSpec, ScenarioMapSpec, ScenarioSpec, SnapshotAssertSpec};
 use crate::test_runner::{TestResult, is_verbose};
@@ -195,7 +195,17 @@ fn run_one_scenario(
 
     // Create clingo control and add the ASP program
     // Pass "0" to enumerate all models, plus --seed for reproducibility
-    let mut ctl = clingo::control(vec!["0".into(), format!("--seed={}", seed)])
+    let mut args = vec!["0".into(), format!("--seed={}", seed)];
+    if spec.project {
+        args.push("--project".into());
+    }
+    if let Some(ref opt_mode) = spec.opt_mode {
+        args.push(format!("--opt-mode={}", opt_mode));
+    }
+    if let Some(ref enum_mode) = spec.enum_mode {
+        args.push(format!("--enum-mode={}", enum_mode));
+    }
+    let mut ctl = clingo::control(args)
         .map_err(|e| anyhow::anyhow!("clingo control creation failed: {:?}", e))?;
 
     ctl.add("base", &[], &full_program)
@@ -219,16 +229,65 @@ fn run_one_scenario(
             .map_err(|e| anyhow::anyhow!("clingo ground failed: {:?}", e))?;
     }
 
+    // Resolve focus atoms to solver literals (must happen before solve() consumes ctl)
+    let assumptions: Vec<clingo::SolverLiteral> = if !spec.focus.is_empty() {
+        let sym_atoms = ctl.symbolic_atoms()
+            .map_err(|e| anyhow::anyhow!("symbolic_atoms failed: {:?}", e))?;
+        let mut lits = Vec::new();
+        for focus_str in &spec.focus {
+            let target = clingo::parse_term(focus_str)
+                .map_err(|e| anyhow::anyhow!("failed to parse focus atom '{}': {:?}", focus_str, e))?;
+            let mut found = false;
+            let iter = sym_atoms.iter()
+                .map_err(|e| anyhow::anyhow!("symbolic_atoms iter failed: {:?}", e))?;
+            for sym_atom in iter {
+                let sym = sym_atom.symbol()
+                    .map_err(|e| anyhow::anyhow!("symbol failed: {:?}", e))?;
+                if sym == target {
+                    let lit = sym_atom.literal()
+                        .map_err(|e| anyhow::anyhow!("literal failed: {:?}", e))?;
+                    lits.push(lit);
+                    found = true;
+                    break;
+                }
+            }
+            if !found {
+                return Err(anyhow::anyhow!(
+                    "focus atom '{}' not found in grounded program for scenario '{}'",
+                    focus_str, spec.name
+                ));
+            }
+        }
+        lits
+    } else {
+        vec![]
+    };
+
     // Solve and collect answer sets
-    let mut solve_handle = ctl.solve(SolveMode::YIELD, &[])
+    let mut solve_handle = ctl.solve(SolveMode::YIELD, &assumptions)
         .map_err(|e| anyhow::anyhow!("clingo solve failed: {:?}", e))?;
 
     let mut answer_set_index = 0usize;
     let max_runs = if spec.runs == 0 { usize::MAX } else { spec.runs };
+    let is_brave_cautious = matches!(spec.enum_mode.as_deref(), Some("brave") | Some("cautious"));
+    let solve_start = Instant::now();
+
+    // For brave/cautious modes, collect the last model's symbols (intermediate models are incomplete)
+    let mut last_symbols: Option<Vec<clingo::Symbol>> = None;
 
     loop {
-        if answer_set_index >= max_runs {
+        if answer_set_index >= max_runs && !is_brave_cautious {
             break;
+        }
+
+        // Check time limit
+        if let Some(limit) = spec.time_limit {
+            if solve_start.elapsed().as_secs() >= limit as u64 {
+                if is_verbose() {
+                    info!("-- scenario '{}': time limit of {}s reached", spec.name, limit);
+                }
+                break;
+            }
         }
 
         solve_handle.resume()
@@ -240,34 +299,79 @@ fn run_one_scenario(
             Err(e) => return Err(anyhow::anyhow!("clingo model failed: {:?}", e)),
         };
 
+        // For optimization modes, skip non-optimal intermediate models
+        if spec.opt_mode.as_deref() == Some("opt") || spec.opt_mode.as_deref() == Some("optN") {
+            let optimal = model.optimality_proven()
+                .map_err(|e| anyhow::anyhow!("optimality check failed: {:?}", e))?;
+            if !optimal {
+                continue;
+            }
+        }
+
         // Extract atoms from the model
         let symbols = model.symbols(ShowType::SHOWN)
             .map_err(|e| anyhow::anyhow!("clingo symbols failed: {:?}", e))?;
 
-        // Build label from atoms (#9)
-        let atoms_label = build_atoms_label(&symbols);
-        let test_name = format!("{}[{}: {}]", spec.name, answer_set_index, atoms_label);
-        answer_set_index += 1;
+        if is_brave_cautious {
+            // For brave/cautious, keep overwriting — only the last model is complete
+            last_symbols = Some(symbols);
+        } else {
+            // Normal mode: execute each answer set as a test
+            let atoms_label = build_atoms_label(&symbols);
+            let test_name = format!("{}[{}: {}]", spec.name, answer_set_index, atoms_label);
+            answer_set_index += 1;
 
-        if is_verbose() {
-            info!("-- scenario '{}': atoms = [{}]", test_name, atoms_label);
+            if is_verbose() {
+                info!("-- scenario '{}': atoms = [{}]", test_name, atoms_label);
+            }
+
+            let result = execute_answer_set(
+                &test_name,
+                spec,
+                invariants,
+                &symbols,
+                seed,
+                client,
+            );
+
+            results.push(result);
         }
-
-        // Execute this answer set as a test
-        let result = execute_answer_set(
-            &test_name,
-            spec,
-            invariants,
-            &symbols,
-            seed,
-            client,
-        );
-
-        results.push(result);
     }
 
     solve_handle.close()
         .map_err(|e| anyhow::anyhow!("clingo close failed: {:?}", e))?;
+
+    // For brave/cautious, execute a single test with the final (complete) consequences
+    if is_brave_cautious {
+        if let Some(symbols) = last_symbols {
+            let atoms_label = build_atoms_label(&symbols);
+            let mode_prefix = match spec.enum_mode.as_deref() {
+                Some("brave") => "brave: ",
+                Some("cautious") => "cautious: ",
+                _ => "",
+            };
+            let test_name = format!("{}[0: {}{}]", spec.name, mode_prefix, atoms_label);
+
+            if is_verbose() {
+                info!("-- scenario '{}': atoms = [{}]", test_name, atoms_label);
+            }
+
+            let result = execute_answer_set(
+                &test_name,
+                spec,
+                invariants,
+                &symbols,
+                seed,
+                client,
+            );
+
+            results.push(result);
+        }
+    }
+
+    if results.is_empty() && spec.time_limit.is_some() {
+        info!("-- scenario '{}': no models produced (possible timeout after {}s)", spec.name, spec.time_limit.unwrap());
+    }
 
     let passed = results.iter().filter(|r| r.passed).count();
     let failed = results.len() - passed;

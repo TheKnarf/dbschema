@@ -164,6 +164,133 @@ Override all scenario seeds from the CLI:
 dbschema test --seed 42 --dsn postgres://... --apply
 ```
 
+### `time_limit`
+
+Maximum time in seconds for the solving phase. If the solver exceeds this limit, enumeration stops and only the answer sets found so far are tested. Prevents runaway tests from poorly constrained programs.
+
+```hcl
+time_limit = 30
+```
+
+**Note:** The time limit is checked between answer sets, not during individual model computation. A single complex model that takes longer than the limit will still complete.
+
+### `enum_mode`
+
+Controls clingo's enumeration algorithm. Most useful for brave and cautious reasoning.
+
+| Value      | Behavior |
+|------------|----------|
+| `auto`     | Automatic selection (default clingo behavior) |
+| `bt`       | Backtrack-based enumeration |
+| `record`   | Record-based enumeration |
+| `domRec`   | Domain record-based enumeration |
+| `brave`    | Compute brave consequences (atoms true in *at least one* answer set) |
+| `cautious` | Compute cautious consequences (atoms true in *all* answer sets) |
+
+#### Brave reasoning
+
+Brave consequences are the union of all answer sets. If atom `pick(a)` appears in any answer set, it appears in the brave consequences. Produces a single test with all possible atoms.
+
+```hcl
+scenario "any_valid_assignment" {
+  program = <<-ASP
+    slot(morning; afternoon). task(a; b; c).
+    1 { assign(T, S) : slot(S) } 1 :- task(T).
+    #show assign/2.
+  ASP
+  enum_mode = "brave"
+  map "assign" {
+    sql = "INSERT INTO assignments (task, slot) VALUES ('{1}', '{2}')"
+  }
+}
+```
+
+#### Cautious reasoning
+
+Cautious consequences are the intersection of all answer sets. Only atoms true in *every* answer set appear. Useful for verifying invariants that must hold regardless of non-deterministic choices.
+
+```hcl
+scenario "always_true_facts" {
+  program = <<-ASP
+    item(a; b; c).
+    1 { pick(I) : item(I) } 1.
+    #show item/1. #show pick/1.
+  ASP
+  enum_mode = "cautious"
+  // Only item(a), item(b), item(c) appear — no pick atom is in every answer set
+  map "item" {
+    sql = "INSERT INTO items (name) VALUES ('{1}')"
+  }
+  assert_eq {
+    query    = "SELECT COUNT(*)::text FROM items"
+    expected = "3"
+  }
+}
+```
+
+### `project`
+
+When `true`, clingo's `--project` flag collapses answer sets that are identical on the shown atoms (`#show` directives). This eliminates duplicate test runs caused by auxiliary atoms that don't affect the SQL being tested.
+
+```hcl
+scenario "bids" {
+  program = <<-ASP
+    bidder(alice; bob). amount(100; 200).
+    role(admin; user).
+    1 { bid(B, A) : bidder(B), amount(A) } 2.
+    1 { assign(B, R) : role(R) } 1 :- bidder(B).
+    #show bid/2.
+  ASP
+  project = true
+  map "bid" { sql = "INSERT INTO bids (bidder, amount) VALUES ('{1}', {2})" }
+}
+```
+
+### `opt_mode`
+
+Controls optimization behavior. Valid values:
+
+| Value    | Behavior |
+|----------|----------|
+| `opt`    | Find the single optimal model (skip intermediate improving models) |
+| `optN`   | Enumerate all models at the optimal cost |
+| `enum`   | Enumerate all models (default clingo behavior) |
+| `ignore` | Ignore optimization statements |
+
+Use with `#minimize` or `#maximize` directives in the ASP program.
+
+```hcl
+scenario "stress_bids" {
+  program = <<-ASP
+    bidder(alice; bob; charlie).
+    amount(50; 100; 200; 500).
+    1 { bid(B, A) : bidder(B), amount(A) } 3.
+    :- bid(B, A1), bid(B, A2), A1 != A2.
+    #maximize { 1,B : bid(B, _) }.
+  ASP
+  opt_mode = "optN"
+  map "bid" { sql = "INSERT INTO bids (bidder, amount) VALUES ('{1}', {2})" }
+}
+```
+
+### `focus`
+
+List of ground atoms that must be true in every answer set. Only answer sets containing all focus atoms are enumerated — others are skipped.
+
+Each string must be a valid ground atom that appears in the grounded program (e.g. `"pick(a)"`, `"bid(alice,100)"`).
+
+```hcl
+scenario "alice_bids_high" {
+  program = <<-ASP
+    bidder(alice; bob). amount(100; 200; 500).
+    1 { bid(B, A) : bidder(B), amount(A) } 2.
+    :- bid(B, A1), bid(B, A2), A1 != A2.
+  ASP
+  focus = ["bid(alice,500)"]
+  map "bid" { sql = "INSERT INTO bids (bidder, amount) VALUES ('{1}', {2})" }
+}
+```
+
 ## Execution order
 
 For each answer set produced by clingo:
@@ -301,6 +428,32 @@ scenario "auction_workflow" {
 ```
 
 **Note:** Teardown is essential for multi-step scenarios since data is committed (not rolled back).
+
+## Tips
+
+### `#show` directives
+
+Use `#show` to control which atoms are visible in test labels and available for mapping. Atoms not shown are still computed but won't appear in the test name or be matched by `map` blocks.
+
+```asp
+#show bid/2.       // only show bid atoms
+#show pick/1.      // only show pick atoms
+```
+
+Combine `#show` with `project = true` to deduplicate answer sets that differ only in hidden auxiliary atoms.
+
+### Advanced aggregates
+
+Clingo supports aggregates for constraining generated test data:
+
+```asp
+// Exactly 2 bids per bidder
+:- bidder(B), #count { A : bid(B, A) } != 2.
+
+// Total bid amount between 100 and 500
+:- #sum { A,B : bid(B, A) } < 100.
+:- #sum { A,B : bid(B, A) } > 500.
+```
 
 ## Running scenarios
 
