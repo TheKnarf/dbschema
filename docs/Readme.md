@@ -11,6 +11,7 @@ dbschema lets you define database schemas in HCL and generate SQL/Prisma artifac
 - [Data Sources](data-sources.md) — Load external state (e.g. Prisma schemas) and expose it to your resources.
 - [Modules and Output](modules.md) — Reuse HCL modules and return values via `output` blocks.
 - [Tests](tests.md) — Define setup/assert SQL and run tests transactionally against Postgres.
+- [Scenarios](scenarios.md) — ASP-driven combinatorial testing with clingo.
 - [create-migration](create-migration.md) — Generate SQL/Prisma/JSON artifacts from HCL.
 - [validate](validate.md) — Validate HCL and summarize discovered resources.
 - [fmt](fmt.md) — Format HCL files in place for consistent style.

@@ -37,6 +37,7 @@ pub struct Config {
     pub subscriptions: Vec<AstSubscription>,
     pub tests: Vec<AstTest>,
     pub invariants: Vec<AstInvariant>,
+    pub scenarios: Vec<AstScenario>,
     pub outputs: Vec<AstOutput>,
 }
 
@@ -560,6 +561,28 @@ pub struct AstTest {
 pub struct AstInvariant {
     pub name: String,
     pub asserts: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ScenarioMap {
+    pub atom_name: String,
+    pub sql: String,
+    pub order_by: Option<usize>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AstScenario {
+    pub name: String,
+    pub program: String,
+    pub setup: Vec<String>,
+    pub maps: Vec<ScenarioMap>,
+    pub runs: usize,
+    pub checks: Vec<AstInvariant>,
+    pub expect_error: bool,
+    pub assert_eq: Vec<EqAssert>,
+    pub assert_snapshot: Vec<SnapshotAssert>,
+    pub params: Vec<(String, String)>,
+    pub teardown: Vec<String>,
 }
 
 #[derive(Debug, Clone)]

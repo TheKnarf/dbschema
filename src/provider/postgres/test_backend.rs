@@ -286,6 +286,21 @@ impl TestBackend for PostgresTestBackend {
                 message: if ok { "ok".into() } else { failed_msg },
             });
         }
+        // Run scenarios if the scenario feature is enabled
+        #[cfg(feature = "scenario")]
+        {
+            if !cfg.scenarios.is_empty() {
+                let scenario_results = crate::scenario::run_scenarios(cfg, &mut client)
+                    .context("running scenarios")?;
+                for r in scenario_results {
+                    if r.passed {
+                        passed += 1;
+                    }
+                    results.push(r);
+                }
+            }
+        }
+
         let total = results.len();
         let failed = total - passed;
         Ok(TestSummary {
@@ -438,6 +453,8 @@ mod tests {
         Config, EqAssertSpec, ErrorAssertSpec, InvariantSpec, NotifyAssertSpec,
         SnapshotAssertSpec, TestSpec,
     };
+    #[cfg(feature = "scenario")]
+    use crate::ir::{ScenarioMapSpec, ScenarioSpec};
     use crate::test_runner::TestBackend;
 
     #[test]
@@ -1199,5 +1216,758 @@ mod tests {
         }];
         let r = run_one(&dsn, t);
         assert!(r.passed, "expected pass: {}", r.message);
+    }
+
+    // -- scenario integration --
+
+    #[test]
+    #[cfg(feature = "scenario")]
+    fn scenario_detects_trigger_bug() {
+        let (_c, dsn) = start_pg();
+
+        // Apply the buggy schema via a separate connection
+        {
+            let mut setup_client = Client::connect(&dsn, NoTls).unwrap();
+            setup_client.batch_execute("
+                CREATE TABLE orders (id serial PRIMARY KEY, max_weight int NOT NULL);
+                CREATE TABLE order_items (
+                    id serial PRIMARY KEY,
+                    order_id int NOT NULL REFERENCES orders(id),
+                    product text NOT NULL,
+                    weight int NOT NULL
+                );
+
+                -- BUG: SUM doesn't include NEW.weight (the row being inserted)
+                CREATE FUNCTION check_order_weight() RETURNS trigger AS $$
+                DECLARE current_total int; max_w int;
+                BEGIN
+                    SELECT COALESCE(SUM(weight), 0) INTO current_total
+                        FROM order_items WHERE order_id = NEW.order_id;
+                    SELECT max_weight INTO max_w FROM orders WHERE id = NEW.order_id;
+                    IF current_total > max_w THEN
+                        RAISE EXCEPTION 'Order weight limit exceeded';
+                    END IF;
+                    RETURN NEW;
+                END;
+                $$ LANGUAGE plpgsql;
+
+                CREATE TRIGGER trg_check_weight
+                    BEFORE INSERT ON order_items
+                    FOR EACH ROW EXECUTE FUNCTION check_order_weight();
+            ").unwrap();
+        }
+
+        // Manual test: single heavy item (weight=80, limit=100) → passes due to the bug
+        let manual_test = TestSpec {
+            name: "manual_single_item".into(),
+            setup: vec![
+                "INSERT INTO orders (max_weight) VALUES (100)".into(),
+                "INSERT INTO order_items (order_id, product, weight) VALUES (currval('orders_id_seq'), 'heavy', 80)".into(),
+            ],
+            asserts: vec![
+                // Invariant check inline: total weight should be <= max_weight
+                // This passes because 80 <= 100
+                "SELECT (SELECT COALESCE(SUM(weight),0) FROM order_items WHERE order_id = o.id) <= o.max_weight FROM orders o WHERE id = currval('orders_id_seq')".into(),
+            ],
+            assert_fail: vec![],
+            assert_notify: vec![],
+            assert_eq: vec![],
+            assert_error: vec![],
+            assert_snapshot: vec![],
+            teardown: vec![],
+        };
+
+        // Invariant: total weight per order must not exceed max_weight
+        let invariant = InvariantSpec {
+            name: "weight_within_limit".into(),
+            asserts: vec![
+                "SELECT NOT EXISTS (SELECT 1 FROM orders o WHERE (SELECT COALESCE(SUM(weight),0) FROM order_items WHERE order_id = o.id) > o.max_weight)".into(),
+            ],
+        };
+
+        // Scenario: clingo generates diverse item combinations
+        let scenario = ScenarioSpec {
+            name: "order_weight".into(),
+            program: "item(a;b;c). weight(30;40;60;80). 1 { add(I,W) : item(I), weight(W) } 3. :- add(I,W1), add(I,W2), W1 != W2.".into(),
+            setup: vec![
+                "INSERT INTO orders (max_weight) VALUES (100)".into(),
+            ],
+            maps: vec![
+                ScenarioMapSpec {
+                    atom_name: "add".into(),
+                    sql: "INSERT INTO order_items (order_id, product, weight) VALUES (currval('orders_id_seq'), '{1}', {2})".into(),
+                    order_by: None,
+                },
+            ],
+            runs: 0, // all answer sets
+            checks: vec![],
+            expect_error: false,
+            assert_eq: vec![],
+            assert_snapshot: vec![],
+            params: vec![],
+            teardown: vec![],
+        };
+
+        let cfg = Config {
+            tests: vec![manual_test],
+            invariants: vec![invariant],
+            scenarios: vec![scenario],
+            ..Default::default()
+        };
+
+        let summary = PostgresTestBackend.run(&cfg, &dsn, None).unwrap();
+
+        // The manual test should pass (proves manual testing misses the bug)
+        let manual_result = summary.results.iter().find(|r| r.name == "manual_single_item").unwrap();
+        assert!(manual_result.passed, "manual test should pass: {}", manual_result.message);
+
+        // Scenario should have generated multiple test cases
+        let scenario_results: Vec<_> = summary.results.iter()
+            .filter(|r| r.name.starts_with("order_weight["))
+            .collect();
+        assert!(scenario_results.len() > 1, "scenario should generate multiple test cases, got {}", scenario_results.len());
+
+        // Some scenario tests should fail (multi-item combos exceeding 100)
+        let failed: Vec<_> = scenario_results.iter().filter(|r| !r.passed).collect();
+        assert!(!failed.is_empty(), "some scenario tests should fail (bug detected)");
+
+        // Some scenario tests should pass (single items or light combos ≤ 100)
+        let passed: Vec<_> = scenario_results.iter().filter(|r| r.passed).collect();
+        assert!(!passed.is_empty(), "some scenario tests should pass (light combos)");
+
+        // Failures come in two flavors due to the off-by-one bug:
+        // 1. Invariant violations: the trigger allowed inserts that shouldn't have been
+        //    (e.g. two items of 60 each → total 120 > 100, but trigger only checked prior sum)
+        // 2. Trigger exceptions: when prior items already exceed the limit, the trigger
+        //    catches a later insert (e.g. after two 60s total 120, a third 60 triggers the check)
+        // The key point is that SOME failures are invariant violations — proving the bug.
+        let invariant_failures: Vec<_> = failed.iter()
+            .filter(|r| r.message.contains("weight_within_limit"))
+            .collect();
+        assert!(
+            !invariant_failures.is_empty(),
+            "some failures should be invariant violations (the actual bug), got messages: {:?}",
+            failed.iter().map(|r| &r.message).collect::<Vec<_>>()
+        );
+    }
+
+    // -- #5: order_by on map blocks --
+
+    #[test]
+    #[cfg(feature = "scenario")]
+    fn scenario_order_by_sorts_by_argument() {
+        let (_c, dsn) = start_pg();
+
+        {
+            let mut setup_client = Client::connect(&dsn, NoTls).unwrap();
+            setup_client.batch_execute("
+                CREATE TABLE ordered_log (id serial PRIMARY KEY, item text NOT NULL, position int NOT NULL);
+            ").unwrap();
+        }
+
+        let scenario = ScenarioSpec {
+            name: "ordered_insert".into(),
+            program: "add(c,3). add(a,1). add(b,2).".into(),
+            setup: vec![],
+            maps: vec![
+                ScenarioMapSpec {
+                    atom_name: "add".into(),
+                    sql: "INSERT INTO ordered_log (item, position) VALUES ('{1}', {2})".into(),
+                    order_by: Some(2), // sort by position (2nd arg, numeric)
+                },
+            ],
+            runs: 0,
+            checks: vec![],
+            expect_error: false,
+            assert_eq: vec![],
+            assert_snapshot: vec![
+                SnapshotAssertSpec {
+                    query: "SELECT item, position::text FROM ordered_log ORDER BY id".into(),
+                    rows: vec![
+                        vec!["a".into(), "1".into()],
+                        vec!["b".into(), "2".into()],
+                        vec!["c".into(), "3".into()],
+                    ],
+                },
+            ],
+            params: vec![],
+            teardown: vec![],
+        };
+
+        let cfg = Config {
+            scenarios: vec![scenario],
+            ..Default::default()
+        };
+
+        let summary = PostgresTestBackend.run(&cfg, &dsn, None).unwrap();
+        assert_eq!(summary.results.len(), 1);
+        assert!(summary.results[0].passed, "order_by test failed: {}", summary.results[0].message);
+    }
+
+    // -- #6: check blocks (scenario-scoped invariants) --
+
+    #[test]
+    #[cfg(feature = "scenario")]
+    fn scenario_check_blocks_pass() {
+        let (_c, dsn) = start_pg();
+
+        {
+            let mut setup_client = Client::connect(&dsn, NoTls).unwrap();
+            setup_client.batch_execute("
+                CREATE TABLE items (id serial PRIMARY KEY, val int NOT NULL);
+            ").unwrap();
+        }
+
+        let scenario = ScenarioSpec {
+            name: "with_checks".into(),
+            program: "add(1). add(2).".into(),
+            setup: vec![],
+            maps: vec![
+                ScenarioMapSpec {
+                    atom_name: "add".into(),
+                    sql: "INSERT INTO items (val) VALUES ({1})".into(),
+                    order_by: None,
+                },
+            ],
+            runs: 0,
+            checks: vec![
+                InvariantSpec {
+                    name: "positive_vals".into(),
+                    asserts: vec!["SELECT NOT EXISTS (SELECT 1 FROM items WHERE val <= 0)".into()],
+                },
+            ],
+            expect_error: false,
+            assert_eq: vec![],
+            assert_snapshot: vec![],
+            params: vec![],
+            teardown: vec![],
+        };
+
+        let cfg = Config {
+            scenarios: vec![scenario],
+            ..Default::default()
+        };
+
+        let summary = PostgresTestBackend.run(&cfg, &dsn, None).unwrap();
+        assert_eq!(summary.results.len(), 1);
+        assert!(summary.results[0].passed, "check block test failed: {}", summary.results[0].message);
+    }
+
+    #[test]
+    #[cfg(feature = "scenario")]
+    fn scenario_check_blocks_fail() {
+        let (_c, dsn) = start_pg();
+
+        {
+            let mut setup_client = Client::connect(&dsn, NoTls).unwrap();
+            setup_client.batch_execute("
+                CREATE TABLE items (id serial PRIMARY KEY, val int NOT NULL);
+            ").unwrap();
+        }
+
+        let scenario = ScenarioSpec {
+            name: "failing_check".into(),
+            program: "add(1). add(-5).".into(),
+            setup: vec![],
+            maps: vec![
+                ScenarioMapSpec {
+                    atom_name: "add".into(),
+                    sql: "INSERT INTO items (val) VALUES ({1})".into(),
+                    order_by: None,
+                },
+            ],
+            runs: 0,
+            checks: vec![
+                InvariantSpec {
+                    name: "positive_vals".into(),
+                    asserts: vec!["SELECT NOT EXISTS (SELECT 1 FROM items WHERE val <= 0)".into()],
+                },
+            ],
+            expect_error: false,
+            assert_eq: vec![],
+            assert_snapshot: vec![],
+            params: vec![],
+            teardown: vec![],
+        };
+
+        let cfg = Config {
+            scenarios: vec![scenario],
+            ..Default::default()
+        };
+
+        let summary = PostgresTestBackend.run(&cfg, &dsn, None).unwrap();
+        assert_eq!(summary.results.len(), 1);
+        assert!(!summary.results[0].passed, "check should have failed");
+        assert!(summary.results[0].message.contains("positive_vals"), "failure should mention the check name: {}", summary.results[0].message);
+    }
+
+    // -- #7: expect_error --
+
+    #[test]
+    #[cfg(feature = "scenario")]
+    fn scenario_expect_error_passes_on_sql_error() {
+        let (_c, dsn) = start_pg();
+
+        {
+            let mut setup_client = Client::connect(&dsn, NoTls).unwrap();
+            setup_client.batch_execute("
+                CREATE TABLE strict_table (id serial PRIMARY KEY, name text NOT NULL UNIQUE);
+            ").unwrap();
+        }
+
+        // Two maps that both insert into the same UNIQUE column → second one fails
+        let scenario = ScenarioSpec {
+            name: "expected_error".into(),
+            program: "first(alice). second(alice).".into(),
+            setup: vec![],
+            maps: vec![
+                ScenarioMapSpec {
+                    atom_name: "first".into(),
+                    sql: "INSERT INTO strict_table (name) VALUES ('{1}')".into(),
+                    order_by: None,
+                },
+                ScenarioMapSpec {
+                    atom_name: "second".into(),
+                    sql: "INSERT INTO strict_table (name) VALUES ('{1}')".into(),
+                    order_by: None,
+                },
+            ],
+            runs: 0,
+            checks: vec![],
+            expect_error: true,
+            assert_eq: vec![],
+            assert_snapshot: vec![],
+            params: vec![],
+            teardown: vec![],
+        };
+
+        let cfg = Config {
+            scenarios: vec![scenario],
+            ..Default::default()
+        };
+
+        let summary = PostgresTestBackend.run(&cfg, &dsn, None).unwrap();
+        assert_eq!(summary.results.len(), 1);
+        // Should pass because we expect the error
+        assert!(summary.results[0].passed, "expect_error test should pass: {}", summary.results[0].message);
+        assert!(summary.results[0].message.contains("expected error"), "message should indicate expected error: {}", summary.results[0].message);
+    }
+
+    #[test]
+    #[cfg(feature = "scenario")]
+    fn scenario_expect_error_false_fails_on_sql_error() {
+        let (_c, dsn) = start_pg();
+
+        {
+            let mut setup_client = Client::connect(&dsn, NoTls).unwrap();
+            setup_client.batch_execute("
+                CREATE TABLE strict_table2 (id serial PRIMARY KEY, name text NOT NULL UNIQUE);
+            ").unwrap();
+        }
+
+        // Two maps that both insert into the same UNIQUE column → second one fails
+        let scenario = ScenarioSpec {
+            name: "unexpected_error".into(),
+            program: "first(alice). second(alice).".into(),
+            setup: vec![],
+            maps: vec![
+                ScenarioMapSpec {
+                    atom_name: "first".into(),
+                    sql: "INSERT INTO strict_table2 (name) VALUES ('{1}')".into(),
+                    order_by: None,
+                },
+                ScenarioMapSpec {
+                    atom_name: "second".into(),
+                    sql: "INSERT INTO strict_table2 (name) VALUES ('{1}')".into(),
+                    order_by: None,
+                },
+            ],
+            runs: 0,
+            checks: vec![],
+            expect_error: false, // not expecting errors
+            assert_eq: vec![],
+            assert_snapshot: vec![],
+            params: vec![],
+            teardown: vec![],
+        };
+
+        let cfg = Config {
+            scenarios: vec![scenario],
+            ..Default::default()
+        };
+
+        let summary = PostgresTestBackend.run(&cfg, &dsn, None).unwrap();
+        assert_eq!(summary.results.len(), 1);
+        // Should fail because we don't expect the error
+        assert!(!summary.results[0].passed, "should fail when error is unexpected");
+    }
+
+    // -- #8: assert_eq and assert_snapshot inside scenarios --
+
+    #[test]
+    #[cfg(feature = "scenario")]
+    fn scenario_assert_eq_passes() {
+        let (_c, dsn) = start_pg();
+
+        {
+            let mut setup_client = Client::connect(&dsn, NoTls).unwrap();
+            setup_client.batch_execute("
+                CREATE TABLE counters (id serial PRIMARY KEY, val int NOT NULL DEFAULT 0);
+            ").unwrap();
+        }
+
+        let scenario = ScenarioSpec {
+            name: "eq_check".into(),
+            program: "inc(1). inc(2).".into(),
+            setup: vec![
+                "INSERT INTO counters (val) VALUES (0)".into(),
+            ],
+            maps: vec![
+                ScenarioMapSpec {
+                    atom_name: "inc".into(),
+                    sql: "UPDATE counters SET val = val + {1} WHERE id = currval('counters_id_seq')".into(),
+                    order_by: None,
+                },
+            ],
+            runs: 0,
+            checks: vec![],
+            expect_error: false,
+            assert_eq: vec![
+                EqAssertSpec {
+                    query: "SELECT val::text FROM counters WHERE id = currval('counters_id_seq')".into(),
+                    expected: "3".into(), // 0 + 1 + 2
+                },
+            ],
+            assert_snapshot: vec![],
+            params: vec![],
+            teardown: vec![],
+        };
+
+        let cfg = Config {
+            scenarios: vec![scenario],
+            ..Default::default()
+        };
+
+        let summary = PostgresTestBackend.run(&cfg, &dsn, None).unwrap();
+        assert_eq!(summary.results.len(), 1);
+        assert!(summary.results[0].passed, "assert_eq should pass: {}", summary.results[0].message);
+    }
+
+    #[test]
+    #[cfg(feature = "scenario")]
+    fn scenario_assert_eq_fails_on_mismatch() {
+        let (_c, dsn) = start_pg();
+
+        {
+            let mut setup_client = Client::connect(&dsn, NoTls).unwrap();
+            setup_client.batch_execute("
+                CREATE TABLE counters2 (id serial PRIMARY KEY, val int NOT NULL DEFAULT 0);
+            ").unwrap();
+        }
+
+        let scenario = ScenarioSpec {
+            name: "eq_fail".into(),
+            program: "inc(1).".into(),
+            setup: vec![
+                "INSERT INTO counters2 (val) VALUES (0)".into(),
+            ],
+            maps: vec![
+                ScenarioMapSpec {
+                    atom_name: "inc".into(),
+                    sql: "UPDATE counters2 SET val = val + {1} WHERE id = currval('counters2_id_seq')".into(),
+                    order_by: None,
+                },
+            ],
+            runs: 0,
+            checks: vec![],
+            expect_error: false,
+            assert_eq: vec![
+                EqAssertSpec {
+                    query: "SELECT val::text FROM counters2 WHERE id = currval('counters2_id_seq')".into(),
+                    expected: "999".into(), // wrong
+                },
+            ],
+            assert_snapshot: vec![],
+            params: vec![],
+            teardown: vec![],
+        };
+
+        let cfg = Config {
+            scenarios: vec![scenario],
+            ..Default::default()
+        };
+
+        let summary = PostgresTestBackend.run(&cfg, &dsn, None).unwrap();
+        assert_eq!(summary.results.len(), 1);
+        assert!(!summary.results[0].passed, "assert_eq should fail on mismatch");
+        assert!(summary.results[0].message.contains("assert_eq failed"), "message: {}", summary.results[0].message);
+    }
+
+    #[test]
+    #[cfg(feature = "scenario")]
+    fn scenario_assert_snapshot_passes() {
+        let (_c, dsn) = start_pg();
+
+        {
+            let mut setup_client = Client::connect(&dsn, NoTls).unwrap();
+            setup_client.batch_execute("
+                CREATE TABLE log_entries (id serial PRIMARY KEY, msg text NOT NULL);
+            ").unwrap();
+        }
+
+        let scenario = ScenarioSpec {
+            name: "snap_check".into(),
+            program: "log(hello). log(world).".into(),
+            setup: vec![],
+            maps: vec![
+                ScenarioMapSpec {
+                    atom_name: "log".into(),
+                    sql: "INSERT INTO log_entries (msg) VALUES ('{1}')".into(),
+                    order_by: None,
+                },
+            ],
+            runs: 0,
+            checks: vec![],
+            expect_error: false,
+            assert_eq: vec![],
+            assert_snapshot: vec![
+                SnapshotAssertSpec {
+                    query: "SELECT msg FROM log_entries ORDER BY msg".into(),
+                    rows: vec![
+                        vec!["hello".into()],
+                        vec!["world".into()],
+                    ],
+                },
+            ],
+            params: vec![],
+            teardown: vec![],
+        };
+
+        let cfg = Config {
+            scenarios: vec![scenario],
+            ..Default::default()
+        };
+
+        let summary = PostgresTestBackend.run(&cfg, &dsn, None).unwrap();
+        assert_eq!(summary.results.len(), 1);
+        assert!(summary.results[0].passed, "assert_snapshot should pass: {}", summary.results[0].message);
+    }
+
+    // -- #9: answer set labeling --
+
+    #[test]
+    #[cfg(feature = "scenario")]
+    fn scenario_test_name_includes_atoms() {
+        let (_c, dsn) = start_pg();
+
+        let scenario = ScenarioSpec {
+            name: "labeled".into(),
+            program: "fact(a). fact(b).".into(),
+            setup: vec![],
+            maps: vec![
+                ScenarioMapSpec {
+                    atom_name: "fact".into(),
+                    sql: "SELECT 1".into(),
+                    order_by: None,
+                },
+            ],
+            runs: 1, // just one answer set
+            checks: vec![],
+            expect_error: false,
+            assert_eq: vec![],
+            assert_snapshot: vec![],
+            params: vec![],
+            teardown: vec![],
+        };
+
+        let cfg = Config {
+            scenarios: vec![scenario],
+            ..Default::default()
+        };
+
+        let summary = PostgresTestBackend.run(&cfg, &dsn, None).unwrap();
+        assert_eq!(summary.results.len(), 1);
+        let name = &summary.results[0].name;
+        // Test name should contain atoms like "labeled[0: fact(a), fact(b)]"
+        assert!(name.starts_with("labeled[0:"), "test name should include index: {}", name);
+        assert!(name.contains("fact"), "test name should include atom names: {}", name);
+    }
+
+    // -- #10: params (#const injection) --
+
+    #[test]
+    #[cfg(feature = "scenario")]
+    fn scenario_params_inject_const() {
+        let (_c, dsn) = start_pg();
+
+        {
+            let mut setup_client = Client::connect(&dsn, NoTls).unwrap();
+            setup_client.batch_execute("
+                CREATE TABLE param_log (id serial PRIMARY KEY, val int NOT NULL);
+            ").unwrap();
+        }
+
+        // Use #const to limit the range
+        let scenario = ScenarioSpec {
+            name: "parameterized".into(),
+            program: "val(1..n). { pick(V) : val(V) }.".into(),
+            setup: vec![],
+            maps: vec![
+                ScenarioMapSpec {
+                    atom_name: "pick".into(),
+                    sql: "INSERT INTO param_log (val) VALUES ({1})".into(),
+                    order_by: None,
+                },
+            ],
+            runs: 3, // limit to 3 answer sets
+            checks: vec![
+                InvariantSpec {
+                    name: "vals_in_range".into(),
+                    asserts: vec!["SELECT NOT EXISTS (SELECT 1 FROM param_log WHERE val < 1 OR val > 2)".into()],
+                },
+            ],
+            expect_error: false,
+            assert_eq: vec![],
+            assert_snapshot: vec![],
+            params: vec![
+                ("n".into(), "2".into()), // #const n=2
+            ],
+            teardown: vec![],
+        };
+
+        let cfg = Config {
+            scenarios: vec![scenario],
+            ..Default::default()
+        };
+
+        let summary = PostgresTestBackend.run(&cfg, &dsn, None).unwrap();
+        assert!(summary.results.len() <= 3, "should have at most 3 answer sets");
+        // All should pass since vals are limited to 1..2
+        for r in &summary.results {
+            assert!(r.passed, "parameterized test should pass: {}", r.message);
+        }
+    }
+
+    // -- #11: teardown --
+
+    #[test]
+    #[cfg(feature = "scenario")]
+    fn scenario_teardown_runs_after_rollback() {
+        let (_c, dsn) = start_pg();
+
+        {
+            let mut setup_client = Client::connect(&dsn, NoTls).unwrap();
+            setup_client.batch_execute("
+                CREATE TABLE teardown_marker (id serial PRIMARY KEY, note text NOT NULL);
+                CREATE TABLE teardown_log (id serial PRIMARY KEY, cleaned boolean NOT NULL DEFAULT false);
+            ").unwrap();
+        }
+
+        let scenario = ScenarioSpec {
+            name: "with_teardown".into(),
+            program: "act(1).".into(),
+            setup: vec![
+                "INSERT INTO teardown_marker (note) VALUES ('test')".into(),
+            ],
+            maps: vec![
+                ScenarioMapSpec {
+                    atom_name: "act".into(),
+                    sql: "SELECT {1}".into(),
+                    order_by: None,
+                },
+            ],
+            runs: 0,
+            checks: vec![],
+            expect_error: false,
+            assert_eq: vec![],
+            assert_snapshot: vec![],
+            params: vec![],
+            teardown: vec![
+                "INSERT INTO teardown_log (cleaned) VALUES (true)".into(),
+            ],
+        };
+
+        let cfg = Config {
+            scenarios: vec![scenario],
+            ..Default::default()
+        };
+
+        let summary = PostgresTestBackend.run(&cfg, &dsn, None).unwrap();
+        assert_eq!(summary.results.len(), 1);
+        assert!(summary.results[0].passed, "teardown test should pass: {}", summary.results[0].message);
+
+        // Verify teardown ran (it runs outside the transaction, so it should be committed)
+        let mut verify_client = Client::connect(&dsn, NoTls).unwrap();
+        let rows = verify_client.query("SELECT COUNT(*) FROM teardown_log WHERE cleaned = true", &[]).unwrap();
+        let count: i64 = rows[0].get(0);
+        assert!(count >= 1, "teardown should have inserted into teardown_log");
+
+        // Setup was rolled back, so teardown_marker should be empty
+        let rows = verify_client.query("SELECT COUNT(*) FROM teardown_marker", &[]).unwrap();
+        let count: i64 = rows[0].get(0);
+        assert_eq!(count, 0, "setup should have been rolled back");
+    }
+
+    // -- combined features --
+
+    #[test]
+    #[cfg(feature = "scenario")]
+    fn scenario_all_features_combined() {
+        let (_c, dsn) = start_pg();
+
+        {
+            let mut setup_client = Client::connect(&dsn, NoTls).unwrap();
+            setup_client.batch_execute("
+                CREATE TABLE products (id serial PRIMARY KEY, name text NOT NULL, price int NOT NULL);
+                CREATE TABLE combined_teardown (id serial PRIMARY KEY, done boolean NOT NULL);
+            ").unwrap();
+        }
+
+        let scenario = ScenarioSpec {
+            name: "combined".into(),
+            // Use params to set max price
+            program: "product(apple,10). product(banana,20). { buy(P,C) : product(P,C) }.".into(),
+            setup: vec![],
+            maps: vec![
+                ScenarioMapSpec {
+                    atom_name: "buy".into(),
+                    sql: "INSERT INTO products (name, price) VALUES ('{1}', {2})".into(),
+                    order_by: Some(2), // order by price
+                },
+            ],
+            runs: 3, // limit answer sets
+            checks: vec![
+                InvariantSpec {
+                    name: "no_negative_prices".into(),
+                    asserts: vec!["SELECT NOT EXISTS (SELECT 1 FROM products WHERE price < 0)".into()],
+                },
+            ],
+            expect_error: false,
+            assert_eq: vec![],
+            assert_snapshot: vec![],
+            params: vec![],
+            teardown: vec![
+                "INSERT INTO combined_teardown (done) VALUES (true)".into(),
+            ],
+        };
+
+        let cfg = Config {
+            scenarios: vec![scenario],
+            ..Default::default()
+        };
+
+        let summary = PostgresTestBackend.run(&cfg, &dsn, None).unwrap();
+        assert!(summary.results.len() <= 3, "should have at most 3 answer sets");
+        for r in &summary.results {
+            assert!(r.passed, "combined test should pass: {}", r.message);
+            // Check answer set labeling
+            assert!(r.name.starts_with("combined["), "test name should include scenario name: {}", r.name);
+        }
+
+        // Verify teardown ran for each answer set
+        let mut verify_client = Client::connect(&dsn, NoTls).unwrap();
+        let rows = verify_client.query("SELECT COUNT(*) FROM combined_teardown WHERE done = true", &[]).unwrap();
+        let count: i64 = rows[0].get(0);
+        assert!(count >= 1, "teardown should have run at least once");
     }
 }

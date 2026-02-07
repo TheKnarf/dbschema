@@ -3,7 +3,7 @@ use hcl::{Body, Value};
 
 use crate::frontend::ast::*;
 use crate::frontend::core::{
-    expr_to_string_vec, expr_to_value, find_attr, get_attr_bool, get_attr_string,
+    expr_to_string_vec, expr_to_value, find_attr, get_attr_bool, get_attr_string, value_to_string,
 };
 use crate::frontend::env::EnvVars;
 use crate::frontend::for_each::ForEachSupport;
@@ -1350,6 +1350,150 @@ impl ForEachSupport for AstSubscription {
 
     fn add_to_config(item: Self::Item, config: &mut Config) {
         config.subscriptions.push(item);
+    }
+}
+
+// Scenario implementation
+impl ForEachSupport for AstScenario {
+    type Item = Self;
+
+    fn parse_one(name: &str, body: &Body, env: &EnvVars) -> Result<Self::Item> {
+        let program = get_attr_string(body, "program", env)?
+            .context("scenario 'program' is required")?;
+        let setup = match find_attr(body, "setup") {
+            Some(attr) => expr_to_string_vec(attr.expr(), env)?,
+            None => Vec::new(),
+        };
+        let runs = match get_attr_string(body, "runs", env)? {
+            Some(s) => s.parse::<usize>().unwrap_or(0),
+            None => 0,
+        };
+        let expect_error = get_attr_bool(body, "expect_error", env)?.unwrap_or(false);
+        let teardown = match find_attr(body, "teardown") {
+            Some(attr) => expr_to_string_vec(attr.expr(), env)?,
+            None => Vec::new(),
+        };
+
+        // Parse params object
+        let params = match find_attr(body, "params") {
+            Some(attr) => {
+                let val = expr_to_value(attr.expr(), env)?;
+                match val {
+                    Value::Object(obj) => {
+                        let mut out = Vec::new();
+                        for (k, v) in obj {
+                            out.push((k.to_string(), value_to_string(&v)?));
+                        }
+                        out
+                    }
+                    _ => bail!("scenario 'params' must be an object"),
+                }
+            }
+            None => Vec::new(),
+        };
+
+        // Parse map blocks
+        let mut maps = Vec::new();
+        for mblk in body.blocks().filter(|b| b.identifier() == "map") {
+            let atom_name = mblk
+                .labels()
+                .get(0)
+                .ok_or_else(|| anyhow::anyhow!("map block missing atom name label"))?
+                .as_str()
+                .to_string();
+            let mb = mblk.body();
+            let sql = get_attr_string(mb, "sql", env)?
+                .context("map 'sql' is required")?;
+            let order_by = match get_attr_string(mb, "order_by", env)? {
+                Some(s) => Some(s.parse::<usize>().with_context(|| "order_by must be an integer")?),
+                None => None,
+            };
+            maps.push(ScenarioMap { atom_name, sql, order_by });
+        }
+
+        // Parse check blocks (scenario-scoped invariants)
+        let mut checks = Vec::new();
+        for cblk in body.blocks().filter(|b| b.identifier() == "check") {
+            let check_name = cblk
+                .labels()
+                .get(0)
+                .ok_or_else(|| anyhow::anyhow!("check block missing name label"))?
+                .as_str()
+                .to_string();
+            let cb = cblk.body();
+            let asserts = match find_attr(cb, "assert") {
+                Some(attr) => expr_to_string_vec(attr.expr(), env)?,
+                None => bail!("check '{}' must define assert = [..]", check_name),
+            };
+            checks.push(AstInvariant { name: check_name, asserts });
+        }
+
+        // Parse assert_eq blocks
+        let mut assert_eq = Vec::new();
+        for eb in body.blocks().filter(|eb| eb.identifier() == "assert_eq") {
+            let eb_body = eb.body();
+            let query = get_attr_string(eb_body, "query", env)?
+                .ok_or_else(|| anyhow::anyhow!("assert_eq missing 'query'"))?;
+            let expected = get_attr_string(eb_body, "expected", env)?
+                .ok_or_else(|| anyhow::anyhow!("assert_eq missing 'expected'"))?;
+            assert_eq.push(EqAssert { query, expected });
+        }
+
+        // Parse assert_snapshot blocks
+        let mut assert_snapshot = Vec::new();
+        for sb in body.blocks().filter(|sb| sb.identifier() == "assert_snapshot") {
+            let sb_body = sb.body();
+            let query = get_attr_string(sb_body, "query", env)?
+                .ok_or_else(|| anyhow::anyhow!("assert_snapshot missing 'query'"))?;
+            let rows_attr = find_attr(sb_body, "rows")
+                .ok_or_else(|| anyhow::anyhow!("assert_snapshot missing 'rows'"))?;
+            let rows_val = expr_to_value(rows_attr.expr(), env)?;
+            let rows = match rows_val {
+                Value::Array(outer) => {
+                    let mut result = Vec::new();
+                    for row in outer {
+                        match row {
+                            Value::Array(inner) => {
+                                let cols: Vec<String> = inner
+                                    .into_iter()
+                                    .map(|v| match v {
+                                        Value::String(s) => Ok(s),
+                                        other => Ok(format!("{}", other)),
+                                    })
+                                    .collect::<Result<_, anyhow::Error>>()?;
+                                result.push(cols);
+                            }
+                            _ => {
+                                return Err(anyhow::anyhow!(
+                                    "assert_snapshot rows must be arrays of arrays"
+                                ))
+                            }
+                        }
+                    }
+                    result
+                }
+                _ => return Err(anyhow::anyhow!("assert_snapshot 'rows' must be an array")),
+            };
+            assert_snapshot.push(SnapshotAssert { query, rows });
+        }
+
+        Ok(AstScenario {
+            name: name.to_string(),
+            program,
+            setup,
+            maps,
+            runs,
+            checks,
+            expect_error,
+            assert_eq,
+            assert_snapshot,
+            params,
+            teardown,
+        })
+    }
+
+    fn add_to_config(item: Self::Item, config: &mut Config) {
+        config.scenarios.push(item);
     }
 }
 

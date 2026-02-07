@@ -10,6 +10,8 @@ pub mod lint;
 pub mod passes;
 pub mod prisma;
 pub mod provider;
+#[cfg(feature = "scenario")]
+pub mod scenario;
 pub mod test_runner;
 
 use anyhow::Result;
@@ -88,6 +90,7 @@ where
         publications: maybe!(Publications, publications),
         subscriptions: maybe!(Subscriptions, subscriptions),
         tests: maybe!(Tests, tests),
+        scenarios: cfg.scenarios.clone(),
         outputs: cfg.outputs.clone(),
         ..Default::default()
     }
@@ -1506,5 +1509,254 @@ mod tests {
         assert_eq!(cfg.tests[0].name, "counted[0]");
         assert_eq!(cfg.tests[1].name, "counted[1]");
         assert_eq!(cfg.tests[2].name, "counted[2]");
+    }
+
+    #[test]
+    fn parse_scenario_block() {
+        let mut files = HashMap::new();
+        files.insert(
+            p("/root/main.hcl"),
+            r#"
+            scenario "bid_processing" {
+              program = <<-ASP
+                bidder(alice; bob).
+                amount(50; 100).
+                1 { bid(B, A) : bidder(B), amount(A) } 2.
+                :- bid(B, A1), bid(B, A2), A1 != A2.
+              ASP
+
+              setup = [
+                "INSERT INTO items (name) VALUES ('Test')",
+              ]
+
+              map "bid" {
+                sql = "INSERT INTO bids (bidder, amount) VALUES ('{1}', {2})"
+              }
+
+              runs = 5
+            }
+            "#
+            .to_string(),
+        );
+        let loader = MapLoader { files };
+        let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
+        assert_eq!(cfg.scenarios.len(), 1);
+        assert_eq!(cfg.scenarios[0].name, "bid_processing");
+        assert!(cfg.scenarios[0].program.contains("bidder(alice; bob)"));
+        assert_eq!(cfg.scenarios[0].setup.len(), 1);
+        assert_eq!(cfg.scenarios[0].maps.len(), 1);
+        assert_eq!(cfg.scenarios[0].maps[0].atom_name, "bid");
+        assert!(cfg.scenarios[0].maps[0].sql.contains("{1}"));
+        assert_eq!(cfg.scenarios[0].runs, 5);
+    }
+
+    #[test]
+    fn parse_scenario_with_multiple_maps() {
+        let mut files = HashMap::new();
+        files.insert(
+            p("/root/main.hcl"),
+            r#"
+            scenario "complex" {
+              program = "fact(a). action(b)."
+
+              map "fact" {
+                sql = "INSERT INTO facts VALUES ('{1}')"
+              }
+
+              map "action" {
+                sql = "INSERT INTO actions VALUES ('{1}')"
+              }
+
+              runs = 0
+            }
+            "#
+            .to_string(),
+        );
+        let loader = MapLoader { files };
+        let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
+        assert_eq!(cfg.scenarios.len(), 1);
+        assert_eq!(cfg.scenarios[0].maps.len(), 2);
+        assert_eq!(cfg.scenarios[0].maps[0].atom_name, "fact");
+        assert_eq!(cfg.scenarios[0].maps[1].atom_name, "action");
+        assert_eq!(cfg.scenarios[0].runs, 0);
+    }
+
+    #[test]
+    fn parse_scenario_defaults_runs_to_zero() {
+        let mut files = HashMap::new();
+        files.insert(
+            p("/root/main.hcl"),
+            r#"
+            scenario "minimal" {
+              program = "a(1)."
+              map "a" {
+                sql = "SELECT {1}"
+              }
+            }
+            "#
+            .to_string(),
+        );
+        let loader = MapLoader { files };
+        let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
+        assert_eq!(cfg.scenarios[0].runs, 0);
+    }
+
+    #[test]
+    fn parse_scenario_map_order_by() {
+        let mut files = HashMap::new();
+        files.insert(
+            p("/root/main.hcl"),
+            r#"
+            scenario "ordered" {
+              program = "add(a,1). add(b,2)."
+              map "add" {
+                sql = "SELECT '{1}', {2}"
+                order_by = 2
+              }
+            }
+            "#
+            .to_string(),
+        );
+        let loader = MapLoader { files };
+        let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
+        assert_eq!(cfg.scenarios[0].maps[0].order_by, Some(2));
+    }
+
+    #[test]
+    fn parse_scenario_check_block() {
+        let mut files = HashMap::new();
+        files.insert(
+            p("/root/main.hcl"),
+            r#"
+            scenario "with_checks" {
+              program = "a(1)."
+              map "a" {
+                sql = "SELECT {1}"
+              }
+              check "positive" {
+                assert = ["SELECT 1 > 0"]
+              }
+              check "not_null" {
+                assert = ["SELECT 1 IS NOT NULL", "SELECT 2 IS NOT NULL"]
+              }
+            }
+            "#
+            .to_string(),
+        );
+        let loader = MapLoader { files };
+        let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
+        assert_eq!(cfg.scenarios[0].checks.len(), 2);
+        assert_eq!(cfg.scenarios[0].checks[0].name, "positive");
+        assert_eq!(cfg.scenarios[0].checks[0].asserts.len(), 1);
+        assert_eq!(cfg.scenarios[0].checks[1].name, "not_null");
+        assert_eq!(cfg.scenarios[0].checks[1].asserts.len(), 2);
+    }
+
+    #[test]
+    fn parse_scenario_expect_error() {
+        let mut files = HashMap::new();
+        files.insert(
+            p("/root/main.hcl"),
+            r#"
+            scenario "errors_expected" {
+              program = "bad(1)."
+              expect_error = true
+              map "bad" {
+                sql = "SELECT {1}"
+              }
+            }
+            "#
+            .to_string(),
+        );
+        let loader = MapLoader { files };
+        let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
+        assert_eq!(cfg.scenarios[0].expect_error, true);
+    }
+
+    #[test]
+    fn parse_scenario_assert_eq_and_snapshot() {
+        let mut files = HashMap::new();
+        files.insert(
+            p("/root/main.hcl"),
+            r#"
+            scenario "with_assertions" {
+              program = "a(1)."
+              map "a" {
+                sql = "SELECT {1}"
+              }
+              assert_eq {
+                query    = "SELECT 'hello'"
+                expected = "hello"
+              }
+              assert_snapshot {
+                query = "SELECT 1 AS a, 2 AS b"
+                rows = [
+                  ["1", "2"],
+                ]
+              }
+            }
+            "#
+            .to_string(),
+        );
+        let loader = MapLoader { files };
+        let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
+        assert_eq!(cfg.scenarios[0].assert_eq.len(), 1);
+        assert_eq!(cfg.scenarios[0].assert_eq[0].query, "SELECT 'hello'");
+        assert_eq!(cfg.scenarios[0].assert_eq[0].expected, "hello");
+        assert_eq!(cfg.scenarios[0].assert_snapshot.len(), 1);
+        assert_eq!(cfg.scenarios[0].assert_snapshot[0].rows, vec![vec!["1".to_string(), "2".to_string()]]);
+    }
+
+    #[test]
+    fn parse_scenario_params() {
+        let mut files = HashMap::new();
+        files.insert(
+            p("/root/main.hcl"),
+            r#"
+            scenario "parameterized" {
+              program = "a(1..max_items)."
+              params = {
+                max_items = "3"
+                threshold = "100"
+              }
+              map "a" {
+                sql = "SELECT {1}"
+              }
+            }
+            "#
+            .to_string(),
+        );
+        let loader = MapLoader { files };
+        let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
+        assert_eq!(cfg.scenarios[0].params.len(), 2);
+        let params: std::collections::HashMap<String, String> = cfg.scenarios[0].params.iter().cloned().collect();
+        assert_eq!(params.get("max_items").unwrap(), "3");
+        assert_eq!(params.get("threshold").unwrap(), "100");
+    }
+
+    #[test]
+    fn parse_scenario_teardown() {
+        let mut files = HashMap::new();
+        files.insert(
+            p("/root/main.hcl"),
+            r#"
+            scenario "with_teardown" {
+              program = "a(1)."
+              map "a" {
+                sql = "SELECT {1}"
+              }
+              teardown = [
+                "DELETE FROM test_table",
+                "DROP TABLE IF EXISTS test_table",
+              ]
+            }
+            "#
+            .to_string(),
+        );
+        let loader = MapLoader { files };
+        let cfg = load_config(&p("/root/main.hcl"), &loader, EnvVars::default()).unwrap();
+        assert_eq!(cfg.scenarios[0].teardown.len(), 2);
+        assert_eq!(cfg.scenarios[0].teardown[0], "DELETE FROM test_table");
+        assert_eq!(cfg.scenarios[0].teardown[1], "DROP TABLE IF EXISTS test_table");
     }
 }

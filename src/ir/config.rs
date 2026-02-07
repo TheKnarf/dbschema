@@ -38,6 +38,7 @@ pub struct Config {
     pub subscriptions: Vec<SubscriptionSpec>,
     pub tests: Vec<TestSpec>,
     pub invariants: Vec<InvariantSpec>,
+    pub scenarios: Vec<ScenarioSpec>,
     pub outputs: Vec<OutputSpec>,
 }
 
@@ -547,6 +548,28 @@ pub struct SnapshotAssertSpec {
 pub struct InvariantSpec {
     pub name: String,
     pub asserts: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ScenarioMapSpec {
+    pub atom_name: String,
+    pub sql: String,
+    pub order_by: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ScenarioSpec {
+    pub name: String,
+    pub program: String,
+    pub setup: Vec<String>,
+    pub maps: Vec<ScenarioMapSpec>,
+    pub runs: usize,
+    pub checks: Vec<InvariantSpec>,
+    pub expect_error: bool,
+    pub assert_eq: Vec<EqAssertSpec>,
+    pub assert_snapshot: Vec<SnapshotAssertSpec>,
+    pub params: Vec<(String, String)>,
+    pub teardown: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

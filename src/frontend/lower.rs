@@ -66,6 +66,7 @@ pub fn lower_config(ast: ast::Config) -> ir::Config {
         subscriptions: ast.subscriptions.into_iter().map(Into::into).collect(),
         tests: ast.tests.into_iter().map(Into::into).collect(),
         invariants: ast.invariants.into_iter().map(Into::into).collect(),
+        scenarios: ast.scenarios.into_iter().map(Into::into).collect(),
         outputs: ast.outputs.into_iter().map(Into::into).collect(),
     }
 }
@@ -737,6 +738,34 @@ impl From<ast::AstTest> for ir::TestSpec {
             assert_error: t.assert_error.into_iter().map(Into::into).collect(),
             assert_snapshot: t.assert_snapshot.into_iter().map(Into::into).collect(),
             teardown: t.teardown,
+        }
+    }
+}
+
+impl From<ast::ScenarioMap> for ir::ScenarioMapSpec {
+    fn from(m: ast::ScenarioMap) -> Self {
+        Self {
+            atom_name: m.atom_name,
+            sql: m.sql,
+            order_by: m.order_by,
+        }
+    }
+}
+
+impl From<ast::AstScenario> for ir::ScenarioSpec {
+    fn from(s: ast::AstScenario) -> Self {
+        Self {
+            name: s.name,
+            program: s.program,
+            setup: s.setup,
+            maps: s.maps.into_iter().map(Into::into).collect(),
+            runs: s.runs,
+            checks: s.checks.into_iter().map(Into::into).collect(),
+            expect_error: s.expect_error,
+            assert_eq: s.assert_eq.into_iter().map(Into::into).collect(),
+            assert_snapshot: s.assert_snapshot.into_iter().map(Into::into).collect(),
+            params: s.params,
+            teardown: s.teardown,
         }
     }
 }

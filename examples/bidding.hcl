@@ -622,6 +622,142 @@ test "view_effective_end_uses_end_at_when_no_recent_bids" {
   ]
 }
 
+# --- Scenario Tests (requires --features scenario and clingo) ---
+# Each answer set becomes a separate test that exercises the bid processing
+# triggers with a different combination of bidders and amounts.
+
+scenario "bid_processing" {
+  program = <<-ASP
+    bidder(alice; bob; charlie).
+    amount(50; 100; 200; 500).
+
+    % Generate 1-3 bids, each bidder bids at most once
+    1 { bid(B, A) : bidder(B), amount(A) } 3.
+    :- bid(B, A1), bid(B, A2), A1 != A2.
+  ASP
+
+  setup = [
+    "INSERT INTO items (name, start_at, end_at) VALUES ('Test Item', NOW() - interval '1 hour', NOW() + interval '1 hour')",
+  ]
+
+  map "bid" {
+    sql = "INSERT INTO bids (item_id, bidder, amount) VALUES (currval('items_id_seq'), '{1}', {2})"
+  }
+
+  runs = 10
+}
+
+scenario "bid_ordering" {
+  # Demonstrates: order_by (#5) and check (#6)
+  # Bids are inserted in ascending amount order so the last insert
+  # always holds the current highest bid.
+  program = <<-ASP
+    bidder(alice; bob; charlie).
+    amount(50; 100; 200).
+
+    % Each bidder places exactly one bid
+    1 { bid(B, A) : amount(A) } 1 :- bidder(B).
+    :- bid(B, A1), bid(B, A2), A1 != A2.
+    % All three bidders must bid
+    :- bidder(B), not 1 { bid(B, _) }.
+    % All amounts must differ
+    :- bid(B1, A), bid(B2, A), B1 != B2.
+  ASP
+
+  setup = [
+    "INSERT INTO items (name, start_at, end_at) VALUES ('Ordered Item', NOW() - interval '1 hour', NOW() + interval '1 hour')",
+  ]
+
+  map "bid" {
+    sql      = "INSERT INTO bids (item_id, bidder, amount) VALUES (currval('items_id_seq'), '{1}', {2})"
+    order_by = 2
+  }
+
+  check "highest_bid_is_approved" {
+    assert = [
+      "SELECT br.status = 'approved' FROM bid_results br JOIN bids b ON b.id = br.bid_id WHERE b.amount = (SELECT MAX(amount) FROM bids WHERE item_id = currval('items_id_seq'))",
+    ]
+  }
+
+  runs = 6
+}
+
+scenario "invalid_bids" {
+  # Demonstrates: expect_error (#7)
+  # Generates bids with amount 0 which violates the positive_amount check
+  # constraint. The test passes because we expect the SQL to fail.
+  program = <<-ASP
+    bidder(alice; bob).
+    amount(0; 100).
+
+    1 { bid(B, A) : bidder(B), amount(A) } 2.
+    :- bid(B, A1), bid(B, A2), A1 != A2.
+    % At least one bid must use the invalid amount
+    :- not bid(_, 0).
+  ASP
+
+  setup = [
+    "INSERT INTO items (name, start_at, end_at) VALUES ('Error Item', NOW() - interval '1 hour', NOW() + interval '1 hour')",
+  ]
+
+  map "bid" {
+    sql = "INSERT INTO bids (item_id, bidder, amount) VALUES (currval('items_id_seq'), '{1}', {2})"
+  }
+
+  expect_error = true
+  runs = 5
+}
+
+scenario "bid_snapshot" {
+  # Demonstrates: params (#10), assert_eq (#8), assert_snapshot (#8),
+  #               teardown (#11)
+  # Uses params to inject a #const limiting the ASP search space.
+  program = <<-ASP
+    bidder(alice; bob).
+    amount(100; 200).
+
+    % Each bidder bids once with a distinct amount
+    1 { bid(B, A) : amount(A) } 1 :- bidder(B).
+    :- bid(B, A1), bid(B, A2), A1 != A2.
+    :- bidder(B), not 1 { bid(B, _) }.
+    :- bid(B1, A), bid(B2, A), B1 != B2.
+  ASP
+
+  params = {
+    max_bids = "2"
+  }
+
+  setup = [
+    "INSERT INTO items (name, start_at, end_at) VALUES ('Snapshot Item', NOW() - interval '1 hour', NOW() + interval '1 hour')",
+  ]
+
+  map "bid" {
+    sql      = "INSERT INTO bids (item_id, bidder, amount) VALUES (currval('items_id_seq'), '{1}', {2})"
+    order_by = 2
+  }
+
+  assert_eq {
+    query    = "SELECT COUNT(*)::text FROM bid_results WHERE item_id = currval('items_id_seq') AND status = 'approved'"
+    expected = "2"
+  }
+
+  assert_snapshot {
+    query = "SELECT status::text FROM bid_results WHERE item_id = currval('items_id_seq') ORDER BY id"
+    rows = [
+      ["approved"],
+      ["approved"],
+    ]
+  }
+
+  teardown = [
+    "DELETE FROM bid_results WHERE item_id IN (SELECT id FROM items WHERE name = 'Snapshot Item')",
+    "DELETE FROM bids WHERE item_id IN (SELECT id FROM items WHERE name = 'Snapshot Item')",
+    "DELETE FROM items WHERE name = 'Snapshot Item'",
+  ]
+
+  runs = 2
+}
+
 # --- Notify Tests ---
 # These tests use the committed (non-transactional) path with teardown cleanup.
 
